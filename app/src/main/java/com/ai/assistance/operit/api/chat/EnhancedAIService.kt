@@ -513,7 +513,6 @@ class EnhancedAIService private constructor(private val context: Context) {
         characterName: String? = null,
         avatarUri: String? = null,
         roleCardId: String? = null,
-        enableRoleScopedHistoryHint: Boolean = false,
         enableGroupOrchestrationHint: Boolean = false,
         proxySenderName: String? = null,
         onToolInvocation: (suspend (String) -> Unit)? = null,
@@ -565,7 +564,6 @@ class EnhancedAIService private constructor(private val context: Context) {
                                     customSystemPromptTemplate,
                                     enableMemoryQuery,
                                     roleCardId,
-                                    enableRoleScopedHistoryHint,
                                     enableGroupOrchestrationHint,
                                     proxySenderName,
                                     isSubTask,
@@ -1047,13 +1045,6 @@ class EnhancedAIService private constructor(private val context: Context) {
 
             // 修改默认行为：如果没有特殊标记或工具调用，默认等待用户输入
             // 而不是直接标记为完成
-            if (enableGroupOrchestrationHint && ConversationMarkupManager.containsNoSpeak(enhancedContent)) {
-                AppLogger.d(TAG, "群聊回合检测到 no_speak，保持原样结束当前回合")
-                handleWaitForUserNeed(context, enhancedContent, isSubTask, characterName, avatarUri)
-                AppLogger.d(TAG, "流完成处理耗时: ${System.currentTimeMillis() - startTime}ms")
-                return
-            }
-
             // 创建等待用户输入的内容
             val userNeedContent =
                     ConversationMarkupManager.createWaitForUserNeedContent(
@@ -1545,7 +1536,6 @@ class EnhancedAIService private constructor(private val context: Context) {
             customSystemPromptTemplate: String? = null,
             enableMemoryQuery: Boolean,
             roleCardId: String?,
-            enableRoleScopedHistoryHint: Boolean,
             enableGroupOrchestrationHint: Boolean,
             proxySenderName: String? = null,
             isSubTask: Boolean = false,
@@ -1582,7 +1572,6 @@ class EnhancedAIService private constructor(private val context: Context) {
                 customSystemPromptTemplate,
                 enableMemoryQuery,
                 roleCardId,
-                enableRoleScopedHistoryHint,
                 enableGroupOrchestrationHint,
                 proxySenderName,
                 hasImageRecognition,

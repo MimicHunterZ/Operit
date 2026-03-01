@@ -63,7 +63,7 @@ class DisplayPreferencesManager private constructor(private val context: Context
         // 虚拟屏幕相关设置的 Key
         private val KEY_VIRTUAL_DISPLAY_BITRATE_KBPS = intPreferencesKey("virtual_display_bitrate_kbps")
 
-        // 工具折叠设置（只读工具 / 全部工具）
+        // 工具折叠设置（多个只读工具 / 多个任意工具 / 全部工具）
         private val KEY_TOOL_COLLAPSE_MODE = stringPreferencesKey("tool_collapse_mode")
     }
 

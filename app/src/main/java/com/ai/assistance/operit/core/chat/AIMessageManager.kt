@@ -21,7 +21,6 @@ import com.ai.assistance.operit.util.ImagePoolManager
 import com.ai.assistance.operit.util.MediaPoolManager
 import com.ai.assistance.operit.util.ChatUtils
 import com.ai.assistance.operit.util.ChatMarkupRegex
-import com.ai.assistance.operit.api.chat.enhance.ConversationMarkupManager
 import com.ai.assistance.operit.data.model.InputProcessingState
 import com.ai.assistance.operit.util.stream.SharedStream
 import com.ai.assistance.operit.util.stream.share
@@ -367,7 +366,6 @@ object AIMessageManager {
                 characterName = characterName,
                 avatarUri = avatarUri,
                 roleCardId = roleCardId,
-                enableRoleScopedHistoryHint = splitHistoryByRole && !currentRoleName.isNullOrBlank(),
                 enableGroupOrchestrationHint = groupOrchestrationMode,
                 proxySenderName = proxySenderName,
                 chatModelConfigIdOverride = chatModelConfigIdOverride,
@@ -864,7 +862,6 @@ object AIMessageManager {
                         message,
                         isRoleScopedMode,
                         normalizedTargetRole,
-                        groupOrchestrationMode,
                         ::removeStatusTags
                     )
                     "user" -> processUserMessage(
@@ -882,20 +879,11 @@ object AIMessageManager {
         message: ChatMessage,
         isRoleScopedMode: Boolean,
         targetRoleName: String,
-        groupOrchestrationMode: Boolean,
         removeStatusTags: (String) -> String
     ): Pair<String, String>? {
         // 清理思考内容
         val cleanedContent = ChatUtils.removeThinkingContent(message.content).trim()
         val contentWithoutStatus = removeStatusTags(cleanedContent)
-
-        // 群组模式下，如果消息只包含 <no_speak/> 标签且内容为空，则跳过
-        val isNoSpeakOnly = groupOrchestrationMode &&
-            ConversationMarkupManager.containsNoSpeak(message.content) &&
-            contentWithoutStatus.isBlank()
-        if (isNoSpeakOnly) {
-            return null
-        }
 
         // 非角色隔离模式：直接返回 assistant 消息
         if (!isRoleScopedMode) {

@@ -64,6 +64,7 @@ class ThinkToolsXmlNodeGrouper(
             if (showThinkingProcess && (tag == "think" || tag == "thinking")) {
                 var j = i + 1
                 var toolCount = 0
+                var xmlToolRelatedCount = 0
                 while (j < nodes.size) {
                     val next = nodes[j]
                     // 允许 think 与 tool/tool_result 之间出现纯空白文本（通常是换行）
@@ -82,12 +83,13 @@ class ThinkToolsXmlNodeGrouper(
                         val toolName = extractToolNameFromToolOrResult(next.content)
                         if (!shouldGroupToolByName(toolName, toolCollapseMode)) break
                         if (nextTag == "tool") toolCount++
+                        xmlToolRelatedCount++
                     }
 
                     j++
                 }
 
-                if (toolCount > 0) {
+                if (shouldCollapseToolSequence(toolCollapseMode, toolCount, xmlToolRelatedCount)) {
                     out.add(
                         MarkdownGroupedItem.Group(
                             startIndex = i,
@@ -136,7 +138,7 @@ class ThinkToolsXmlNodeGrouper(
                     j++
                 }
 
-                if (toolCount >= 2 && xmlToolRelatedCount >= 2) {
+                if (shouldCollapseToolSequence(toolCollapseMode, toolCount, xmlToolRelatedCount)) {
                     out.add(
                         MarkdownGroupedItem.Group(
                             startIndex = i,
@@ -361,7 +363,7 @@ private fun shouldGroupToolByName(
     toolName: String?,
     toolCollapseMode: ToolCollapseMode
 ): Boolean {
-    if (toolCollapseMode == ToolCollapseMode.ALL) {
+    if (toolCollapseMode == ToolCollapseMode.ALL || toolCollapseMode == ToolCollapseMode.FULL) {
         return true
     }
 
@@ -379,4 +381,16 @@ private fun shouldGroupToolByName(
         "find_files",
         "visit_web"
     )
+}
+
+private fun shouldCollapseToolSequence(
+    toolCollapseMode: ToolCollapseMode,
+    toolCount: Int,
+    xmlToolRelatedCount: Int
+): Boolean {
+    if (xmlToolRelatedCount <= 0) return false
+    return when (toolCollapseMode) {
+        ToolCollapseMode.FULL -> true
+        ToolCollapseMode.READ_ONLY, ToolCollapseMode.ALL -> toolCount >= 2 && xmlToolRelatedCount >= 2
+    }
 }

@@ -15,6 +15,7 @@ import com.ai.assistance.operit.data.model.PromptFunctionType
 import com.ai.assistance.operit.data.model.ChatMessage
 import com.ai.assistance.operit.data.model.InputProcessingState
 import com.ai.assistance.operit.data.model.CharacterCardChatModelBindingMode
+import com.ai.assistance.operit.data.model.ActivePrompt
 import com.ai.assistance.operit.ui.features.chat.viewmodel.UiStateDelegate
 import com.ai.assistance.operit.data.preferences.CharacterCardManager
 import com.ai.assistance.operit.data.preferences.CharacterGroupCardManager
@@ -381,6 +382,8 @@ class MessageCoordinationDelegate(
         if (!proxySenderNameOverride.isNullOrBlank()) return false
         if (!messageTextOverride.isNullOrBlank()) return false
         if (!chatIdOverride.isNullOrBlank()) return false
+        val activePrompt = runBlocking { activePromptManager.getActivePrompt() }
+        if (activePrompt !is ActivePrompt.CharacterGroup) return false
         return true
     }
 
@@ -755,17 +758,25 @@ class MessageCoordinationDelegate(
     }
 
     private suspend fun resolveTargetGroupForChat(chatId: String): com.ai.assistance.operit.data.model.CharacterGroupCard? {
+        val activePrompt = activePromptManager.getActivePrompt()
+        val activeGroupId = (activePrompt as? ActivePrompt.CharacterGroup)
+            ?.id
+            ?.takeIf { it.isNotBlank() }
+        if (!activeGroupId.isNullOrBlank()) {
+            return characterGroupCardManager.getCharacterGroupCard(activeGroupId)
+        }
+
         val boundGroupId = chatHistoryDelegate.chatHistories.value
             .firstOrNull { it.id == chatId }
             ?.characterGroupId
             ?.takeIf { it.isNotBlank() }
-        val activePrompt = activePromptManager.getActivePrompt()
-        val activeGroupId =
-            (activePrompt as? com.ai.assistance.operit.data.model.ActivePrompt.CharacterGroup)
-                ?.id
-                ?.takeIf { it.isNotBlank() }
-        val targetGroupId = boundGroupId ?: activeGroupId ?: return null
-        return characterGroupCardManager.getCharacterGroupCard(targetGroupId)
+        if (!boundGroupId.isNullOrBlank()) {
+            AppLogger.d(
+                TAG,
+                "发送判定按当前选择执行，忽略会话绑定群组: chatId=$chatId, boundGroupId=$boundGroupId"
+            )
+        }
+        return null
     }
 
     private fun extractEffectiveSpeechContent(content: String): String {
