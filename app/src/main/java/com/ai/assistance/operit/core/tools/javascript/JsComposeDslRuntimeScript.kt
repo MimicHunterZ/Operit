@@ -63,7 +63,13 @@ internal fun buildComposeDslRuntimeWrappedScript(script: String): String {
                 if (typeof OperitComposeDslRuntime === 'undefined') {
                     throw new Error('OperitComposeDslRuntime bridge is not initialized');
                 }
-                var __bundle = OperitComposeDslRuntime.createContext(__runtimeOptions || {});
+                var __options = __runtimeOptions && typeof __runtimeOptions === 'object'
+                    ? Object.assign({}, __runtimeOptions)
+                    : {};
+                if (typeof __operit_call_runtime_ref === 'object' && __operit_call_runtime_ref) {
+                    __options.__operit_call_runtime = __operit_call_runtime_ref;
+                }
+                var __bundle = OperitComposeDslRuntime.createContext(__options);
                 var __entry = __operitResolveComposeEntry();
                 if (typeof __entry !== 'function') {
                     throw new Error(
@@ -113,14 +119,10 @@ internal fun buildComposeDslRuntimeWrappedScript(script: String): String {
                         __payload.__local === true);
 
                 function __operit_send_intermediate_result(__value) {
-                    if (
-                        typeof NativeInterface === 'undefined' ||
-                        !NativeInterface ||
-                        typeof NativeInterface.sendIntermediateResult !== 'function'
-                    ) {
+                    if (typeof sendIntermediateResult !== 'function') {
                         return;
                     }
-                    NativeInterface.sendIntermediateResult(JSON.stringify(__value));
+                    sendIntermediateResult(__value);
                 }
 
                 var __actionSettled = false;

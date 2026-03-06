@@ -45,32 +45,37 @@ export namespace Tasker {
     }
 
     /**
-     * Trigger a Tasker event
-     * 
-     * Sends an event to Tasker with the specified parameters.
-     * The event can be caught and processed by Tasker tasks.
-     * 
-     * @param params - Event parameters including task_type and optional arguments
-     * @returns Promise resolving to a status message from the native layer
-     * 
-     * @example
-     * ```typescript
-     * // Trigger a simple event
-     * await Tools.Tasker.triggerEvent({
-     *   task_type: "MyTaskEvent",
-     *   arg1: "param1",
-     *   arg2: "param2"
-     * });
-     * 
-     * // Trigger with JSON data
-     * await Tools.Tasker.triggerEvent({
-     *   task_type: "ComplexEvent",
-     *   args_json: JSON.stringify({
-     *     data: { key: "value" },
-     *     timestamp: Date.now()
-     *   })
-     * });
-     * ```
+     * Runtime Tasker API exposed under Tools.Tasker
      */
-    export function triggerEvent(params: TriggerTaskerEventParams): Promise<string>;
+    export interface Runtime {
+        /**
+         * Trigger a Tasker event
+         * 
+         * Sends an event to Tasker with the specified parameters.
+         * The event can be caught and processed by Tasker tasks.
+         * 
+         * @param params - Event parameters including task_type and optional arguments
+         * @returns Promise resolving to a status message from the native layer
+         * 
+         * @example
+         * ```typescript
+         * // Trigger a simple event
+         * await Tools.Tasker.triggerEvent({
+         *   task_type: "MyTaskEvent",
+         *   arg1: "param1",
+         *   arg2: "param2"
+         * });
+         * 
+         * // Trigger with JSON data
+         * await Tools.Tasker.triggerEvent({
+         *   task_type: "ComplexEvent",
+         *   args_json: JSON.stringify({
+         *     data: { key: "value" },
+         *     timestamp: Date.now()
+         *   })
+         * });
+         * ```
+         */
+        triggerEvent(params: TriggerTaskerEventParams): Promise<string>;
+    }
 }

@@ -20,8 +20,10 @@ import com.ai.assistance.operit.ui.features.chat.viewmodel.UiStateDelegate
 import com.ai.assistance.operit.data.preferences.CharacterCardManager
 import com.ai.assistance.operit.data.preferences.CharacterGroupCardManager
 import com.ai.assistance.operit.data.preferences.ActivePromptManager
+import com.ai.assistance.operit.data.preferences.DisplayPreferencesManager
 import com.ai.assistance.operit.util.ChatMarkupRegex
 import com.ai.assistance.operit.util.ChatUtils
+import com.ai.assistance.operit.util.LocaleUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -87,6 +89,7 @@ class MessageCoordinationDelegate(
     private val characterCardManager = CharacterCardManager.getInstance(context)
     private val characterGroupCardManager = CharacterGroupCardManager.getInstance(context)
     private val activePromptManager = ActivePromptManager.getInstance(context)
+    private val displayPreferencesManager = DisplayPreferencesManager.getInstance(context)
     private val plannerServiceManager = MultiServiceManager(context)
 
     init {
@@ -184,7 +187,8 @@ class MessageCoordinationDelegate(
         suppressUserMessageInHistory: Boolean = false,
         forceDisableSummary: Boolean = false,
         enableGroupOrchestration: Boolean = true,
-        isGroupOrchestrationTurn: Boolean = false
+        isGroupOrchestrationTurn: Boolean = false,
+        groupParticipantNamesText: String? = null
     ) {
         // 如果不是自动续写，更新当前的 promptFunctionType
         if (!isAutoContinuation) {
@@ -355,7 +359,8 @@ class MessageCoordinationDelegate(
             chatModelConfigIdOverride = resolvedChatModelConfigIdOverride,
             chatModelIndexOverride = resolvedChatModelIndexOverride,
             suppressUserMessageInHistory = suppressUserMessageInHistory,
-            isGroupOrchestrationTurn = isGroupOrchestrationTurn
+            isGroupOrchestrationTurn = isGroupOrchestrationTurn,
+            groupParticipantNamesText = groupParticipantNamesText
         )
 
         // 只有在非续写（即用户主动发送）时才清空附件和UI状态
@@ -482,6 +487,10 @@ class MessageCoordinationDelegate(
             }
             .filterValues { it != null }
             .mapValues { it.value!! }
+        val groupParticipantNamesText = buildGroupParticipantNamesText(
+            members = orderedMembers,
+            memberCardsById = memberCardsById
+        )
 
         val plannedRounds = planResponseOrder(
             userText = originalUserText,
@@ -569,7 +578,8 @@ class MessageCoordinationDelegate(
                     suppressUserMessageInHistory = userMessageInsertedForCurrentUserTurn,
                     forceDisableSummary = true,
                     enableGroupOrchestration = false,
-                    isGroupOrchestrationTurn = true
+                    isGroupOrchestrationTurn = true,
+                    groupParticipantNamesText = groupParticipantNamesText
                 )
                 userMessageInsertedForCurrentUserTurn = true
 
@@ -757,6 +767,24 @@ class MessageCoordinationDelegate(
 
             null
         }.getOrNull()
+    }
+
+    private suspend fun buildGroupParticipantNamesText(
+        members: List<com.ai.assistance.operit.data.model.GroupMemberConfig>,
+        memberCardsById: Map<String, CharacterCard>
+    ): String {
+        val useEnglish = LocaleUtils.getCurrentLanguage(context).lowercase().startsWith("en")
+        val userName = displayPreferencesManager.globalUserName.first()?.trim().orEmpty()
+        val formattedUserName = if (userName.isNotBlank()) {
+            "$userName（用户）"
+        } else {
+            "用户（用户）"
+        }
+        val participantNames = members
+            .sortedBy { it.orderIndex }
+            .mapNotNull { member -> memberCardsById[member.characterCardId]?.name?.trim()?.takeIf { it.isNotBlank() } }
+            .distinct() + formattedUserName
+        return if (useEnglish) participantNames.joinToString(", ") else participantNames.joinToString("、")
     }
 
     private suspend fun resolveTargetGroupForChat(chatId: String): com.ai.assistance.operit.data.model.CharacterGroupCard? {

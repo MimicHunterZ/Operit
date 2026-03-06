@@ -556,17 +556,18 @@ internal class PackageManagerToolPkgFacade(
         functionName: String,
         event: String,
         pluginId: String? = null,
-        eventPayload: Map<String, Any?> = emptyMap()
+        eventPayload: Map<String, Any?> = emptyMap(),
+        onIntermediateResult: ((Any?) -> Unit)? = null
     ): Result<Any?> {
         return runCatching {
             val normalizedPluginId = pluginId?.trim().orEmpty().ifBlank { null }
             val normalizedContainerPackageName = packageManager.normalizePackageName(containerPackageName)
             val runtime =
                 packageManager.toolPkgContainersInternal[normalizedContainerPackageName]
-                    ?: throw IllegalArgumentException("Toolpkg container not found: $containerPackageName")
+                    ?: throw IllegalArgumentException("ToolPkg container not found: $containerPackageName")
             val script =
                 packageManager.getToolPkgMainScriptInternal(runtime.packageName)
-                    ?: throw IllegalStateException("Toolpkg main script is unavailable: ${runtime.packageName}")
+                    ?: throw IllegalStateException("ToolPkg main script is unavailable: ${runtime.packageName}")
             val functionSource =
                 resolveToolPkgFunctionSource(
                     runtime = runtime,
@@ -583,8 +584,7 @@ internal class PackageManagerToolPkgFacade(
             "functionName" to functionName,
             "toolPkgId" to runtime.packageName,
             "containerPackageName" to runtime.packageName,
-            "__operit_ui_package_name" to runtime.packageName,
-            "__operit_persistent_module_key" to "toolpkg_main:" + runtime.packageName
+            "__operit_ui_package_name" to runtime.packageName
         )
             if (!normalizedPluginId.isNullOrBlank()) {
                 params["pluginId"] = normalizedPluginId
@@ -598,7 +598,8 @@ internal class PackageManagerToolPkgFacade(
             executionEngine.executeScriptFunction(
                 script = script,
                 functionName = functionName,
-                params = params
+                params = params,
+                onIntermediateResult = onIntermediateResult
             )
         }.onFailure { error ->
             val normalizedPluginId = pluginId?.trim().orEmpty().ifBlank { null }
@@ -652,10 +653,7 @@ internal class PackageManagerToolPkgFacade(
         params: Map<String, Any?>
     ): String {
         val explicitContextKey =
-            sequenceOf(
-                params["__operit_execution_context_key"],
-                params["__operit_persistent_module_key"]
-            )
+            sequenceOf(params["__operit_execution_context_key"])
                 .mapNotNull { it?.toString()?.trim() }
                 .firstOrNull { it.isNotBlank() }
         if (!explicitContextKey.isNullOrBlank()) {

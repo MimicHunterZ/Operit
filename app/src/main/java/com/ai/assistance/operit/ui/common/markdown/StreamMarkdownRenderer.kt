@@ -95,7 +95,8 @@ interface XmlContentRenderer {
         xmlContent: String,
         modifier: Modifier,
         textColor: Color,
-        xmlStream: Stream<String>?
+        xmlStream: Stream<String>?,
+        renderInstanceKey: Any?
     )
 }
 
@@ -103,9 +104,10 @@ interface XmlContentRenderer {
 fun XmlContentRenderer.RenderXmlContent(
     xmlContent: String,
     modifier: Modifier,
-    textColor: Color
+    textColor: Color,
+    renderInstanceKey: Any? = null
 ) {
-    RenderXmlContent(xmlContent, modifier, textColor, null)
+    RenderXmlContent(xmlContent, modifier, textColor, null, renderInstanceKey)
 }
 
 // 默认XML渲染器
@@ -115,7 +117,8 @@ class DefaultXmlRenderer : XmlContentRenderer {
         xmlContent: String,
         modifier: Modifier,
         textColor: Color,
-        xmlStream: Stream<String>?
+        xmlStream: Stream<String>?,
+        renderInstanceKey: Any?
     ) {
         val xmlBlockDesc = stringResource(R.string.xml_block)
         
@@ -1057,4 +1060,3 @@ internal fun extractLinkUrl(linkContent: String): String {
             }
     return result
 }
-

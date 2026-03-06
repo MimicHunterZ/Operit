@@ -1,6 +1,7 @@
 package com.ai.assistance.operit.core.tools.javascript
 
 internal fun buildExecutionScript(
+    callIdJson: String,
     paramsJson: String,
     scriptJson: String,
     functionNameJson: String,
@@ -13,8 +14,15 @@ internal fun buildExecutionScript(
 
     return """
         (function() {
+            var callId = $callIdJson;
             var params = $paramsJson;
             var targetFunctionName = $functionNameJson;
+
+            function getCallState() {
+                return typeof window.__operitGetCallState === 'function'
+                    ? window.__operitGetCallState(callId)
+                    : null;
+            }
 
             function readStringParam(name) {
                 try {
@@ -29,39 +37,78 @@ internal fun buildExecutionScript(
 
             function setStage(value) {
                 try {
-                    window.__operit_last_exec_stage = String(value || '');
+                    var callState = getCallState();
+                    if (callState) {
+                        callState.lastExecStage = String(value || '');
+                    }
+                } catch (_e) {
+                }
+            }
+
+            function setLastModulePath(value) {
+                try {
+                    var callState = getCallState();
+                    if (callState) {
+                        callState.lastModulePath = String(value || '');
+                    }
+                } catch (_e) {
+                }
+            }
+
+            function setRequireTrace(request, fromPath, resolvedPath) {
+                try {
+                    var callState = getCallState();
+                    if (callState) {
+                        callState.lastRequireRequest = String(request || '');
+                        callState.lastRequireFrom = String(fromPath || '');
+                        callState.lastRequireResolved = String(resolvedPath || '');
+                    }
                 } catch (_e) {
                 }
             }
 
             function clearExecutionTimeouts() {
                 try {
-                    if (window._safetyTimeout) {
-                        clearTimeout(window._safetyTimeout);
+                    var callState = getCallState();
+                    if (!callState) {
+                        return;
                     }
-                    if (window._safetyTimeoutFinal) {
-                        clearTimeout(window._safetyTimeoutFinal);
+                    if (callState.safetyTimeout) {
+                        clearTimeout(callState.safetyTimeout);
                     }
+                    if (callState.safetyTimeoutFinal) {
+                        clearTimeout(callState.safetyTimeoutFinal);
+                    }
+                    callState.safetyTimeout = null;
+                    callState.safetyTimeoutFinal = null;
                 } catch (_e) {
                 }
             }
 
             function emitResult(payload) {
-                if (window._hasCompleted) {
+                var callState = getCallState();
+                if (!callState || callState.completed) {
                     return;
                 }
-                window._hasCompleted = true;
+                callState.completed = true;
                 clearExecutionTimeouts();
-                NativeInterface.setResult(payload);
+                NativeInterface.setCallResult(callId, payload);
+                if (typeof window.__operitCleanupCallSession === 'function') {
+                    window.__operitCleanupCallSession(callId);
+                }
             }
 
             function emitError(message) {
-                if (window._hasCompleted) {
+                var callState = getCallState();
+                if (!callState || callState.completed) {
                     return;
                 }
-                window._hasCompleted = true;
+                callState.completed = true;
                 clearExecutionTimeouts();
-                NativeInterface.setError(String(message || 'Unknown error'));
+                NativeInterface.setCallError(callId, String(message || 'Unknown error'));
+                if (typeof window.__operitCleanupCallSession === 'function') {
+                    window.__operitCleanupCallSession(callId);
+                }
             }
 
             function normalizePath(rawPath) {
@@ -160,60 +207,282 @@ internal fun buildExecutionScript(
             }
 
             function createFactory(scriptText) {
-                return new Function('module', 'exports', 'require', scriptText);
+                var runtimePrelude = [
+                    "var sendIntermediateResult = __operit_call_runtime.sendIntermediateResult;",
+                    "var emit = __operit_call_runtime.emit;",
+                    "var delta = __operit_call_runtime.delta;",
+                    "var log = __operit_call_runtime.log;",
+                    "var update = __operit_call_runtime.update;",
+                    "var done = __operit_call_runtime.done;",
+                    "var complete = __operit_call_runtime.complete;",
+                    "var getEnv = __operit_call_runtime.getEnv;",
+                    "var getState = __operit_call_runtime.getState;",
+                    "var getLang = __operit_call_runtime.getLang;",
+                    "var getCallerName = __operit_call_runtime.getCallerName;",
+                    "var getChatId = __operit_call_runtime.getChatId;",
+                    "var getCallerCardId = __operit_call_runtime.getCallerCardId;",
+                    "var __handleAsync = __operit_call_runtime.handleAsync;",
+                    "var console = __operit_call_runtime.console;",
+                    "var reportDetailedError = __operit_call_runtime.reportDetailedError;",
+                    "var __operit_call_runtime_ref = __operit_call_runtime;"
+                ].join('\n');
+                return new Function('module', 'exports', 'require', '__operit_call_runtime', runtimePrelude + '\n' + scriptText);
             }
 
             try {
+                var registerCallSession =
+                    typeof window.__operitRegisterCallSession === 'function'
+                        ? window.__operitRegisterCallSession
+                        : null;
+                if (typeof registerCallSession !== 'function') {
+                    throw new Error('call session runtime unavailable');
+                }
+                var callState = registerCallSession(callId, params);
+
                 setStage('bootstrap');
-                window._hasCompleted = false;
-                clearExecutionTimeouts();
+                    clearExecutionTimeouts();
 
-                window.__operit_last_exec_function = targetFunctionName;
-                window.__operit_last_module_path = '';
-                window.__operit_last_require_request = '';
-                window.__operit_last_require_from = '';
-                window.__operit_last_require_resolved = '';
+                    callState.lastExecFunction = targetFunctionName;
+                    callState.lastModulePath = '';
+                    callState.lastRequireRequest = '';
+                    callState.lastRequireFrom = '';
+                    callState.lastRequireResolved = '';
 
-                var pluginId = readStringParam('__operit_plugin_id') || readStringParam('pluginId') || readStringParam('hookId');
-                if (pluginId) {
-                    window.__operit_active_plugin_id = pluginId;
-                } else {
-                    try {
-                        delete window.__operit_active_plugin_id;
-                    } catch (_deleteError) {
+                    var pluginId = readStringParam('__operit_plugin_id') || readStringParam('pluginId') || readStringParam('hookId');
+                    if (pluginId) {
+                        callState.activePluginId = pluginId;
+                    } else {
+                        try {
+                            delete callState.activePluginId;
+                        } catch (_deleteError) {
+                        }
                     }
-                }
 
-                window.__operit_package_state = readStringParam('__operit_package_state') || undefined;
-                window.__operit_package_lang =
-                    readStringParam('__operit_package_lang') ||
-                    (window.__operit_package_lang ? String(window.__operit_package_lang) : undefined);
-                window.__operit_package_caller_name = readStringParam('__operit_package_caller_name') || undefined;
-                window.__operit_package_chat_id = readStringParam('__operit_package_chat_id') || undefined;
-                window.__operit_package_caller_card_id = readStringParam('__operit_package_caller_card_id') || undefined;
+                    callState.safetyTimeout = setTimeout(function() {
+                        var activeCallState = getCallState();
+                        if (!activeCallState || activeCallState.completed) {
+                            return;
+                        }
+                        activeCallState.safetyTimeoutFinal = setTimeout(function() {
+                            emitError("Script execution timed out after $safeTimeoutSec seconds");
+                        }, 5000);
+                    }, $preTimeoutMs);
 
-                window._safetyTimeout = setTimeout(function() {
-                    if (window._hasCompleted) {
-                        return;
+                    function stringifyArgs(argsLike) {
+                        var textParts = [];
+                        for (var i = 0; i < argsLike.length; i += 1) {
+                            var value = argsLike[i];
+                            if (typeof value === 'string') {
+                                textParts.push(value);
+                            } else {
+                                try {
+                                    textParts.push(JSON.stringify(value));
+                                } catch (_e) {
+                                    textParts.push(String(value));
+                                }
+                            }
+                        }
+                        return textParts.join(' ');
                     }
-                    window._safetyTimeoutFinal = setTimeout(function() {
-                        emitError("Script execution timed out after $safeTimeoutSec seconds");
-                    }, 5000);
-                }, $preTimeoutMs);
 
-                var registrationMode = readStringParam('__operit_registration_mode').toLowerCase() === 'true';
-                var packageTarget = readStringParam('__operit_ui_package_name') || readStringParam('toolPkgId');
-                var screenPath = normalizePath(
-                    readStringParam('__operit_script_screen') ||
-                    (params && params.moduleSpec && params.moduleSpec.screen ? String(params.moduleSpec.screen) : '')
-                );
+                    function safeSerializeForCall(value) {
+                        try {
+                            return JSON.stringify(value);
+                        } catch (serializeError) {
+                            return JSON.stringify({
+                                error: 'Failed to serialize value',
+                                message: String(serializeError && serializeError.message ? serializeError.message : serializeError),
+                                value: String(value).substring(0, 1000)
+                            });
+                        }
+                    }
 
-                var persistentModuleKey = readStringParam('__operit_persistent_module_key');
-                if (!window.__operitPersistentModuleCache || typeof window.__operitPersistentModuleCache !== 'object') {
-                    window.__operitPersistentModuleCache = {};
-                }
+                    function normalizeComposeDslResult(value) {
+                        if (!value || typeof value !== 'object') {
+                            return value;
+                        }
+                        var composeDsl = value.composeDsl;
+                        if (!composeDsl || typeof composeDsl !== 'object') {
+                            return value;
+                        }
+                        if (!Object.prototype.hasOwnProperty.call(composeDsl, 'screen')) {
+                            return value;
+                        }
+                        var screenRef = composeDsl.screen;
+                        var resolved = '';
+                        if (typeof screenRef === 'function') {
+                            var marker = screenRef.__operit_toolpkg_module_path;
+                            if (typeof marker === 'string') {
+                                resolved = marker.trim().replace(/\\\\/g, '/');
+                            }
+                        } else if (screenRef && typeof screenRef === 'object' && typeof screenRef.default === 'function') {
+                            var defaultMarker = screenRef.default.__operit_toolpkg_module_path;
+                            if (typeof defaultMarker === 'string') {
+                                resolved = defaultMarker.trim().replace(/\\\\/g, '/');
+                            }
+                        } else if (typeof screenRef === 'string') {
+                            throw new Error("composeDsl.screen must be a compose_dsl screen function, not a string path");
+                        }
+                        if (!resolved) {
+                            throw new Error("composeDsl.screen is missing a toolpkg module path marker");
+                        }
+                        composeDsl.screen = resolved;
+                        return value;
+                    }
 
-                var moduleCache = {};
+                    function resolveActiveCallState() {
+                        var activeCallState = getCallState();
+                        if (!activeCallState || activeCallState.completed) {
+                            return null;
+                        }
+                        return activeCallState;
+                    }
+
+                    function emitIntermediatePayload(value) {
+                        var activeCallState = resolveActiveCallState();
+                        if (!activeCallState) {
+                            return;
+                        }
+                        NativeInterface.sendCallIntermediateResult(callId, safeSerializeForCall(value));
+                    }
+
+                    function completeForCall(value) {
+                        var activeCallState = resolveActiveCallState();
+                        if (!activeCallState) {
+                            return;
+                        }
+                        var normalizedResult = normalizeComposeDslResult(value);
+                        emitResult(safeSerializeForCall(normalizedResult));
+                    }
+
+                    function readCallContextValue(key, fallbackValue) {
+                        var activeCallState = getCallState();
+                        var currentParams =
+                            activeCallState && activeCallState.params && typeof activeCallState.params === 'object'
+                                ? activeCallState.params
+                                : null;
+                        var value = currentParams ? currentParams[key] : undefined;
+                        if (value === null || value === undefined || value === '') {
+                            return fallbackValue;
+                        }
+                        return String(value);
+                    }
+
+                    function getEnvForCall(key) {
+                        var name = String(key || '').trim();
+                        if (!name) {
+                            return undefined;
+                        }
+                        var value = NativeInterface.getEnvForCall(callId, name);
+                        if (value === null || value === undefined || value === '') {
+                            return undefined;
+                        }
+                        return String(value);
+                    }
+
+                    function handleAsyncForCall(possiblePromise) {
+                        if (!possiblePromise || typeof possiblePromise.then !== 'function') {
+                            return false;
+                        }
+
+                        Promise.resolve(possiblePromise)
+                            .then(function(result) {
+                                if (!resolveActiveCallState()) {
+                                    return;
+                                }
+                                completeForCall(result);
+                            })
+                            .catch(function(error) {
+                                if (!resolveActiveCallState()) {
+                                    return;
+                                }
+                                var report = null;
+                                try {
+                                    report = callRuntime.reportDetailedError(error, 'Async Promise Rejection');
+                                } catch (_reportError) {
+                                }
+                                if (report && typeof report === 'object') {
+                                    emitError(
+                                        JSON.stringify({
+                                            error: 'Promise rejection',
+                                            details: report.details,
+                                            formatted: report.formatted
+                                        })
+                                    );
+                                    return;
+                                }
+                                emitError(
+                                    'Promise rejection: ' +
+                                        String(error && error.stack ? error.stack : (error && error.message ? error.message : error))
+                                );
+                            });
+                        return true;
+                    }
+
+                    var callRuntime = {
+                        emit: emitIntermediatePayload,
+                        delta: emitIntermediatePayload,
+                        log: emitIntermediatePayload,
+                        update: emitIntermediatePayload,
+                        sendIntermediateResult: emitIntermediatePayload,
+                        done: completeForCall,
+                        complete: completeForCall,
+                        getEnv: getEnvForCall,
+                        getState: function() { return readCallContextValue('__operit_package_state', undefined); },
+                        getLang: function() { return readCallContextValue('__operit_package_lang', 'en'); },
+                        getCallerName: function() { return readCallContextValue('__operit_package_caller_name', undefined); },
+                        getChatId: function() { return readCallContextValue('__operit_package_chat_id', undefined); },
+                        getCallerCardId: function() { return readCallContextValue('__operit_package_caller_card_id', undefined); },
+                        reportDetailedError: function(error, context) {
+                            if (typeof window.__operitReportDetailedErrorForCall === 'function') {
+                                return window.__operitReportDetailedErrorForCall(callId, error, context);
+                            }
+                            return {
+                                formatted: String(context || 'unknown') + ': ' + String(error),
+                                details: { message: String(error), stack: String(error), lineNumber: 0 }
+                            };
+                        },
+                        console: {
+                            log: function() {
+                                NativeInterface.logInfoForCall(callId, stringifyArgs(arguments));
+                            },
+                            info: function() {
+                                NativeInterface.logInfoForCall(callId, stringifyArgs(arguments));
+                            },
+                            warn: function() {
+                                NativeInterface.logInfoForCall(callId, stringifyArgs(arguments));
+                            },
+                            error: function() {
+                                NativeInterface.logErrorForCall(callId, stringifyArgs(arguments));
+                            }
+                        },
+                        handleAsync: handleAsyncForCall
+                    };
+
+                    var sendIntermediateResult = callRuntime.sendIntermediateResult;
+                    var emit = callRuntime.emit;
+                    var delta = callRuntime.delta;
+                    var log = callRuntime.log;
+                    var update = callRuntime.update;
+                    var done = callRuntime.done;
+                    var complete = callRuntime.complete;
+                    var getEnv = callRuntime.getEnv;
+                    var getState = callRuntime.getState;
+                    var getLang = callRuntime.getLang;
+                    var getCallerName = callRuntime.getCallerName;
+                    var getChatId = callRuntime.getChatId;
+                    var getCallerCardId = callRuntime.getCallerCardId;
+                    var __handleAsync = callRuntime.handleAsync;
+                    var __operit_call_runtime = callRuntime;
+
+                    var registrationMode = readStringParam('__operit_registration_mode').toLowerCase() === 'true';
+                    var packageTarget = readStringParam('__operit_ui_package_name') || readStringParam('toolPkgId');
+                    var screenPath = normalizePath(
+                        readStringParam('__operit_script_screen') ||
+                        (params && params.moduleSpec && params.moduleSpec.screen ? String(params.moduleSpec.screen) : '')
+                    );
+
+                    var moduleCache = {};
 
                 function executeModule(modulePath, moduleText, requireInternal) {
                     if (moduleCache[modulePath]) {
@@ -221,7 +490,7 @@ internal fun buildExecutionScript(
                     }
 
                     setStage('execute_required_module');
-                    window.__operit_last_module_path = String(modulePath || '');
+                    setLastModulePath(modulePath);
 
                     var localModule = { exports: {} };
                     moduleCache[modulePath] = localModule;
@@ -236,7 +505,16 @@ internal fun buildExecutionScript(
                     };
 
                     var factory = createFactory(moduleText);
-                    factory(localModule, localModule.exports, localRequire);
+                    var previousActiveModule = window.__operitActiveModule;
+                    var previousActiveModuleExports = window.__operitActiveModuleExports;
+                    window.__operitActiveModule = localModule;
+                    window.__operitActiveModuleExports = localModule.exports;
+                    try {
+                        factory(localModule, localModule.exports, localRequire, callRuntime);
+                    } finally {
+                        window.__operitActiveModule = previousActiveModule;
+                        window.__operitActiveModuleExports = previousActiveModuleExports;
+                    }
 
                     if (typeof localModule.exports === 'function') {
                         try {
@@ -294,11 +572,9 @@ internal fun buildExecutionScript(
                     }
 
                     var resolvedModulePath = resolveModulePath(request, fromPath || screenPath);
-                    window.__operit_last_exec_stage = "require_module";
-                    window.__operit_last_require_request = request;
-                    window.__operit_last_require_from = String(fromPath || screenPath || '<root>');
-                    window.__operit_last_require_resolved = resolvedModulePath;
-                    window.__operit_last_module_path = resolvedModulePath;
+                    setStage("require_module");
+                    setRequireTrace(request, String(fromPath || screenPath || '<root>'), resolvedModulePath);
+                    setLastModulePath(resolvedModulePath);
 
                     if (registrationMode && /(^|\/)ui\/.+\.ui\.js$/i.test(String(resolvedModulePath || ''))) {
                         return createRegistrationScreenPlaceholder(resolvedModulePath);
@@ -313,31 +589,29 @@ internal fun buildExecutionScript(
                     return executeModule(loadedModule.path, loadedModule.text, requireInternal);
                 }
 
-                var moduleResult = null;
-                if (persistentModuleKey && window.__operitPersistentModuleCache[persistentModuleKey]) {
-                    moduleResult = window.__operitPersistentModuleCache[persistentModuleKey];
+                var module = { exports: {} };
+                var exports = module.exports;
+                var require = function(moduleName) {
+                    setStage("require_request");
+                    setRequireTrace(String(moduleName || ''), String(screenPath || '<root>'), '');
+                    return requireInternal(moduleName, screenPath);
+                };
+
+                setStage('compile_main_script');
+                var mainFactory = createFactory($scriptJson);
+                setStage('execute_main_script');
+                var previousActiveModule = window.__operitActiveModule;
+                var previousActiveModuleExports = window.__operitActiveModuleExports;
+                window.__operitActiveModule = module;
+                window.__operitActiveModuleExports = exports;
+                try {
+                    mainFactory(module, exports, require, callRuntime);
+                } finally {
+                    window.__operitActiveModule = previousActiveModule;
+                    window.__operitActiveModuleExports = previousActiveModuleExports;
                 }
 
-                if (!moduleResult) {
-                    var module = { exports: {} };
-                    var exports = module.exports;
-                    var require = function(moduleName) {
-                        window.__operit_last_exec_stage = "require_request";
-                        window.__operit_last_require_request = String(moduleName || '');
-                        window.__operit_last_require_from = String(screenPath || '<root>');
-                        return requireInternal(moduleName, screenPath);
-                    };
-
-                    setStage('compile_main_script');
-                    var mainFactory = createFactory($scriptJson);
-                    setStage('execute_main_script');
-                    mainFactory(module, exports, require);
-
-                    moduleResult = { module: module, exports: exports };
-                    if (persistentModuleKey) {
-                        window.__operitPersistentModuleCache[persistentModuleKey] = moduleResult;
-                    }
-                }
+                var moduleResult = { module: module, exports: module.exports };
 
                 var rootModule = moduleResult.module;
                 var rootExports = moduleResult.exports || (rootModule ? rootModule.exports : {}) || {};
@@ -392,70 +666,41 @@ internal fun buildExecutionScript(
                 }
 
                 setStage('invoke_target_function');
-                var previousModule = window.__operit_current_module;
-                var previousExports = window.__operit_current_module_exports;
-                window.__operit_current_module = rootModule;
-                window.__operit_current_module_exports = rootExports;
+                var previousModule = callState.currentModule;
+                var previousExports = callState.currentModuleExports;
+                var previousActiveModule = window.__operitActiveModule;
+                var previousActiveModuleExports = window.__operitActiveModuleExports;
+                callState.currentModule = rootModule;
+                callState.currentModuleExports = rootExports;
+                window.__operitActiveModule = rootModule;
+                window.__operitActiveModuleExports = rootExports;
                 var functionResult = null;
                 try {
                     functionResult = targetFunction(params);
                 } finally {
-                    window.__operit_current_module = previousModule;
-                    window.__operit_current_module_exports = previousExports;
+                    callState.currentModule = previousModule;
+                    callState.currentModuleExports = previousExports;
+                    window.__operitActiveModule = previousActiveModule;
+                    window.__operitActiveModuleExports = previousActiveModuleExports;
                 }
 
                 setStage('handle_function_result');
                 var handledAsync = false;
                 try {
-                    if (typeof __handleAsync === 'function') {
-                        handledAsync = __handleAsync(functionResult);
-                    }
+                    handledAsync = callRuntime.handleAsync(functionResult);
                 } catch (asyncError) {
                     throw asyncError;
                 }
 
                 if (!handledAsync) {
-                    function normalizeComposeDslResult(value) {
-                        if (!value || typeof value !== 'object') {
-                            return value;
-                        }
-                        var composeDsl = value.composeDsl;
-                        if (!composeDsl || typeof composeDsl !== 'object') {
-                            return value;
-                        }
-                        if (!Object.prototype.hasOwnProperty.call(composeDsl, 'screen')) {
-                            return value;
-                        }
-                        var screenRef = composeDsl.screen;
-                        var resolved = '';
-                        if (typeof screenRef === 'function') {
-                            var marker = screenRef.__operit_toolpkg_module_path;
-                            if (typeof marker === 'string') {
-                                resolved = marker.trim().replace(/\\\\/g, '/');
-                            }
-                        } else if (screenRef && typeof screenRef === 'object' && typeof screenRef.default === 'function') {
-                            var defaultMarker = screenRef.default.__operit_toolpkg_module_path;
-                            if (typeof defaultMarker === 'string') {
-                                resolved = defaultMarker.trim().replace(/\\\\/g, '/');
-                            }
-                        } else if (typeof screenRef === 'string') {
-                            throw new Error("composeDsl.screen must be a compose_dsl screen function, not a string path");
-                        }
-                        if (!resolved) {
-                            throw new Error("composeDsl.screen is missing a toolpkg module path marker");
-                        }
-                        composeDsl.screen = resolved;
-                        return value;
-                    }
-
                     var normalizedResult = normalizeComposeDslResult(functionResult);
-                    var serialized = JSON.stringify(normalizedResult);
+                    var serialized = safeSerializeForCall(normalizedResult);
                     emitResult(serialized);
                 }
             } catch (error) {
                 var runtimeContext =
                     typeof window.__operitBuildRuntimeContext === 'function'
-                        ? String(window.__operitBuildRuntimeContext() || '')
+                        ? String(window.__operitBuildRuntimeContext(callId) || '')
                         : '';
                 var runtimeContextText = runtimeContext ? ("\nRuntime Context: " + runtimeContext) : '';
                 var stackText = error && error.stack ? ("\nStack: " + String(error.stack)) : '';

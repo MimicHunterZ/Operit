@@ -257,6 +257,7 @@ object AIMessageManager {
         currentRoleName: String? = null,
         splitHistoryByRole: Boolean = false,
         groupOrchestrationMode: Boolean = false,
+        groupParticipantNamesText: String? = null,
         proxySenderName: String? = null,
         chatModelConfigIdOverride: String? = null,
         chatModelIndexOverride: Int? = null
@@ -353,6 +354,7 @@ object AIMessageManager {
                 avatarUri = avatarUri,
                 roleCardId = roleCardId,
                 enableGroupOrchestrationHint = groupOrchestrationMode,
+                groupParticipantNamesText = groupParticipantNamesText,
                 proxySenderName = proxySenderName,
                 chatModelConfigIdOverride = chatModelConfigIdOverride,
                 chatModelIndexOverride = chatModelIndexOverride,

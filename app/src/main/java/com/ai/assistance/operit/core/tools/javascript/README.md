@@ -1,426 +1,1087 @@
-# JavaScript 工具调用
+# Script 开发指南
 
-JavaScript 工具调用是一种功能强大的脚本机制，允许在 Android 应用中使用 JavaScript 编写自定义工具并与现有工具系统集成。本实现利用 WebView 执行 JavaScript 代码，并提供与原生代码的交互能力。
+本文只讨论当前脚本运行时真正重要的四件事：
 
-## 特性概览
+1. 模块系统与 `import/export` 支持边界
+2. Java / Kotlin Bridge 的用法
+3. 脚本模块被宿主调用时的执行模型
+4. `compose_dsl` 的编写方式
 
-- **完整的 JavaScript 支持**：使用标准 ES6+ JavaScript 语法
-- **第三方 JS 库**：内置了常用的工具库，如 Lodash 核心功能
-- **工具调用集成**：通过 `toolCall` 函数与现有工具系统无缝对接
-- **参数传递**：支持通过 `params` 对象访问传入的参数
-- **结果返回**：使用 `complete()` 函数返回执行结果
-- **错误处理**：支持 JavaScript 标准的 try-catch 错误处理
-- **异步操作**：支持 Promise 和异步/等待模式
-- **Java/Kotlin 类桥接**：支持 `Java.xxx` 包链语法糖 + `Java.type(...)`（Rhino 风格）
+本文**不讨论 metadata、manifest、打包描述字段**。
 
-## 使用指南
+---
 
-### 基本语法
+## 1. 先建立正确心智模型
 
-JavaScript 工具使用标准的 JavaScript 语法，支持 ES6+ 特性：
+Operit 当前脚本运行时不是 Node.js，也不是浏览器原生 ESM 运行时。
 
-```javascript
-// 使用参数
-const userId = params.userId;
+它更接近：
 
-// 计算和逻辑
-const result = Math.sqrt(16) + Math.pow(2, 3);
+- 一个宿主控制的 **CommonJS 风格模块执行器**
+- 一个按调用注入的 **局部运行时**
+- 一个可直接访问 Android / Java / Kotlin 的 **桥接环境**
+- 一个针对 UI 场景额外支持 `compose_dsl` 的 **声明式渲染运行时**
 
-// 使用函数和库
-const isEmpty = _.isEmpty([]);
+因此写脚本时，最重要的几条原则是：
 
-// 返回结果
-complete({
-    status: "success",
-    data: result
-});
-```
+- **把模块当成 CommonJS 写**：`require`、`exports`、`module.exports`
+- **把一次调用当成一次独立会话**：不要依赖跨调用模块单例
+- **把 stream 当成调用专属能力**：直接用宿主注入的 `sendIntermediateResult / emit / delta / log / update / done / complete`
+- **把 Java/Kotlin 当成桥接对象系统**：不是 TypeScript 类型直连，而是代理对象 + handle 生命周期
 
-### 参数使用
+---
 
-参数通过 `params` 对象传入，可以直接访问：
+## 2. 模块系统：实际支持什么
 
-```javascript
-// 访问参数
-const query = params.query || "默认查询";
-const limit = parseInt(params.limit) || 10;
+### 2.1 运行时支持的是 CommonJS，不是原生 ESM
 
-// 使用参数
-console.log(`查询: ${query}, 限制: ${limit}`);
-```
+运行时真正执行的 JS 模块形式是：
 
-### 工具调用
+```js
+const helper = require('./helper');
 
-使用 `toolCall` 函数调用其他工具：
-
-```javascript
-// 调用格式: toolCall(工具类型, 工具名称, 参数对象)
-const result = toolCall("default", "calculate", {
-    expression: "sqrt(16) + pow(2, 3)"
-});
-
-// 使用调用结果
-console.log("计算结果:", result);
-```
-
-工具调用可以嵌套或在条件语句中使用：
-
-```javascript
-// 条件调用
-if (toolCall("default", "file_exists", { path: "/sdcard/my_file.txt" })) {
-    const fileContent = toolCall("default", "read_file", { path: "/sdcard/my_file.txt" });
-    // 处理文件内容
+function run(params) {
+  return helper.work(params);
 }
+
+exports.run = run;
 ```
 
-### Java/Kotlin 类桥接
+或者：
 
-新模式提供两层 bridge：
-
-1. 高层 API：`Java` / `Kotlin`（推荐，Rhino 风格）  
-2. 底层 API：`NativeInterface.java*`（调试/底层控制）
-
-#### 高层 API（推荐）
-
-- `Java.xxx`：包路径链式获取类代理（推荐）
-- `Java.type(className)`：获取类代理
-- `Java.use(className)` / `Java.importClass(className)`：`type` 的别名
-- `Java.package(packageName)`：获取包命名空间代理
-- `Java.implement(interfaceNameOrNames, impl)`：创建 Java 接口实现标记（支持 `string`、`string[]`、`Java.xxx` 类代理）
-- `Java.implement(impl)`：省略接口名，交给目标参数类型推断（适合入参本身就是 interface）
-- `Java.proxy(...)`：`implement(...)` 的别名
-- **语法糖**：当 Java/Kotlin 方法参数是接口类型时，可直接传 JS 函数/对象，桥接会自动推断接口并创建代理（无需显式 `Java.implement`）
-- `Java.releaseJs(markerOrId)`：释放 `implement` 注册的 JS 回调对象
-- `Java.classExists(className)`：判断类是否存在
-- `Java.callStatic(className, methodName, ...args)`：直接调用静态方法
-- `Java.callSuspend(className, methodName, ...args, callback?)`：调用 Kotlin suspend 方法（回调或 Promise）
-- `Java.newInstance(className, ...args)`：直接创建实例
-- `Java.release(instanceOrHandle)`：释放单个实例句柄
-- `Java.releaseAll()`：释放当前引擎下全部实例句柄（返回释放数量）
-
-`Kotlin` 是 `Java` 的同义别名，API 完全一致。
-另外还支持包路径链式访问：`Java.java.lang.System.currentTimeMillis()`。
-内部类也支持点语法：`Java.android.os.Build.VERSION`、`Java.android.app.AlertDialog.Builder`。
-如遇到大小写不一致的类名，也可使用精确类名写法：`Java.android.os["Build$VERSION"]`。
-
-#### 类代理（`Java.type(...)` 返回值）
-
-- `Cls.exists()`：类是否存在
-- `Cls.newInstance(...args)`：创建实例
-- `new Cls(...args)`：语法糖，等价于 `Cls.newInstance(...)`
-- `Cls(...args)`：语法糖，等价于 `Cls.newInstance(...)`
-- `Cls.callStatic(methodName, ...args)`：调用静态方法
-- `Cls.callSuspend(methodName, ...args, callback?)`：调用 suspend 静态方法（回调或 Promise）
-- `Cls.getStatic(fieldName)`：读取静态字段/属性
-- `Cls.setStatic(fieldName, value)`：写入静态字段/属性
-- `Cls.someStaticMethod(...)`：动态静态方法调用（语法糖）
-- `Cls.someStaticField` / `Cls.someStaticField = x`：动态静态字段访问（语法糖）
-
-#### 实例代理（`newInstance` 返回值）
-
-- `obj.call(methodName, ...args)`：调用实例方法
-- `obj.callSuspend(methodName, ...args, callback?)`：调用 suspend 实例方法（回调或 Promise）
-- `obj.get(fieldName)`：读取字段/属性
-- `obj.set(fieldName, value)`：写入字段/属性
-- `obj.release()`：释放该实例句柄
-- `obj.someMethod(...)`：动态实例方法调用（语法糖）
-- `obj.someField` / `obj.someField = x`：动态字段访问（语法糖）
-
-#### 生命周期与释放（建议）
-
-- Java 对象跨桥接会以句柄形式持有，短生命周期对象建议在 `finally` 中显式 `release`。
-- `Java.implement(...)` / `Java.proxy(...)` 产生的回调标记建议用完后调用 `Java.releaseJs(...)`。
-- 运行时已接入自动回收（代理对象被 GC 后会尝试释放句柄），但 GC 时机不确定，仍建议关键路径显式释放。
-
-#### 接口实现代理（Java interface / implements）
-
-- `Java.implement("java.lang.Runnable", () => { ... })`：函数式实现（单方法接口最常见）
-- `Java.implement(Java.java.lang.Runnable, () => { ... })`：等价语法糖（类代理写法）
-- `Java.implement("com.xxx.Listener", { onStart(){}, onStop(){} })`：对象式实现（多方法）
-- `Java.implement(["a.InterfaceA", Java.b.InterfaceB], impl)`：一次声明多接口（目标参数为 `Object` 时尤其有用）
-- **语法糖**：JS 里直接传函数/对象给 Java（例如 `new Thread(() => {})` 或 `stream.collect({ emit(v){...} })`）也支持，桥接会自动推断接口
-- 回调对象不再使用时请调用 `Java.releaseJs(markerOrId)` 释放，避免持有多余引用
-
-示例 1：`Runnable`
-
-```javascript
-const Thread = Java.java.lang.Thread;
-const task = Java.implement(Java.java.lang.Runnable, () => {
-  console.log("run!");
-});
-new Thread(task).start();
-Java.releaseJs(task);
+```js
+module.exports = {
+  run(params) {
+    return { ok: true, params };
+  }
+};
 ```
 
-示例 2：对象式 listener
+当前运行时**直接支持**：
 
-```javascript
-const listener = Java.implement("com.example.Listener", {
-  onStart() {
-    console.log("start");
-  },
-  onData(value) {
-    return value + 1;
+- `require(...)`
+- `exports.xxx = ...`
+- `module.exports = ...`
+
+当前运行时**不直接执行**原生 ESM：
+
+```ts
+import { foo } from './foo';
+export function run() {}
+```
+
+如果你在 TypeScript 里想写 `import/export` 语法，可以，但前提是：
+
+- 最终编译产物必须落成 CommonJS 风格 JS
+- 不要把未转译的 ESM 直接丢给运行时
+
+推荐的 TypeScript 输出目标是 CommonJS。
+
+---
+
+### 2.2 `require` 的解析规则
+
+对于 toolpkg / 主脚本模块，`require` 支持以下几种形式。
+
+#### 相对路径
+
+```js
+const plan = require('./plan/PlanModeManager');
+const parser = require('../shared/parser');
+```
+
+#### 绝对包内路径
+
+```js
+const utils = require('/lib/utils');
+```
+
+#### JSON 模块
+
+```js
+const config = require('./config.json');
+```
+
+`.json` 会被自动解析为对象。
+
+#### 目录入口回退
+
+对于没有后缀的路径，运行时会按以下候选顺序尝试：
+
+- `name`
+- `name.js`
+- `name.json`
+- `name/index.js`
+- `name/index.json`
+
+也就是说，下面两种都可以：
+
+```js
+const mod = require('./foo');
+const mod2 = require('./foo/index');
+```
+
+---
+
+### 2.3 非相对模块：只支持运行时内建项
+
+当前并不是完整 npm 生态。
+
+运行时只内建了少数名字：
+
+- `lodash` → `_`
+- `uuid` → 提供 `v4()`
+- `axios` → 一个面向宿主 `http_request` 的轻量包装，不是完整 Node axios
+
+例如：
+
+```js
+const _ = require('lodash');
+const { v4 } = require('uuid');
+const axios = require('axios');
+```
+
+如果你写：
+
+```js
+require('fs');
+require('path');
+require('process');
+```
+
+这类 Node 内建模块**默认不支持**。
+
+---
+
+### 2.4 导出规则与推荐写法
+
+宿主执行一个模块时，会去找目标函数名对应的导出。
+
+推荐始终显式导出：
+
+```js
+async function onMessage(params) {
+  return { ok: true };
+}
+
+exports.onMessage = onMessage;
+```
+
+或者：
+
+```js
+module.exports = {
+  onMessage,
+  onXmlRender,
+  onAppStart,
+};
+```
+
+虽然运行时还会尝试一些附加路径（例如在某些场景下解析到注入函数或 `window` 上的函数），但**文档层面推荐只把 `exports/module.exports` 当成正式接口**。
+
+这样最稳定，也最利于拆分模块。
+
+---
+
+### 2.5 同一次调用内缓存，跨调用不缓存
+
+这是当前架构的一个关键点。
+
+**同一次调用内部**：
+
+- `require('./foo')` 多次，只会执行一次
+- 同调用内模块共享同一份 `exports`
+
+**不同调用之间**：
+
+- 主模块会重新求值
+- 子模块也会重新按本次调用加载
+- 不再保留跨调用 persistent module cache
+
+因此你应该这样理解模块状态：
+
+- **调用内可共享**
+- **调用间不要持久化依赖模块级状态**
+
+错误示例：
+
+```js
+let globalCounter = 0;
+
+exports.run = function () {
+  globalCounter += 1;
+  return globalCounter;
+};
+```
+
+不要假设它能跨多轮调用持续累加。
+
+---
+
+### 2.6 顶层代码与异步代码的边界
+
+模块顶层代码在加载阶段执行，仍然是同步加载语义。
+
+推荐把异步放进导出的函数里：
+
+```js
+async function run(params) {
+  const data = await toolCall('http_request', {
+    url: params.url,
+    method: 'GET'
+  });
+  return data;
+}
+
+exports.run = run;
+```
+
+而不要把模块初始化设计成依赖“顶层异步完成后再导出”。
+
+---
+
+## 3. 脚本模块被调用时，到底发生了什么
+
+### 3.1 宿主调用模型
+
+宿主调用脚本时，本质上是：
+
+- 建立一次新的调用会话
+- 分配一个新的 `callId`
+- 给这次调用注入一组**绑定好的局部运行时函数**
+- 执行目标模块
+- 查找指定导出函数
+- 用一个 `params` 对象调用它
+- 接收最终结果和中间流式结果
+
+换句话说，你应当把导出函数理解成：
+
+```ts
+type RuntimeEntry = (params: Record<string, unknown>) => unknown | Promise<unknown>
+```
+
+不是：
+
+- 多位置参数调用
+- 依赖全局当前上下文
+- 依赖宿主去猜这次 stream 属于谁
+
+---
+
+### 3.2 参数传递特点
+
+宿主调用目标函数时传入的是**单个对象参数**。
+
+例如：
+
+```js
+async function onMessage(params) {
+  const event = params.event;
+  const payload = params.eventPayload;
+  const pluginId = params.pluginId;
+  return { event, payload, pluginId };
+}
+
+exports.onMessage = onMessage;
+```
+
+因此推荐：
+
+- 永远假设入口只有一个 `params`
+- 所有扩展字段都挂在 `params` 上
+- 模块内部自己做字段收敛和校验
+
+---
+
+### 3.3 返回值模型
+
+你可以：
+
+- 直接返回普通对象
+- 返回字符串 / 数字 / 数组
+- 返回 `Promise`
+- 显式调用 `complete` / `done`
+
+例如：
+
+```js
+exports.runSync = function (params) {
+  return { ok: true, mode: 'sync', params };
+};
+
+exports.runAsync = async function (params) {
+  const data = await toolCall('http_request', {
+    url: params.url,
+    method: 'GET'
+  });
+  return { ok: true, data };
+};
+```
+
+如果你只是想“正常完成”，**直接 `return` 是最自然的写法**。
+
+只有当你确实要手动控制结束时，才使用：
+
+- `done(...)`
+- `complete(...)`
+
+---
+
+### 3.4 Stream：当前推荐用法
+
+对脚本开发者来说，最重要的结论只有一句：
+
+**不要自己管理调用上下文，不要自己猜归属，直接使用注入的 emitter。**
+
+当前每次调用都会注入一组**与本次调用绑定**的局部函数：
+
+- `sendIntermediateResult(...)`
+- `emit(...)`
+- `delta(...)`
+- `log(...)`
+- `update(...)`
+- `done(...)`
+- `complete(...)`
+
+它们都是**本次调用专属闭包**，所以可以安全跨过 `await`：
+
+```js
+exports.run = async function (params) {
+  log({ stage: 'start' });
+
+  const plan = await toolCall('http_request', {
+    url: params.url,
+    method: 'GET'
+  });
+
+  update({ stage: 'after-await', plan });
+
+  return { ok: true, plan };
+};
+```
+
+这套模型下，脚本作者需要遵守的规则是：
+
+- **直接调用 emitter**
+- **不要保存/推导/传递 callId**
+- **不要自己补 Promise 上下文传播**
+- **不要写“当前会话是谁”的全局逻辑**
+
+这部分已经属于引擎职责，不应该回到插件层处理。
+
+---
+
+### 3.5 `console` 与错误上报
+
+模块执行时，`console.log/info/warn/error` 也是按调用绑定的。
+
+也就是说：
+
+```js
+console.log('loading...');
+console.error('failed:', err);
+```
+
+会落到当前调用对应的日志通道，而不是依赖某个全局“当前活动调用”。
+
+另外，运行时也提供了按调用绑定的：
+
+```js
+reportDetailedError(error, 'some context');
+```
+
+通常你自己只需要在业务代码里用 `try/catch` 做正常错误整理；底层桥接错误、Promise rejection 和 console 路径已经由运行时接管。
+
+---
+
+### 3.6 当前调用可用的上下文读取函数
+
+在普通模块里，当前调用会注入这些便捷函数：
+
+- `getEnv(key)`
+- `getState()`
+- `getLang()`
+- `getCallerName()`
+- `getChatId()`
+- `getCallerCardId()`
+
+例如：
+
+```js
+exports.run = async function () {
+  const lang = getLang();
+  const apiKey = getEnv('OPENAI_API_KEY');
+  return { lang, hasApiKey: !!apiKey };
+};
+```
+
+这些函数同样是**本次调用绑定**的，不需要任何全局上下文。
+
+---
+
+## 4. `toolCall`、`Tools` 与宿主能力
+
+### 4.1 `toolCall` 是 Promise 风格
+
+当前运行时中的 `toolCall(...)` 是异步的，返回 `Promise`。
+
+支持几种常见写法：
+
+```js
+await toolCall('http_request', { url: 'https://example.com', method: 'GET' });
+await toolCall('default', 'http_request', { url: 'https://example.com', method: 'GET' });
+```
+
+推荐统一写成 `await` 风格，不要把它当同步函数使用。
+
+---
+
+### 4.2 `Tools` 是宿主预定义桥
+
+运行时也会注入 `Tools` 对象。它适合高层工具式调用；`toolCall` 更适合统一风格和动态调用。
+
+如果你在写通用模块、可复用 helper，优先推荐：
+
+- 对宿主工具能力用 `toolCall`
+- 对 Java/Kotlin 系统能力用 `Java`
+
+这样结构更清晰。
+
+---
+
+## 5. Java / Kotlin Bridge
+
+### 5.1 入口对象
+
+运行时会注入：
+
+- `Java`
+- `Kotlin`
+
+它们是同一个桥的两个别名。
+
+最常用的入口：
+
+- `Java.type(className)`
+- `Java.use(className)`
+- `Java.importClass(className)`
+- `Java.package(packageName)`
+- `Java.newInstance(className, ...args)`
+- `Java.callStatic(className, methodName, ...args)`
+- `Java.callSuspend(className, methodName, ...args)`
+
+---
+
+### 5.2 基本示例
+
+```js
+const StringBuilder = Java.type('java.lang.StringBuilder');
+const sb = new StringBuilder();
+// 也可以：const sb = StringBuilder();
+// 也可以：const sb = StringBuilder.newInstance();
+
+sb.append('hello ');
+sb.append('world');
+const text = sb.toString();
+
+Java.release(sb);
+```
+
+类访问 / 嵌套类访问语法糖：
+
+```js
+const Integer = Java.java.lang.Integer;
+const Build = Java.android.os.Build;
+const Version = Java.android.os.Build.VERSION;
+const AlertDialogBuilder = Java.android.app.AlertDialog.Builder;
+```
+
+静态字段 / 静态方法语法糖：
+
+```js
+const Integer = Java.java.lang.Integer;
+const Build = Java.android.os.Build;
+
+const maxValue = Integer.MAX_VALUE;
+const parsed = Integer.parseInt('123');
+
+const model = Build.MODEL;
+const sdkInt = Build.VERSION.SDK_INT;
+
+// 等价底层写法
+const parsedByApi = Java.callStatic('java.lang.Integer', 'parseInt', '123');
+```
+
+挂起调用既可以走顶层 API，也可以走类代理语法糖：
+
+```js
+const SomeBridge = Java.com.ai.assistance.operit.SomeBridge;
+
+const resultA = await SomeBridge.callSuspend('loadSomething', 'arg1');
+
+const resultB = await Java.callSuspend(
+  'com.ai.assistance.operit.SomeBridge',
+  'loadSomething',
+  'arg1'
+);
+```
+
+如果你手里拿到的是实例代理，也同样支持：
+
+```js
+const stream = await enhancedAIService.callSuspend('sendMessage', options);
+```
+
+推荐统一写成 `await ...callSuspend(...)`，不要把 suspend 方法当同步函数使用。
+
+---
+
+### 5.3 Java 类、实例、包代理
+
+桥里的对象不是 TypeScript 意义上的真实类实例，而是代理。
+
+#### 类代理
+
+```js
+const File = Java.type('java.io.File');
+const file = File.newInstance('/sdcard/test.txt');
+```
+
+#### 实例代理
+
+```js
+file.exists();
+file.getName();
+file.length();
+```
+
+#### 包代理
+
+```js
+const Runnable = Java.java.lang.Runnable;
+```
+
+这类代理支持：
+
+- `new Cls(...args)` / `Cls(...args)` / `Cls.newInstance(...args)`
+- `obj.method(...args)`，等价于 `obj.call('method', ...args)`
+- `obj.field` / `obj.field = value`，等价于 `obj.get('field')` / `obj.set('field', value)`
+- `Cls.STATIC_FIELD` / `Cls.STATIC_FIELD = value`，等价于 `Cls.getStatic('STATIC_FIELD')` / `Cls.setStatic('STATIC_FIELD', value)`
+- `Cls.staticMethod(...args)`，等价于 `Cls.callStatic('staticMethod', ...args)`
+- `Cls.InnerClass`，会按嵌套类解析成 `Outer$Inner`
+
+例如：
+
+```js
+const System = Java.java.lang.System;
+const now = System.currentTimeMillis();
+
+const ActivityLifecycleManager = Java.com.ai.assistance.operit.core.application.ActivityLifecycleManager;
+const activity = ActivityLifecycleManager.INSTANCE.getCurrentActivity();
+```
+
+对于 Kotlin 类代理上的静态方法调用，运行时还会自动尝试 `Companion` 回退；
+因此很多 `companion object` 方法也可以直接写成 `SomeKotlinClass.someMethod()`。
+
+---
+
+### 5.4 接口实现与回调
+
+你可以在 JS 里实现 Java 接口：
+
+```js
+const Runnable = Java.type('java.lang.Runnable');
+
+const runnable = Java.implement(Runnable, {
+  run() {
+    console.log('Runnable called from Java');
   }
 });
 ```
 
-#### 底层 NativeInterface bridge 函数（完整）
+或者 SAM 风格：
 
-- `NativeInterface.javaClassExists(className): boolean`
-- `NativeInterface.javaNewInstance(className, argsJson): string`
-- `NativeInterface.javaCallStatic(className, methodName, argsJson): string`
-- `NativeInterface.javaCallStaticSuspend(className, methodName, argsJson, callbackId): void`
-- `NativeInterface.javaCallInstance(instanceHandle, methodName, argsJson): string`
-- `NativeInterface.javaCallInstanceSuspend(instanceHandle, methodName, argsJson, callbackId): void`
-- `NativeInterface.javaGetStaticField(className, fieldName): string`
-- `NativeInterface.javaSetStaticField(className, fieldName, valueJson): string`
-- `NativeInterface.javaGetInstanceField(instanceHandle, fieldName): string`
-- `NativeInterface.javaSetInstanceField(instanceHandle, fieldName, valueJson): string`
-- `NativeInterface.javaReleaseInstance(instanceHandle): string`
-- `NativeInterface.javaReleaseAllInstances(): string`
-
-#### 内部 runtime hooks（通常无需手动调用）
-
-- `globalThis.__operitJavaBridgeInvokeJsObject(jsObjectId, methodName, args)`：供原生动态代理回调 JS 对象
-- `globalThis.__operitJavaBridgeReleaseJsObject(jsObjectId)`：释放 JS 回调对象注册项
-
-除 `javaClassExists` 外，其余 `java*` 方法返回统一 JSON：
-
-```json
-{ "success": true, "data": ... }
-```
-
-或
-
-```json
-{ "success": false, "error": "..." }
-```
-
-当 `data` 无法被 JSON 直接表示时，会返回句柄对象：
-
-```json
-{ "__javaHandle": "...", "__javaClass": "fully.qualified.ClassName" }
-```
-
-高层 API 会自动把这个句柄包装成实例代理对象。
-
-#### 参数/返回转换规则（关键）
-
-- JS `number/string/boolean/null/array/object` 会尽量映射到 Java 参数类型。
-- 复杂 Java 对象默认通过句柄跨桥接传递，不做深拷贝。
-- 字段访问优先字段，再 fallback 到 getter/setter（`getX/isX/setX`）。
-- 接口回调是同步桥接；若 Java 在主线程触发且该接口方法需要返回值，会报错（`void` 回调会记录日志并返回 `null`）。
-- 出错会抛 JS `Error`（高层 API）或返回 `success:false`（底层 API）。
-
-#### 示例
-
-可以通过 `Java.type("全限定类名")` 直接访问类的静态方法/字段，或创建实例后调用实例方法：
-
-```javascript
-const System = Java.type("java.lang.System");
-const now = System.currentTimeMillis();
-
-const StringBuilder = Java.type("java.lang.StringBuilder");
-const sb = StringBuilder.newInstance();
-sb.append("hello ");
-sb.append("operit");
-
-complete({
-    now,
-    text: sb.toString()
+```js
+const runnable = Java.implement('java.lang.Runnable', () => {
+  console.log('run');
 });
 ```
 
-包路径链式语法糖：
+如果调用位置本身能推断目标接口，也支持更短的写法：
 
-```javascript
-const now = Java.java.lang.System.currentTimeMillis();
-const ArrayList = Java.java.util.ArrayList;
-const Version = Java.android.os.Build.VERSION;
-const AlertDialogBuilder = Java.android.app.AlertDialog.Builder;
-const list = new ArrayList();
-list.add("a");
-list.add("b");
-complete({
-  now,
-  size: list.size(),
-  sdkInt: Number(Version.SDK_INT),
-  dialogBuilderExists: !!AlertDialogBuilder
+```js
+const runnable = Java.implement(() => {
+  console.log('run');
 });
 ```
 
-底层调用（不推荐常规使用）：
+`Java.proxy(...)` 只是 `Java.implement(...)` 的别名：
 
-```javascript
-const raw = NativeInterface.javaCallStatic(
-  "java.lang.System",
-  "currentTimeMillis",
-  "[]"
-);
-const parsed = JSON.parse(raw);
-if (!parsed.success) throw new Error(parsed.error);
-complete(parsed.data);
-```
-
-### 返回结果
-
-使用 `complete()` 函数返回结果：
-
-```javascript
-// 返回简单值
-complete("操作成功");
-
-// 返回复杂对象
-complete({
-    status: "success",
-    data: {
-        id: 123,
-        name: "测试数据",
-        items: [1, 2, 3]
-    },
-    timestamp: new Date().toISOString()
+```js
+const runnable = Java.proxy(Runnable, {
+  run() {
+    console.log('run via proxy alias');
+  }
 });
 ```
 
-如果未明确调用 `complete()`，脚本会自动返回一个默认结果。
+多接口实现也支持：
 
-### 错误处理
+```js
+const impl = Java.implement([
+  'java.lang.Runnable',
+  'java.io.Closeable'
+], {
+  run() {},
+  close() {}
+});
+```
 
-使用标准的 JavaScript 错误处理：
+除了显式 `Java.implement(...)` / `Java.proxy(...)`，**回调位置**还支持对象字面量语法糖：
 
-```javascript
+```js
+const ViewOnClickListener = Java.android.view.View.OnClickListener;
+
+button.setOnClickListener({
+  onClick(view) {
+    console.log('clicked', view);
+  }
+});
+
+const listener = ViewOnClickListener({
+  onClick(view) {
+    console.log('clicked from class proxy', view);
+  }
+});
+```
+
+这里的核心规则是：
+
+- 当 Java / Kotlin 方法或构造器的目标参数类型本身就是接口时，plain object 会自动适配成接口代理
+- 对象上的同名方法会映射到接口方法
+- `getX()` / `isX()` / `setX(v)` 这类 accessor，也可以映射到对象上的普通属性 `x`
+
+例如：
+
+```js
+someApi.setListener({
+  enabled: true,
+  onChanged(value) {
+    console.log('changed', value);
+  }
+});
+```
+
+如果接口方法是 `isEnabled()` / `getEnabled()` / `setEnabled(value)`，上面的 `enabled` 属性也可以被当成对应实现使用。
+
+回调参数和返回值仍然走普通桥接转换：
+
+- 参数会按桥接规则传回 JS
+- 非 `void` / 非 `Unit` 方法可以直接 `return`
+- `void` / `Unit` 回调可以不返回值
+
+桥内部会给这些 JS 对象分配对象 ID，并通过宿主回调回 JS。
+
+建议：
+
+- 单一 SAM 接口位置，可以优先用 `Java.implement(() => {})` 这种简写
+- 只是在某个方法调用点临时传 listener 时，优先用对象字面量回调，更短更直观
+- 需要多接口、方法名更明确、或者文档可读性更强时，优先显式写接口名 / 类代理
+- 不要把裸 JS 函数直接当普通桥接参数传给 Java；函数回调请走 `Java.implement(...)` / `Java.proxy(...)`
+
+---
+
+### 5.5 生命周期：一定要记得 release
+
+桥接实例背后对应 native handle。
+
+短生命周期对象推荐显式释放：
+
+```js
+const obj = Java.newInstance('java.lang.StringBuilder');
 try {
-    // 可能出错的代码
-    const data = JSON.parse(invalidJson);
-    complete(data);
-} catch (e) {
-    // 处理错误
-    console.log("发生错误:", e.message);
-    complete({
-        status: "error",
-        message: e.message
-    });
+  obj.append('abc');
+  return obj.toString();
+} finally {
+  Java.release(obj);
 }
 ```
 
-## 内置库说明
+可用 API：
 
-### Lodash 核心功能
+- `Java.release(instanceOrHandle)`
+- `Java.releaseJs(jsImplOrId)`
+- `Java.releaseAll()`
 
-提供常用的实用函数：
+建议：
 
-```javascript
-// 类型检查
-_.isString("test");  // true
-_.isNumber(42);      // true
-_.isArray([1,2,3]);  // true
-_.isObject({a:1});   // true
+- 普通临时实例：`try/finally + Java.release(...)`
+- JS 接口对象不再用时：`Java.releaseJs(...)`
+- 不要在业务代码里滥用 `releaseAll()`
 
-// 集合操作
-_.isEmpty([]);       // true
-_.forEach([1,2,3], item => console.log(item));
-_.map({a:1, b:2}, (v, k) => `${k}=${v}`);  // ["a=1", "b=2"]
+---
+
+### 5.6 桥接参数与返回值边界
+
+桥接直接支持：
+
+- `string`
+- `number`
+- `boolean`
+- `bigint`
+- `null`
+- `undefined`
+- 普通对象 / 数组
+- Java handle
+- JS 接口 marker
+
+复杂对象跨桥时会走序列化 / handle 包装逻辑。
+
+实际开发建议：
+
+- 简单参数直接传原始值
+- 复杂结构尽量传 plain object
+- 需要高保真调用时，优先把复杂逻辑放在 Java/Kotlin 侧，然后从 JS 调一个干净的桥接方法
+
+---
+
+## 6. `compose_dsl`
+
+`compose_dsl` 是一类特殊的运行时模块：它不是“返回普通 JSON 结果”，而是“返回一棵声明式 UI 树”。
+
+---
+
+### 6.1 入口函数长什么样
+
+`compose_dsl` 模块的入口应导出：
+
+- `default`
+- 或 `Screen`
+
+它们的签名都是：
+
+```ts
+type ComposeDslScreen = (ctx: ComposeDslContext) => ComposeNode | Promise<ComposeNode>
 ```
 
-### 数据工具库
+推荐写法：
 
-提供数据处理辅助函数：
-
-```javascript
-// JSON处理
-const obj = dataUtils.parseJson('{"name":"test"}');
-const json = dataUtils.stringifyJson({name:"test"});
-
-// 日期格式化
-const formattedDate = dataUtils.formatDate(new Date());
-```
-
-## 示例
-
-### 简单计算
-
-```javascript
-const a = 5;
-const b = 7;
-const result = a * b + Math.sqrt(a*a + b*b);
-complete(result);  // 返回 43.6023
-```
-
-### 参数使用与工具调用
-
-```javascript
-const query = params.query || "默认查询";
-const searchResult = toolCall("default", "search", {
-    query: query,
-    maxResults: 10
-});
-complete({
-    query: query,
-    results: searchResult
-});
-```
-
-### 数据处理
-
-```javascript
-// 示例JSON数据
-const data = {
-    users: [
-        { id: 1, name: "张三", age: 28 },
-        { id: 2, name: "李四", age: 32 },
-        { id: 3, name: "王五", age: 45 }
+```js
+function Screen(ctx) {
+  const { UI, Modifier } = ctx;
+  return UI.Column(
+    {
+      modifier: Modifier.padding(16)
+    },
+    [
+      UI.Text({ text: 'Hello compose_dsl' })
     ]
+  );
+}
+
+exports.default = Screen;
+```
+
+或者：
+
+```js
+exports.Screen = function Screen(ctx) {
+  return ctx.UI.Text({ text: 'Hello' });
 };
+```
 
-// 数据处理
-const userNames = data.users.map(user => user.name);
-const averageAge = data.users.reduce((sum, user) => sum + user.age, 0) / data.users.length;
+对于 UI 模块，**`default` / `Screen` 才是正式入口**。
 
-complete({
-    names: userNames,
-    averageAge: averageAge
+---
+
+### 6.2 `ctx` 里有什么
+
+`ComposeDslContext` 里最重要的是：
+
+#### 状态能力
+
+- `useState(key, initialValue)`
+- `useMutable(key, initialValue)`
+- `useRef(key, initialValue)`
+- `useMemo(key, factory, deps?)`
+
+#### UI 能力
+
+- `UI.*`
+- `Modifier`
+- `MaterialTheme`
+- `h(type, props, children)`
+
+#### 宿主能力
+
+- `callTool(...)`
+- `toolCall?(...)`
+- `getEnv(key)`
+- `setEnv(key, value)`
+- `readResource(key)`
+- `navigate(route, args?)`
+- `showToast(message)`
+- `reportError(error)`
+
+#### 包 / 模块身份
+
+- `getModuleSpec()`
+- `getCurrentPackageName()`
+- `getCurrentToolPkgId()`
+- `getCurrentUiModuleId()`
+
+#### 包管理能力（可选）
+
+- `isPackageImported(packageName)`
+- `importPackage(packageName)`
+- `removePackage(packageName)`
+- `usePackage(packageName)`
+- `listImportedPackages()`
+- `resolveToolName(request)`
+
+---
+
+### 6.3 一个最小的 `compose_dsl` 示例
+
+```js
+function Screen(ctx) {
+  const { UI, Modifier, useState } = ctx;
+  const [count, setCount] = useState('count', 0);
+
+  return UI.Column(
+    {
+      modifier: Modifier.padding(16),
+      verticalArrangement: 'center'
+    },
+    [
+      UI.Text({ text: `count = ${count}` }),
+      UI.Button(
+        {
+          text: '加一',
+          onClick: () => setCount(count + 1)
+        }
+      )
+    ]
+  );
+}
+
+exports.default = Screen;
+```
+
+这里有两个关键点：
+
+- 事件处理函数可以直接写 JS 函数
+- 状态变化后，宿主会驱动重新渲染
+
+---
+
+### 6.4 `compose_dsl` 的调用特点
+
+与普通模块不同，`compose_dsl` 更像“宿主控制的渲染循环”。
+
+你需要知道：
+
+- 首次进入时，宿主会调用 screen，拿到一棵 UI 树
+- 用户触发按钮、输入框、手势等动作后，宿主会分发 action
+- action 内如果有异步逻辑，宿主会在状态变化后自动推动中间渲染
+- 你不需要手动给 UI 自己发 `sendIntermediateResult` 来刷新界面
+
+也就是说：
+
+- **普通脚本的 stream** 由你自己在业务阶段调用 emitter
+- **compose_dsl 的界面更新** 主要通过状态变化驱动，运行时自动处理中间渲染
+
+这是两种不同层级的“流”。
+
+---
+
+### 6.5 `compose_dsl` 里的 `getEnv`
+
+普通模块里的 `getEnv` 是按调用注入的。
+
+在 `compose_dsl` 里，应该优先通过：
+
+```js
+ctx.getEnv('KEY')
+```
+
+而不是依赖某个全局 helper。
+
+这是因为当前 DSL 上下文已经会把本次调用的运行时能力显式挂进 `ctx`。
+
+---
+
+### 6.6 `compose_dsl` 里的工具调用
+
+```js
+async function Screen(ctx) {
+  const { UI, useState } = ctx;
+  const [text, setText] = useState('text', 'loading...');
+
+  return UI.Column({}, [
+    UI.Text({ text }),
+    UI.Button({
+      text: '加载',
+      onClick: async () => {
+        const data = await ctx.callTool('http_request', {
+          url: 'https://example.com',
+          method: 'GET'
+        });
+        setText(JSON.stringify(data));
+      }
+    })
+  ]);
+}
+
+exports.default = Screen;
+```
+
+推荐在 DSL 中统一走 `ctx.callTool(...)` 或 `ctx.toolCall(...)`，而不是把普通脚本里的 helper 直接硬搬过来。
+
+---
+
+### 6.7 资源与包操作
+
+#### 读取资源
+
+```js
+const path = await ctx.readResource('icon');
+```
+
+宿主返回的通常是一个可读路径或二进制内容。
+
+#### 包管理
+
+```js
+const imported = await ctx.isPackageImported('com.operit.xxx');
+if (!imported) {
+  await ctx.importPackage('com.operit.xxx');
+}
+```
+
+#### 解析工具名
+
+```js
+const toolName = await ctx.resolveToolName({
+  packageName: 'com.operit.xxx',
+  toolName: 'do_work'
 });
 ```
 
-## 与 OperScript 的区别
+---
 
-与原有的 OperScript 相比，JavaScript 工具调用具有以下优势：
+## 7. 推荐的模块写法
 
-1. **标准语法**：使用广泛采用的 JavaScript 语法，无需学习自定义语言
-2. **丰富的内置功能**：利用 JavaScript 内置的丰富功能和标准库
-3. **生态系统**：可以集成大量现有的 JavaScript 库
-4. **开发工具支持**：享受成熟的 JavaScript IDE 和开发工具支持
-5. **更灵活的错误处理**：使用标准的 try-catch 错误处理机制
-6. **更强大的数据处理**：支持现代 JavaScript 数组和对象操作方法
-7. **异步支持**：支持 Promise、async/await 等现代异步编程模式
+### 7.1 普通脚本 / hook 模块
 
-## 在代码中使用 JavaScript 工具
+```js
+const planner = require('./planner');
+const render = require('./render');
 
-```kotlin
-// 获取 JavaScript 工具管理器实例
-val jsToolManager = JsToolManager.getInstance(context, packageManager)
+async function onMessage(params) {
+  log({ stage: 'start' });
 
-// 创建要执行的工具
-val tool = AITool(
-    name = "CustomJsTool",
-    parameters = listOf(
-        ToolParameter(name = "param1", value = "value1"),
-        ToolParameter(name = "param2", value = "value2")
-    )
-)
+  const plan = await planner.build(params);
+  update({ stage: 'planned', plan });
 
-// 执行脚本
-val script = """
-    const result = "处理参数: " + params.param1 + ", " + params.param2;
-    complete(result);
-"""
-val result = jsToolManager.executeScript(script, tool)
-
-// 处理结果
-if (result.success) {
-    println("脚本执行结果: ${result.result}")
-} else {
-    println("脚本执行失败: ${result.error}")
+  const result = await render.run(plan, params);
+  return result;
 }
-``` 
+
+exports.onMessage = onMessage;
+```
+
+### 7.2 helper 模块
+
+```js
+async function build(params) {
+  return { tasks: [], raw: params };
+}
+
+exports.build = build;
+```
+
+### 7.3 `compose_dsl` 模块
+
+```js
+function Screen(ctx) {
+  const { UI } = ctx;
+  return UI.Text({ text: 'compose' });
+}
+
+exports.default = Screen;
+```
+
+---
+
+## 8. 强烈建议避免的写法
+
+### 8.1 不要依赖全局当前调用
+
+错误思路：
+
+```js
+// 不要自己猜当前调用是谁
+// 不要自己维护 callId
+```
+
+当前 runtime 已经把 emitter、日志、错误上报、上下文读取全部做成按调用绑定的局部能力。
+
+---
+
+### 8.2 不要把未转译的 ESM 直接交给运行时
+
+错误：
+
+```ts
+import { foo } from './foo';
+export const run = () => {};
+```
+
+如果没有编译到 CommonJS，就不要直接运行。
+
+---
+
+### 8.3 不要假设模块跨调用持久化
+
+错误：
+
+```js
+let cache = null;
+```
+
+不要依赖它跨调用保存状态。
+
+---
+
+### 8.4 不要在插件里手动处理 stream 归属
+
+错误方向：
+
+- 手动抓 `callId`
+- 手动写“当前活动调用”全局变量
+- 手动 patch Promise/微任务归属
+
+这些都属于引擎层，不属于脚本层。
+
+---
+
+## 9. 一页总结
+
+如果你只记四件事，就记这四件：
+
+1. **模块按 CommonJS 写**：`require`、`exports`、`module.exports`
+2. **一次调用就是一次新会话**：不要依赖跨调用模块状态
+3. **stream 直接用注入的 emitter**：`sendIntermediateResult / emit / delta / log / update / done / complete`
+4. **UI 用 `compose_dsl` 时导出 `default` 或 `Screen`**，业务能力都从 `ctx` 走
+
+---
+
+## 10. 相关类型定义
+
+建议同时参考：
+
+- `examples/types/java-bridge.d.ts`
+- `examples/types/compose-dsl.d.ts`
+
+这两份定义是理解当前脚本运行时边界最直接的入口。

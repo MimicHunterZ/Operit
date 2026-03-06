@@ -2,7 +2,7 @@
   "schema_version": 1,
   "toolpkg_id": "com.operit.linux_ssh_bundle",
   "version": "0.1.0",
-  "main": "main.js",
+  "main": "dist/main.js",
   "display_name": {
     "zh": "Linux SSH 工具包",
     "en": "Linux SSH Bundle"
@@ -14,7 +14,7 @@
   "subpackages": [
     {
       "id": "linux_ssh",
-      "entry": "packages/linux_ssh.js"
+      "entry": "dist/packages/linux_ssh.js"
     }
   ]
 }

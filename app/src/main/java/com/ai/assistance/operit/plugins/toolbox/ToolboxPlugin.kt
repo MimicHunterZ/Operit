@@ -78,7 +78,7 @@ private object ToolPkgAppLifecycleHookPlugin : AppLifecycleHookPlugin {
             result.onFailure { error ->
                 AppLogger.e(
                     TAG,
-                    "Toolpkg app lifecycle hook failed: ${hook.containerPackageName}:${hook.hookId}",
+                    "ToolPkg app lifecycle hook failed: ${hook.containerPackageName}:${hook.hookId}",
                     error
                 )
             }

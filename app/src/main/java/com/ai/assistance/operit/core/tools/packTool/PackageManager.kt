@@ -50,7 +50,7 @@ class PackageManager
 private constructor(private val context: Context, private val aiToolHandler: AIToolHandler) {
     companion object {
         private const val TAG = "PackageManager"
-        private const val TOOLPKG_TAG = "Toolpkg"
+        private const val TOOLPKG_TAG = "ToolPkg"
         private const val PACKAGES_DIR = "packages" // Directory for packages
         private const val ASSETS_PACKAGES_DIR = "packages" // Directory in assets for packages
         private const val PACKAGE_PREFS = "com.ai.assistance.operit.core.tools.PackageManager"
@@ -480,14 +480,16 @@ private constructor(private val context: Context, private val aiToolHandler: AIT
         functionName: String,
         event: String,
         pluginId: String? = null,
-        eventPayload: Map<String, Any?> = emptyMap()
+        eventPayload: Map<String, Any?> = emptyMap(),
+        onIntermediateResult: ((Any?) -> Unit)? = null
     ): Result<Any?> {
         return toolPkgFacade.runToolPkgMainHook(
             containerPackageName = containerPackageName,
             functionName = functionName,
             event = event,
             pluginId = pluginId,
-            eventPayload = eventPayload
+            eventPayload = eventPayload,
+            onIntermediateResult = onIntermediateResult
         )
     }
 
@@ -1199,7 +1201,7 @@ private constructor(private val context: Context, private val aiToolHandler: AIT
 
             val message =
                 if (containerAlreadyImported) {
-                    "Toolpkg container '$normalizedPackageName' is already enabled"
+                    "ToolPkg container '$normalizedPackageName' is already enabled"
                 } else {
                     "Successfully enabled toolpkg container: $normalizedPackageName"
                 }
@@ -1246,7 +1248,7 @@ private constructor(private val context: Context, private val aiToolHandler: AIT
 
         val containerRuntime = toolPkgContainers[normalizedPackageName]
         if (containerRuntime != null) {
-            return "Toolpkg container '$normalizedPackageName' is not a package and cannot be activated."
+            return "ToolPkg container '$normalizedPackageName' is not a package and cannot be activated."
         }
 
         // First check if packageName is a standard imported package (priority)
@@ -1255,7 +1257,7 @@ private constructor(private val context: Context, private val aiToolHandler: AIT
         if (subpackageRuntime != null &&
             !importedPackages.contains(subpackageRuntime.containerPackageName)
         ) {
-            return "Toolpkg container '${subpackageRuntime.containerPackageName}' is not enabled. Package '$normalizedPackageName' is inactive."
+            return "ToolPkg container '${subpackageRuntime.containerPackageName}' is not enabled. Package '$normalizedPackageName' is inactive."
         }
         if (importedPackages.contains(normalizedPackageName)) {
             // Load the full package data for a standard package
@@ -1390,7 +1392,7 @@ private constructor(private val context: Context, private val aiToolHandler: AIT
                 toolName = toolName,
                 success = false,
                 result = StringResultData(""),
-                error = "Toolpkg container '$normalizedPackageName' is not a package and cannot be activated."
+                error = "ToolPkg container '$normalizedPackageName' is not a package and cannot be activated."
             )
         }
 
@@ -1803,7 +1805,7 @@ private constructor(private val context: Context, private val aiToolHandler: AIT
             return if (packageWasRemoved) {
                 "Successfully disabled toolpkg container: $normalizedPackageName"
             } else {
-                "Toolpkg container is already disabled: $normalizedPackageName"
+                "ToolPkg container is already disabled: $normalizedPackageName"
             }
         }
 

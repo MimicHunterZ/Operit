@@ -1,35 +1,30 @@
 package com.ai.assistance.operit.core.tools.javascript
 
 internal class JsToolPkgExecutionContext {
-    @Volatile
-    private var activePluginIdForLogs: String = ""
-    @Volatile
-    private var activeFunctionForLogs: String = ""
-    @Volatile
-    private var activeScriptContextForLogs: String = ""
+    data class LogSnapshot(
+        val pluginIdForLogs: String,
+        val functionForLogs: String,
+        val scriptContextForLogs: String
+    )
 
     private val tempTextResourceResolverLock = Any()
     @Volatile
     private var tempTextResourceResolver: ((String, String) -> String?)? = null
 
-    fun begin(script: String, functionName: String, params: Map<String, Any?>) {
-        activePluginIdForLogs = resolvePluginIdForLogs(params, functionName)
-        activeFunctionForLogs = functionName.trim()
-        activeScriptContextForLogs = buildScriptContextSnippet(script, functionName)
+    fun capture(script: String, functionName: String, params: Map<String, Any?>): LogSnapshot {
+        return LogSnapshot(
+            pluginIdForLogs = resolvePluginIdForLogs(params, functionName),
+            functionForLogs = functionName.trim(),
+            scriptContextForLogs = buildScriptContextSnippet(script, functionName)
+        )
     }
 
-    fun clear() {
-        activePluginIdForLogs = ""
-        activeFunctionForLogs = ""
-        activeScriptContextForLogs = ""
+    fun hasActivePluginIdForLogs(snapshot: LogSnapshot?): Boolean {
+        return !snapshot?.pluginIdForLogs.isNullOrBlank()
     }
 
-    fun hasActivePluginIdForLogs(): Boolean {
-        return activePluginIdForLogs.isNotBlank()
-    }
-
-    fun withPluginTag(message: String): String {
-        val pluginId = compactPluginId(activePluginIdForLogs)
+    fun withPluginTag(snapshot: LogSnapshot?, message: String): String {
+        val pluginId = compactPluginId(snapshot?.pluginIdForLogs.orEmpty())
         val normalized =
             message.replace(Regex("""\[plugin=([^\]]+)]""")) { matchResult ->
                 "[${compactPluginId(matchResult.groupValues[1])}]"
@@ -40,9 +35,9 @@ internal class JsToolPkgExecutionContext {
         return "[$pluginId] $normalized"
     }
 
-    fun withCodeContext(message: String): String {
-        val functionName = activeFunctionForLogs.trim()
-        val scriptContext = activeScriptContextForLogs.trim()
+    fun withCodeContext(snapshot: LogSnapshot?, message: String): String {
+        val functionName = snapshot?.functionForLogs?.trim().orEmpty()
+        val scriptContext = snapshot?.scriptContextForLogs?.trim().orEmpty()
         if (functionName.isBlank() && scriptContext.isBlank()) {
             return message
         }

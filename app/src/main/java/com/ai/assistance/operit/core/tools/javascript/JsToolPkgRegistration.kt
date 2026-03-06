@@ -176,7 +176,10 @@ internal fun buildToolPkgRegistrationBridgeScript(): String {
             var resolvedFunction = '';
             var functionSource = '';
             if (typeof rawFunction === 'function') {
-                var exportsRef = window.__operit_current_module_exports;
+                var exportsRef =
+                    (typeof window.__operitGetActiveModuleExports === 'function')
+                        ? window.__operitGetActiveModuleExports()
+                        : null;
                 if (exportsRef && typeof exportsRef === 'object') {
                     var exportKeys = Object.keys(exportsRef);
                     for (var i = 0; i < exportKeys.length; i += 1) {
@@ -224,7 +227,10 @@ internal fun buildToolPkgRegistrationBridgeScript(): String {
             var resolvedFunction = '';
             var functionSource = '';
             if (typeof rawFunction === 'function') {
-                var exportsRef = window.__operit_current_module_exports;
+                var exportsRef =
+                    (typeof window.__operitGetActiveModuleExports === 'function')
+                        ? window.__operitGetActiveModuleExports()
+                        : null;
                 if (exportsRef && typeof exportsRef === 'object') {
                     var exportKeys = Object.keys(exportsRef);
                     for (var i = 0; i < exportKeys.length; i += 1) {

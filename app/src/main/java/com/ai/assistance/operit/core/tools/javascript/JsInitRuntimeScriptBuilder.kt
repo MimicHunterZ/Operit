@@ -5,7 +5,6 @@ import org.json.JSONObject
 internal fun buildInitRuntimeScript(
     operitDownloadDir: String,
     operitCleanOnExitDir: String,
-    asyncPromiseTimeoutSeconds: Long,
     toolPkgRegistrationBridgeScript: String,
     jsToolsDefinition: String,
     composeDslContextBridgeDefinition: String,
@@ -18,9 +17,6 @@ internal fun buildInitRuntimeScript(
     okHttp3JsScript: String,
     pakoJsBridgeScript: String
 ): String {
-    val safeAsyncTimeoutSeconds = if (asyncPromiseTimeoutSeconds <= 0L) 1L else asyncPromiseTimeoutSeconds
-    val safeAsyncTimeoutMs = safeAsyncTimeoutSeconds * 1000L
-
     return """
         (function() {
             function hasNative(methodName) {
@@ -92,50 +88,131 @@ internal fun buildInitRuntimeScript(
                 }
             }
 
-            window.__operitBuildRuntimeContext = function() {
+            function normalizeCallId(value) {
+                return asString(value).trim();
+            }
+
+            function ensureCallRegistry() {
+                if (!window.__operitCallRegistry || typeof window.__operitCallRegistry !== 'object') {
+                    window.__operitCallRegistry = {};
+                }
+                return window.__operitCallRegistry;
+            }
+
+            function getCallState(callId) {
+                var resolvedCallId = normalizeCallId(callId);
+                if (!resolvedCallId) {
+                    return null;
+                }
+                var registry = ensureCallRegistry();
+                var state = registry[resolvedCallId];
+                if (!state || typeof state !== 'object') {
+                    return null;
+                }
+                return state;
+            }
+
+            function clearCallTimers(callState) {
+                if (!callState || typeof callState !== 'object') {
+                    return;
+                }
                 try {
+                    if (callState.safetyTimeout) {
+                        clearTimeout(callState.safetyTimeout);
+                    }
+                    if (callState.safetyTimeoutFinal) {
+                        clearTimeout(callState.safetyTimeoutFinal);
+                    }
+                } catch (_e) {
+                }
+                callState.safetyTimeout = null;
+                callState.safetyTimeoutFinal = null;
+            }
+
+            function registerCallSession(callId, params) {
+                var resolvedCallId = normalizeCallId(callId);
+                if (!resolvedCallId) {
+                    throw new Error('callId is required');
+                }
+                var registry = ensureCallRegistry();
+                var existing = registry[resolvedCallId];
+                var callState = (existing && typeof existing === 'object') ? existing : {};
+                callState.callId = resolvedCallId;
+                callState.params = params && typeof params === 'object' ? params : {};
+                callState.completed = false;
+                callState.safetyTimeout = null;
+                callState.safetyTimeoutFinal = null;
+                callState.lastExecStage = '';
+                callState.lastExecFunction = '';
+                callState.lastModulePath = '';
+                callState.lastRequireRequest = '';
+                callState.lastRequireFrom = '';
+                callState.lastRequireResolved = '';
+                callState.currentModule = null;
+                callState.currentModuleExports = null;
+                registry[resolvedCallId] = callState;
+                return callState;
+            }
+
+            function cleanupCallSession(callId) {
+                var resolvedCallId = normalizeCallId(callId);
+                if (!resolvedCallId) {
+                    return;
+                }
+                var registry = ensureCallRegistry();
+                var callState = registry[resolvedCallId];
+                clearCallTimers(callState);
+                delete registry[resolvedCallId];
+            }
+
+            function cancelCallSession(callId) {
+                var callState = getCallState(callId);
+                if (!callState || callState.completed) {
+                    return false;
+                }
+                callState.completed = true;
+                clearCallTimers(callState);
+                return true;
+            }
+
+            installGlobal("__operitGetCallState", getCallState);
+            installGlobal("__operitRegisterCallSession", registerCallSession);
+            installGlobal("__operitCleanupCallSession", cleanupCallSession);
+            installGlobal("__operitCancelCallSession", cancelCallSession);
+
+            window.__operitGetActiveModuleExports = function() {
+                var exportsRef = window.__operitActiveModuleExports;
+                if (exportsRef && typeof exportsRef === 'object') {
+                    return exportsRef;
+                }
+                return null;
+            };
+
+            window.__operitBuildRuntimeContext = function(callId) {
+                try {
+                    var callState = getCallState(callId);
                     var mapping = [
-                        ["__operit_last_exec_stage", "stage"],
-                        ["__operit_last_exec_function", "function"],
-                        ["__operit_last_module_path", "module"],
-                        ["__operit_last_require_request", "require"],
-                        ["__operit_last_require_from", "from"],
-                        ["__operit_last_require_resolved", "resolved"]
+                        ['lastExecStage', 'stage'],
+                        ['lastExecFunction', 'function'],
+                        ['lastModulePath', 'module'],
+                        ['lastRequireRequest', 'require'],
+                        ['lastRequireFrom', 'from'],
+                        ['lastRequireResolved', 'resolved']
                     ];
                     var contextParts = [];
                     for (var i = 0; i < mapping.length; i += 1) {
                         var key = mapping[i][0];
                         var label = mapping[i][1];
-                        var value = window[key];
+                        var value = callState ? callState[key] : undefined;
                         if (value !== null && value !== undefined && asString(value).trim().length > 0) {
-                            contextParts.push(label + "=" + asString(value));
+                            contextParts.push(label + '=' + asString(value));
                         }
                     }
-                    return contextParts.join(", ");
+                    return contextParts.join(', ');
                 } catch (_e) {
-                    return "";
+                    return '';
                 }
             };
-
-            function runtimeContextSuffix() {
-                var context = '';
-                if (typeof window.__operitBuildRuntimeContext === 'function') {
-                    context = asString(window.__operitBuildRuntimeContext()).trim();
-                }
-                if (!context) {
-                    return "\nRuntime Context: unavailable (error happened before runtime stage markers)";
-                }
-                return "\nRuntime Context: " + context;
-            }
-
-            function emitFatalError(message) {
-                if (window._hasCompleted) {
-                    return;
-                }
-                window._hasCompleted = true;
-                var finalMessage = asString(message || "Unknown error");
-                callNativeOptional("setError", finalMessage);
-            }
 
             window.formatErrorDetails = function(error) {
                 var name = asString(error && error.name ? error.name : "Error");
@@ -164,20 +241,36 @@ internal fun buildInitRuntimeScript(
                 };
             };
 
-            window.reportDetailedError = function(error, context) {
+            window.__operitReportDetailedErrorForCall = function(callId, error, context) {
                 var details = window.formatErrorDetails(error);
                 var title = asString(context || "unknown");
-                callNativeOptional(
-                    "reportError",
-                    asString(details.details.name || "Error"),
-                    asString(details.details.message || ""),
-                    Number(details.details.lineNumber) || 0,
-                    asString(details.details.stack || "")
-                );
+                var resolvedCallId = normalizeCallId(callId);
+                if (resolvedCallId) {
+                    callNativeOptional(
+                        "reportErrorForCall",
+                        resolvedCallId,
+                        asString(details.details.name || "Error"),
+                        asString(details.details.message || ""),
+                        Number(details.details.lineNumber) || 0,
+                        asString(details.details.stack || "")
+                    );
+                } else {
+                    callNativeOptional(
+                        "reportError",
+                        asString(details.details.name || "Error"),
+                        asString(details.details.message || ""),
+                        Number(details.details.lineNumber) || 0,
+                        asString(details.details.stack || "")
+                    );
+                }
                 return {
                     formatted: "Context: " + title + "\n" + details.formatted,
                     details: details.details
                 };
+            };
+
+            window.reportDetailedError = function(error, context) {
+                return window.__operitReportDetailedErrorForCall('', error, context);
             };
 
             window.onerror = function(message, source, lineno, colno, error) {
@@ -187,26 +280,8 @@ internal fun buildInitRuntimeScript(
                 var column = Number(colno) || 0;
                 var stack = asString(error && error.stack ? error.stack : "No stack trace");
 
-                var hasSource = sourceText.trim().length > 0 && sourceText !== "unknown";
-                var hasLine = line > 0;
-                var hasColumn = column > 0;
-                var hasStack = stack.trim().length > 0 && stack !== "No stack trace";
-                var isOpaqueScriptError =
-                    msg.trim() === "Script error." &&
-                    !hasSource &&
-                    !hasLine &&
-                    !hasColumn &&
-                    !hasStack;
-
-                if (isOpaqueScriptError) {
-                    emitFatalError(
-                        "JavaScript Error: Script error. at line 0, column 0 in unknown\nStack: No stack trace" +
-                            runtimeContextSuffix()
-                    );
-                    return true;
-                }
-
-                emitFatalError(
+                callNativeOptional(
+                    "logError",
                     "JavaScript Error: " +
                         msg +
                         " at line " +
@@ -216,8 +291,7 @@ internal fun buildInitRuntimeScript(
                         " in " +
                         sourceText +
                         "\nStack: " +
-                        stack +
-                        runtimeContextSuffix()
+                        stack
                 );
                 return true;
             };
@@ -225,7 +299,8 @@ internal fun buildInitRuntimeScript(
             window.onunhandledrejection = function(event) {
                 var reason = event ? event.reason : "Unknown promise rejection";
                 var report = window.reportDetailedError(reason, "Unhandled Promise Rejection");
-                emitFatalError(
+                callNativeOptional(
+                    "logError",
                     JSON.stringify({
                         error: "Promise rejection",
                         details: report.details,
@@ -398,43 +473,6 @@ internal fun buildInitRuntimeScript(
             }
             installGlobal("toolCall", toolCall);
 
-            function getEnv(key) {
-                var name = asString(key).trim();
-                if (!name) {
-                    return undefined;
-                }
-                var value = callNativeOptional("getEnv", name);
-                if (value === null || value === undefined || value === "") {
-                    return undefined;
-                }
-                return asString(value);
-            }
-            installGlobal("getEnv", getEnv);
-
-            function readWindowContext(key, fallbackValue) {
-                try {
-                    var value = window[key];
-                    if (value === null || value === undefined || value === "") {
-                        return fallbackValue;
-                    }
-                    return asString(value);
-                } catch (_e) {
-                    return fallbackValue;
-                }
-            }
-
-            function getState() { return readWindowContext("__operit_package_state", undefined); }
-            function getLang() { return readWindowContext("__operit_package_lang", "en"); }
-            function getCallerName() { return readWindowContext("__operit_package_caller_name", undefined); }
-            function getChatId() { return readWindowContext("__operit_package_chat_id", undefined); }
-            function getCallerCardId() { return readWindowContext("__operit_package_caller_card_id", undefined); }
-
-            installGlobal("getState", getState);
-            installGlobal("getLang", getLang);
-            installGlobal("getCallerName", getCallerName);
-            installGlobal("getChatId", getChatId);
-            installGlobal("getCallerCardId", getCallerCardId);
-
             ${toolPkgRegistrationBridgeScript}
 
             var OPERIT_DOWNLOAD_DIR = ${JSONObject.quote(operitDownloadDir)};
@@ -450,40 +488,6 @@ internal fun buildInitRuntimeScript(
 
             ${javaClassBridgeDefinition}
 
-            function complete(result) {
-                if (window._hasCompleted) {
-                    return;
-                }
-                window._hasCompleted = true;
-                try {
-                    clearTimeout(window._safetyTimeout);
-                    clearTimeout(window._safetyTimeoutFinal);
-                } catch (_e) {
-                }
-                var payload = safeSerialize(result);
-                if (!hasNative("setResult")) {
-                    callNativeOptional("setError", "NativeInterface.setResult is unavailable");
-                    return;
-                }
-                try {
-                    callNative("setResult", payload);
-                } catch (e) {
-                    callNativeOptional(
-                        "setError",
-                        "Error in complete function: " + asString(e && e.message ? e.message : e)
-                    );
-                }
-            }
-            installGlobal("complete", complete);
-
-            function sendIntermediateResult(result) {
-                if (window._hasCompleted) {
-                    return;
-                }
-                callNativeOptional("sendIntermediateResult", safeSerialize(result));
-            }
-            installGlobal("sendIntermediateResult", sendIntermediateResult);
-
             ${jsThirdPartyLibraries}
             installIfResolvable("_", function() { return _; });
             installIfResolvable("dataUtils", function() { return dataUtils; });
@@ -494,45 +498,6 @@ internal fun buildInitRuntimeScript(
             ${androidUtilsJsScript}
             ${okHttp3JsScript}
             ${pakoJsBridgeScript}
-
-            function __handleAsync(possiblePromise) {
-                if (!possiblePromise || typeof possiblePromise.then !== 'function') {
-                    return false;
-                }
-
-                var timeoutToken = setTimeout(function() {
-                    if (!window._hasCompleted) {
-                        complete({
-                            warning: "Operation timeout",
-                            result: "Promise did not resolve within the time limit (${safeAsyncTimeoutSeconds} seconds)"
-                        });
-                    }
-                }, $safeAsyncTimeoutMs);
-
-                Promise.resolve(possiblePromise)
-                    .then(function(result) {
-                        clearTimeout(timeoutToken);
-                        if (!window._hasCompleted) {
-                            complete(result);
-                        }
-                    })
-                    .catch(function(error) {
-                        clearTimeout(timeoutToken);
-                        if (window._hasCompleted) {
-                            return;
-                        }
-                        var report = window.reportDetailedError(error, "Async Promise Rejection");
-                        emitFatalError(
-                            JSON.stringify({
-                                error: "Promise rejection",
-                                details: report.details,
-                                formatted: report.formatted
-                            })
-                        );
-                    });
-                return true;
-            }
-            installGlobal("__handleAsync", __handleAsync);
         })();
     """.trimIndent()
 }

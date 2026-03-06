@@ -885,6 +885,25 @@ internal object JsJavaBridgeDelegates {
 
         val wrapper = primitiveWrapperMap[targetType] ?: targetType
 
+        if (
+            rawValue is Map<*, *> &&
+                wrapper.isInterface &&
+                !Map::class.java.isAssignableFrom(wrapper) &&
+                !Collection::class.java.isAssignableFrom(wrapper)
+        ) {
+            val proxy =
+                createJsInterfaceProxyFromMap(
+                    rawValue = rawValue,
+                    targetType = wrapper,
+                    objectRegistry = objectRegistry,
+                    jsCallbackInvoker = jsCallbackInvoker,
+                    bridgeClassLoader = bridgeClassLoader
+                )
+            if (proxy != null) {
+                return ConvertedArg(proxy, 3)
+            }
+        }
+
         if (wrapper.isInstance(rawValue)) {
             return ConvertedArg(rawValue, 0)
         }
@@ -1063,36 +1082,180 @@ internal object JsJavaBridgeDelegates {
                 }
             }
 
-            val argsJson = serializeCallbackArgs(args ?: emptyArray(), objectRegistry)
-            val rawResponse = callbackInvoker.invoke(binding.jsObjectId, method.name, argsJson)
-            val response = parseBridgeResponse(rawResponse)
+            invokeJsInterfaceBinding(
+                binding = binding,
+                method = method,
+                args = args ?: emptyArray(),
+                objectRegistry = objectRegistry,
+                callbackInvoker = callbackInvoker,
+                jsCallbackInvoker = jsCallbackInvoker,
+                bridgeClassLoader = bridgeClassLoader
+            )
+        }
+    }
 
-            if (!response.success) {
-                if (method.returnType == java.lang.Void.TYPE || method.returnType == Void::class.java) {
-                    AppLogger.e(
-                        TAG,
-                        "JS interface callback failed for void method ${method.name}: ${response.error}"
-                    )
+    private fun createJsInterfaceProxyFromMap(
+        rawValue: Map<*, *>,
+        targetType: Class<*>,
+        objectRegistry: ConcurrentHashMap<String, Any>,
+        jsCallbackInvoker: JsInterfaceCallbackInvoker?,
+        bridgeClassLoader: ClassLoader?
+    ): Any? {
+        val callbackInvoker = jsCallbackInvoker ?: return null
+        if (!targetType.isInterface) {
+            return null
+        }
+
+        val memberMap = LinkedHashMap<String, Any?>()
+        rawValue.entries.forEach { entry ->
+            val key = entry.key?.toString()?.trim().orEmpty()
+            if (key.isNotEmpty()) {
+                memberMap[key] = entry.value
+            }
+        }
+        if (memberMap.isEmpty()) {
+            return null
+        }
+
+        val loader =
+            bridgeClassLoader
+                ?: targetType.classLoader
+                ?: JsJavaBridgeDelegates::class.java.classLoader
+
+        return Proxy.newProxyInstance(loader, arrayOf(targetType)) { proxy, method, args ->
+            if (method.declaringClass == Any::class.java) {
+                return@newProxyInstance when (method.name) {
+                    "toString" -> "JsInterfaceProxy(map) implements ${targetType.simpleName}"
+                    "hashCode" -> System.identityHashCode(proxy)
+                    "equals" -> proxy === args?.getOrNull(0)
+                    else -> null
+                }
+            }
+
+            val runtimeArgs = args ?: emptyArray()
+            val resolved = resolveMapInterfaceMember(memberMap, method, runtimeArgs)
+            if (!resolved.first) {
+                if (isVoidLikeReturnType(method.returnType)) {
                     return@newProxyInstance null
                 }
                 throw IllegalStateException(
-                    response.error ?: "JS interface callback failed for method ${method.name}"
+                    "JS interface map does not provide implementation for method ${method.name}"
                 )
             }
 
-            if (method.returnType == java.lang.Void.TYPE || method.returnType == Void::class.java) {
+            val mappedValue = resolved.second
+            if (mappedValue is JsInterfaceBinding) {
+                return@newProxyInstance invokeJsInterfaceBinding(
+                    binding = mappedValue,
+                    method = method,
+                    args = runtimeArgs,
+                    objectRegistry = objectRegistry,
+                    callbackInvoker = callbackInvoker,
+                    jsCallbackInvoker = jsCallbackInvoker,
+                    bridgeClassLoader = bridgeClassLoader
+                )
+            }
+
+            if (isVoidLikeReturnType(method.returnType)) {
                 return@newProxyInstance null
             }
 
-            val decoded = decodeJsonValue(response.dataRaw, objectRegistry)
             adaptReturnValue(
-                value = decoded,
+                value = mappedValue,
                 targetType = method.returnType,
                 objectRegistry = objectRegistry,
                 jsCallbackInvoker = jsCallbackInvoker,
                 bridgeClassLoader = bridgeClassLoader
             )
         }
+    }
+
+    private fun resolveMapInterfaceMember(
+        memberMap: MutableMap<String, Any?>,
+        method: Method,
+        args: Array<out Any?>
+    ): Pair<Boolean, Any?> {
+        val methodName = method.name
+        if (memberMap.containsKey(methodName)) {
+            return Pair(true, memberMap[methodName])
+        }
+
+        val propertyName = accessorPropertyName(methodName)
+        if (propertyName != null) {
+            if (methodName.startsWith("set") && args.size == 1) {
+                memberMap[propertyName] = args[0]
+                return Pair(true, null)
+            }
+            if (args.isEmpty() && memberMap.containsKey(propertyName)) {
+                return Pair(true, memberMap[propertyName])
+            }
+        }
+
+        return Pair(false, null)
+    }
+
+    private fun accessorPropertyName(methodName: String): String? {
+        val propertyBase =
+            when {
+                methodName.startsWith("get") && methodName.length > 3 -> methodName.substring(3)
+                methodName.startsWith("is") && methodName.length > 2 -> methodName.substring(2)
+                methodName.startsWith("set") && methodName.length > 3 -> methodName.substring(3)
+                else -> null
+            } ?: return null
+
+        if (propertyBase.isEmpty()) {
+            return null
+        }
+
+        return propertyBase.replaceFirstChar { ch ->
+            if (ch.isUpperCase()) ch.lowercase(Locale.ROOT) else ch.toString()
+        }
+    }
+
+    private fun isVoidLikeReturnType(returnType: Class<*>): Boolean {
+        return returnType == java.lang.Void.TYPE ||
+            returnType == Void::class.java ||
+            returnType.name == "kotlin.Unit"
+    }
+
+    private fun invokeJsInterfaceBinding(
+        binding: JsInterfaceBinding,
+        method: Method,
+        args: Array<out Any?>,
+        objectRegistry: ConcurrentHashMap<String, Any>,
+        callbackInvoker: JsInterfaceCallbackInvoker,
+        jsCallbackInvoker: JsInterfaceCallbackInvoker?,
+        bridgeClassLoader: ClassLoader?
+    ): Any? {
+        val argsJson = serializeCallbackArgs(args, objectRegistry)
+        val rawResponse = callbackInvoker.invoke(binding.jsObjectId, method.name, argsJson)
+        val response = parseBridgeResponse(rawResponse)
+
+        if (!response.success) {
+            if (isVoidLikeReturnType(method.returnType)) {
+                AppLogger.e(
+                    TAG,
+                    "JS interface callback failed for void method ${method.name}: ${response.error}"
+                )
+                return null
+            }
+            throw IllegalStateException(
+                response.error ?: "JS interface callback failed for method ${method.name}"
+            )
+        }
+
+        if (isVoidLikeReturnType(method.returnType)) {
+            return null
+        }
+
+        val decoded = decodeJsonValue(response.dataRaw, objectRegistry)
+        return adaptReturnValue(
+            value = decoded,
+            targetType = method.returnType,
+            objectRegistry = objectRegistry,
+            jsCallbackInvoker = jsCallbackInvoker,
+            bridgeClassLoader = bridgeClassLoader
+        )
     }
 
     private fun serializeCallbackArgs(

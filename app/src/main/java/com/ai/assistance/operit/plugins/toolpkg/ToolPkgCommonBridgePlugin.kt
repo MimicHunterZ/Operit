@@ -2,6 +2,7 @@ package com.ai.assistance.operit.plugins.toolpkg
 
 import android.content.Context
 import androidx.compose.ui.graphics.Color
+import com.ai.assistance.operit.core.application.OperitApplication
 import com.ai.assistance.operit.core.chat.plugins.MessageProcessingController
 import com.ai.assistance.operit.core.chat.plugins.MessageProcessingExecution
 import com.ai.assistance.operit.core.chat.plugins.MessageProcessingHookParams
@@ -24,12 +25,14 @@ import com.ai.assistance.operit.util.AppLogger
 import com.ai.assistance.operit.util.stream.Stream
 import com.ai.assistance.operit.core.tools.packTool.ToolPkgXmlRenderHookComposeDslResult
 import com.ai.assistance.operit.core.tools.packTool.ToolPkgXmlRenderHookObjectResult
-import com.ai.assistance.operit.util.stream.asStream
-import com.ai.assistance.operit.util.stream.streamOf
+import com.ai.assistance.operit.util.stream.stream
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -37,23 +40,43 @@ import org.json.JSONObject
 import org.json.JSONTokener
 
 private const val TAG = "ToolPkgCommonBridge"
+private const val TOOLPKG_LOG_TAG = "ToolPkg"
 
 private fun packageManager(context: Context): PackageManager {
     return PackageManager.getInstance(context, AIToolHandler.getInstance(context))
 }
 
 private fun decodeHookResult(raw: Any?): Any? {
-    val text = raw?.toString()?.trim().orEmpty()
+    val text = raw?.toString().orEmpty()
     if (text.isEmpty()) {
         return null
     }
-    if (text.startsWith("Error:", ignoreCase = true)) {
-        throw IllegalStateException(text.substringAfter(":", text).trim().ifEmpty { text })
+    val normalized = text.trim()
+    if (normalized.isEmpty()) {
+        return text
+    }
+    if (normalized.startsWith("Error:", ignoreCase = true)) {
+        throw IllegalStateException(normalized.substringAfter(":", normalized).trim().ifEmpty { normalized })
     }
     return try {
-        JSONTokener(text).nextValue()
+        JSONTokener(normalized).nextValue()
     } catch (_: Exception) {
         text
+    }
+}
+
+private fun logPreview(text: String, maxLength: Int = 160): String {
+    val normalized =
+        text.replace("\n", "\\n")
+            .replace("\r", "\\r")
+            .replace("\t", "\\t")
+    return if (normalized.length <= maxLength) normalized else normalized.take(maxLength) + "..."
+}
+
+private fun summarizeHookValue(value: Any?): String {
+    return when (value) {
+        null -> "null"
+        else -> "${value::class.java.simpleName}(${logPreview(value.toString())})"
     }
 }
 
@@ -68,100 +91,263 @@ private object ToolPkgMessageProcessingBridgePlugin : MessageProcessingPlugin {
             withContext(Dispatchers.IO) {
                 manager.getToolPkgMessageProcessingPlugins()
             }
+        val baseEventPayload = buildMessageEventPayload(params = params, probeOnly = false)
         for (hook in hooks) {
-            val result =
-                withContext(Dispatchers.IO) {
-                    manager.runToolPkgMainHook(
-                        containerPackageName = hook.containerPackageName,
-                        functionName = hook.functionName,
-                        event = TOOLPKG_EVENT_MESSAGE_PROCESSING,
-                        pluginId = hook.pluginId,
-                        eventPayload =
-                            mapOf(
-                                "messageContent" to params.messageContent,
-                                "chatHistory" to params.chatHistory.map { listOf(it.first, it.second) },
-                                "workspacePath" to params.workspacePath,
-                                "maxTokens" to params.maxTokens,
-                                "tokenUsageThreshold" to params.tokenUsageThreshold
-                            )
-                    )
-                }
-            val value =
-                result.getOrElse { error ->
-                    AppLogger.e(
-                        TAG,
-                        "ToolPkg message processing hook failed: ${hook.containerPackageName}:${hook.pluginId}",
-                        error
-                    )
-                    return@getOrElse null
-                } ?: continue
-
-            val decoded =
-                runCatching { decodeHookResult(value) }
-                    .getOrElse { error ->
-                        AppLogger.e(
-                            TAG,
-                            "ToolPkg message processing hook decode failed: ${hook.containerPackageName}:${hook.pluginId}",
-                            error
-                        )
-                        null
-                    }
-            val execution = toMessageProcessingExecution(decoded)
-            if (execution != null) {
-                return execution
+            val probeDecoded =
+                runMessageProcessingHook(
+                    manager = manager,
+                    hook = hook,
+                    eventPayload = buildMessageEventPayload(params = params, probeOnly = true)
+                ) ?: continue
+            val probeResult = parseMessageProcessingResult(probeDecoded) ?: continue
+            if (!probeResult.matched) {
+                continue
             }
+            return createStreamingExecution(
+                manager = manager,
+                hook = hook,
+                eventPayload = baseEventPayload,
+                executionId = nextMessageProcessingExecutionId(hook)
+            )
         }
         return null
     }
 
-    private fun toMessageProcessingExecution(decoded: Any?): MessageProcessingExecution? {
+    private fun buildMessageEventPayload(
+        params: MessageProcessingHookParams,
+        probeOnly: Boolean
+    ): Map<String, Any?> {
+        return mapOf(
+            "messageContent" to params.messageContent,
+            "chatHistory" to params.chatHistory.map { listOf(it.first, it.second) },
+            "workspacePath" to params.workspacePath,
+            "maxTokens" to params.maxTokens,
+            "tokenUsageThreshold" to params.tokenUsageThreshold,
+            "probeOnly" to probeOnly
+        )
+    }
+
+    private suspend fun runMessageProcessingHook(
+        manager: PackageManager,
+        hook: PackageManager.ToolPkgMessageProcessingPlugin,
+        eventPayload: Map<String, Any?>,
+        onIntermediateResult: ((Any?) -> Unit)? = null
+    ): Any? {
+        val result =
+            withContext(Dispatchers.IO) {
+                manager.runToolPkgMainHook(
+                    containerPackageName = hook.containerPackageName,
+                    functionName = hook.functionName,
+                    event = TOOLPKG_EVENT_MESSAGE_PROCESSING,
+                    pluginId = hook.pluginId,
+                    eventPayload = eventPayload,
+                    onIntermediateResult = onIntermediateResult
+                )
+            }
+        val value =
+            result.getOrElse { error ->
+                AppLogger.e(
+                    TAG,
+                    "ToolPkg message processing hook failed: ${hook.containerPackageName}:${hook.pluginId}",
+                    error
+                )
+                return null
+            } ?: return null
+
+        return runCatching { decodeHookResult(value) }
+            .getOrElse { error ->
+                AppLogger.e(
+                    TAG,
+                    "ToolPkg message processing hook decode failed: ${hook.containerPackageName}:${hook.pluginId}",
+                    error
+                )
+                null
+            }
+    }
+
+    private fun nextMessageProcessingExecutionId(
+        hook: PackageManager.ToolPkgMessageProcessingPlugin
+    ): String {
+        return "toolpkg-msg:${hook.containerPackageName}:${hook.pluginId}:${UUID.randomUUID()}"
+    }
+
+    private fun createStreamingExecution(
+        manager: PackageManager,
+        hook: PackageManager.ToolPkgMessageProcessingPlugin,
+        eventPayload: Map<String, Any?>,
+        executionId: String
+    ): MessageProcessingExecution {
+        val executionEventPayload =
+            LinkedHashMap<String, Any?>(eventPayload).apply {
+                put("executionId", executionId)
+            }
+        val stream =
+            stream<String> {
+                val chunkQueue = Channel<String>(capacity = Channel.UNLIMITED)
+                var emittedAny = false
+                coroutineScope {
+                    val forwarder =
+                        launch {
+                            for (chunk in chunkQueue) {
+                                emittedAny = true
+                                emit(chunk)
+                            }
+                        }
+
+                    try {
+                        val finalDecoded =
+                            runMessageProcessingHook(
+                                manager = manager,
+                                hook = hook,
+                                eventPayload = executionEventPayload,
+                                onIntermediateResult = { intermediateRaw ->
+                                    val intermediateDecoded =
+                                        runCatching { decodeHookResult(intermediateRaw) }
+                                            .getOrNull() ?: intermediateRaw
+                                    extractMessageChunks(intermediateDecoded)
+                                        .forEach { chunk ->
+                                            if (chunk.isNotEmpty()) {
+                                                chunkQueue.trySend(chunk)
+                                            }
+                                        }
+                                }
+                            )
+                        val parsed = parseMessageProcessingResult(finalDecoded)
+                        if (parsed != null && parsed.matched && !emittedAny) {
+                            parsed.chunks
+                                .filter { it.isNotEmpty() }
+                                .forEach { chunk ->
+                                    chunkQueue.trySend(chunk)
+                                }
+                        }
+                    } finally {
+                        chunkQueue.close()
+                        forwarder.join()
+                        ToolPkgMessageProcessingCancellationRegistry.unregister(executionId)
+                    }
+                }
+            }
+        return MessageProcessingExecution(
+            RegisteredMessageProcessingController(executionId, hook),
+            stream
+        )
+    }
+
+    private data class ParsedMessageProcessingResult(
+        val matched: Boolean,
+        val chunks: List<String>
+    )
+
+    private fun parseMessageProcessingResult(decoded: Any?): ParsedMessageProcessingResult? {
         return when (decoded) {
             null -> null
-            is Boolean -> if (decoded) MessageProcessingExecution(NoopMessageController, streamOf("")) else null
+            is Boolean ->
+                if (decoded) {
+                    ParsedMessageProcessingResult(
+                        matched = true,
+                        chunks = emptyList()
+                    )
+                } else {
+                    null
+                }
             is String ->
-                if (decoded.isBlank()) null
-                else MessageProcessingExecution(NoopMessageController, streamOf(decoded))
+                if (decoded.isEmpty()) {
+                    null
+                } else {
+                    ParsedMessageProcessingResult(
+                        matched = true,
+                        chunks = listOf(decoded)
+                    )
+                }
             is JSONObject -> {
                 val matched = decoded.optBoolean("matched", true)
                 if (!matched) {
                     return null
                 }
+                ParsedMessageProcessingResult(
+                    matched = true,
+                    chunks = extractMessageChunks(decoded)
+                )
+            }
+            else -> null
+        }
+    }
+
+    private fun extractMessageChunks(decoded: Any?): List<String> {
+        return when (decoded) {
+            null -> emptyList()
+            is String -> {
+                if (decoded.isEmpty()) emptyList() else listOf(decoded)
+            }
+            is JSONObject -> {
                 val chunks = mutableListOf<String>()
+
+                if (decoded.has("chunk") && !decoded.isNull("chunk")) {
+                    val chunkText = decoded.optString("chunk")
+                    if (chunkText.isNotEmpty()) {
+                        chunks.add(chunkText)
+                    }
+                }
+
                 val chunksArray = decoded.optJSONArray("chunks")
                 if (chunksArray != null) {
                     for (index in 0 until chunksArray.length()) {
-                        val chunk = chunksArray.optString(index).trim()
+                        val chunk = chunksArray.optString(index)
                         if (chunk.isNotEmpty()) {
                             chunks.add(chunk)
                         }
                     }
                 }
-                val text = decoded.optString("text").ifBlank { decoded.optString("content") }.trim()
-                if (text.isNotEmpty()) {
-                    chunks.add(text)
-                }
-                val stream: Stream<String> =
-                    when {
-                        chunks.isEmpty() -> streamOf("")
-                        chunks.size == 1 -> streamOf(chunks.first())
-                        else -> chunks.asStream()
+
+                if (decoded.has("text") && !decoded.isNull("text")) {
+                    val text = decoded.optString("text")
+                    if (text.isNotEmpty()) {
+                        chunks.add(text)
                     }
-                MessageProcessingExecution(NoopMessageController, stream)
+                } else if (decoded.has("content") && !decoded.isNull("content")) {
+                    val content = decoded.optString("content")
+                    if (content.isNotEmpty()) {
+                        chunks.add(content)
+                    }
+                }
+                chunks
             }
-            else -> null
+            else -> emptyList()
         }
     }
 }
 
-private object NoopMessageController : MessageProcessingController {
-    override fun cancel() = Unit
+private class RegisteredMessageProcessingController(
+    private val executionId: String,
+    private val hook: PackageManager.ToolPkgMessageProcessingPlugin
+) : MessageProcessingController {
+    override fun cancel() {
+        val handled = ToolPkgMessageProcessingCancellationRegistry.cancel(executionId)
+        AppLogger.d(
+            TAG,
+            "Cancel toolpkg message processing execution: ${hook.containerPackageName}:${hook.pluginId}, executionId=$executionId, handled=$handled"
+        )
+    }
 }
 
 private object ToolPkgXmlRenderBridgePlugin : XmlRenderPlugin {
     override val id: String = "builtin.toolpkg.xml-render-bridge"
 
     override fun supports(tagName: String): Boolean {
-        return true
+        val normalizedTagName = tagName.trim()
+        if (normalizedTagName.isBlank()) {
+            return false
+        }
+        return runCatching {
+            val hooks = packageManager(OperitApplication.instance).getToolPkgXmlRenderPlugins(normalizedTagName)
+            hooks.isNotEmpty()
+        }.onFailure { error ->
+            AppLogger.e(
+                TOOLPKG_LOG_TAG,
+                "xml-render supports failed tag=$normalizedTagName",
+                error
+            )
+        }.getOrDefault(false)
     }
 
     override suspend fun resolve(
@@ -194,23 +380,29 @@ private object ToolPkgXmlRenderBridgePlugin : XmlRenderPlugin {
             val value =
                 result.getOrElse { error ->
                     AppLogger.e(
-                        TAG,
-                        "ToolPkg xml render hook failed: ${hook.containerPackageName}:${hook.pluginId}",
+                        TOOLPKG_LOG_TAG,
+                        "xml-render hook failed tag=$tagName hook=${hook.containerPackageName}:${hook.pluginId}:${hook.functionName}",
                         error
                     )
                     return@getOrElse null
-                } ?: continue
+                }
+            if (value == null) {
+                continue
+            }
             val decoded =
                 runCatching { decodeHookResult(value) }
                     .getOrElse { error ->
                         AppLogger.e(
-                            TAG,
-                            "ToolPkg xml render hook decode failed: ${hook.containerPackageName}:${hook.pluginId}",
+                            TOOLPKG_LOG_TAG,
+                            "xml-render hook decode failed tag=$tagName hook=${hook.containerPackageName}:${hook.pluginId}:${hook.functionName} raw=${summarizeHookValue(value)}",
                             error
                         )
                         null
                     }
-            val parsed = parseXmlRenderHookObjectResult(decoded) ?: continue
+            val parsed = parseXmlRenderHookObjectResult(decoded)
+            if (parsed == null) {
+                continue
+            }
             if (parsed.handled == false) {
                 continue
             }

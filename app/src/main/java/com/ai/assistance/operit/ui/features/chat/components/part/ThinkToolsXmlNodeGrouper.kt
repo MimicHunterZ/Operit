@@ -326,7 +326,8 @@ class ThinkToolsXmlNodeGrouper(
                                         xmlContent = node.content,
                                         modifier = Modifier.fillMaxWidth().graphicsLayer { this.alpha = itemAlpha },
                                         textColor = textColor,
-                                        xmlStream = xmlStreamResolver(absoluteIndex)
+                                        xmlStream = xmlStreamResolver(absoluteIndex),
+                                        renderInstanceKey = innerKey
                                     )
                                 }
                             }

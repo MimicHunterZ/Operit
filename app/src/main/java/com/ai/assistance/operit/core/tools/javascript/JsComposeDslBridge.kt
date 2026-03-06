@@ -117,6 +117,10 @@ internal fun buildComposeDslContextBridgeDefinition(): String {
                     packageName: String(options.packageName || options.__operit_ui_package_name || ''),
                     toolPkgId: String(options.toolPkgId || options.__operit_ui_toolpkg_id || ''),
                     uiModuleId: String(options.uiModuleId || options.__operit_ui_module_id || ''),
+                    callRuntime:
+                        options.__operit_call_runtime && typeof options.__operit_call_runtime === 'object'
+                            ? options.__operit_call_runtime
+                            : null,
                     actionStore: {},
                     actionCounter: 0,
                     stateChangeListeners: []
@@ -361,7 +365,10 @@ internal fun buildComposeDslContextBridgeDefinition(): String {
                         return toolCall.apply(null, arguments);
                     },
                     getEnv: function(key) {
-                        return getEnv(key);
+                        if (runtime.callRuntime && typeof runtime.callRuntime.getEnv === 'function') {
+                            return runtime.callRuntime.getEnv(key);
+                        }
+                        return undefined;
                     },
                     setEnv: function(key, value) {
                         invokeNative('setEnv', [
@@ -416,9 +423,6 @@ internal fun buildComposeDslContextBridgeDefinition(): String {
                     },
                     getModuleSpec: function() {
                         return runtime.moduleSpec;
-                    },
-                    getLocale: function() {
-                        return getLang();
                     },
                     formatTemplate: function(template, values) {
                         return formatTemplateInternal(template, values);

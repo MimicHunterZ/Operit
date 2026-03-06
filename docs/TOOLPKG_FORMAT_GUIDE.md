@@ -641,7 +641,7 @@ ctx.reportError(error);
 
 #### 其他
 ```javascript
-const locale = ctx.getLocale(); // 'zh' 或 'en'
+const locale = getLang(); // 'zh' 或 'en'
 const text = ctx.formatTemplate('Hello {name}!', { name: 'World' });
 const packageName = ctx.getCurrentPackageName();
 const toolPkgId = ctx.getCurrentToolPkgId();

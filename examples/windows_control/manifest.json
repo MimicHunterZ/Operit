@@ -2,7 +2,7 @@
   "schema_version": 1,
   "toolpkg_id": "com.operit.windows_bundle",
   "version": "0.2.0",
-  "main": "main.js",
+  "main": "dist/main.js",
   "display_name": {
     "zh": "Windows 工具包",
     "en": "Windows Bundle"
@@ -14,7 +14,7 @@
   "subpackages": [
     {
       "id": "windows_control",
-      "entry": "packages/windows_control.js"
+      "entry": "dist/packages/windows_control.js"
     }
   ],
   "resources": [

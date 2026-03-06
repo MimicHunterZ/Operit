@@ -31,7 +31,7 @@ object AppLogger {
     private const val LOG_DIR_NAME = "logs"
     private const val LOG_FILE_NAME = "operit.log"
     private const val PACKAGE_LOG_DIR_NAME = "packageLogs"
-    private const val TOOLPKG_LOG_TAG = "Toolpkg"
+    private const val TOOLPKG_LOG_TAG = "ToolPkg"
 
     // Simple date formatter for log lines
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.US)

@@ -26,7 +26,6 @@ import com.ai.assistance.operit.core.tools.packTool.ToolPkgComposeDslParser
 import com.ai.assistance.operit.core.tools.packTool.ToolPkgComposeDslRenderResult
 import com.ai.assistance.operit.ui.common.composedsl.RenderToolPkgComposeDslNode
 import com.ai.assistance.operit.util.AppLogger
-import com.ai.assistance.operit.util.LocaleUtils
 import com.ai.assistance.operit.util.stream.Stream
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlinx.coroutines.Dispatchers
@@ -84,14 +83,25 @@ object XmlRenderPluginRegistry {
         tagName: String,
         modifier: Modifier,
         textColor: Color,
-        xmlStream: Stream<String>?
+        xmlStream: Stream<String>?,
+        renderInstanceKey: Any? = null
     ): Boolean {
         val plugin = plugins.firstOrNull { it.supports(tagName) } ?: return false
         val context = LocalContext.current
-        var result by remember(xmlContent, tagName, plugin.id) { mutableStateOf<XmlRenderResult?>(null) }
-        var errorMessage by remember(xmlContent, tagName, plugin.id) { mutableStateOf<String?>(null) }
+        var result by remember(renderInstanceKey, tagName, plugin.id) {
+            mutableStateOf<XmlRenderResult?>(null)
+        }
+        var errorMessage by remember(renderInstanceKey, tagName, plugin.id) {
+            mutableStateOf<String?>(null)
+        }
+        var resolutionFinished by remember(renderInstanceKey, tagName, plugin.id) {
+            mutableStateOf(false)
+        }
 
-        LaunchedEffect(xmlContent, tagName, plugin.id) {
+        LaunchedEffect(renderInstanceKey, xmlContent, tagName, plugin.id) {
+            if (result == null && errorMessage.isNullOrBlank()) {
+                resolutionFinished = false
+            }
             runCatching {
                 plugin.resolve(
                     context = context,
@@ -108,6 +118,7 @@ object XmlRenderPluginRegistry {
                 errorMessage = error.message
                 AppLogger.e(TAG, "Xml render plugin failed: ${plugin.id}", error)
             }
+            resolutionFinished = true
         }
 
         when (val resolved = result) {
@@ -129,7 +140,8 @@ object XmlRenderPluginRegistry {
             is XmlRenderResult.ComposeDslScreen -> {
                 RenderComposeDslScreen(
                     result = resolved,
-                    modifier = modifier
+                    modifier = modifier,
+                    renderInstanceKey = renderInstanceKey
                 )
                 return true
             }
@@ -143,7 +155,18 @@ object XmlRenderPluginRegistry {
                     )
                     return true
                 }
-                return true
+                if (!resolutionFinished) {
+                    Box(
+                        modifier = modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    }
+                    return true
+                }
+                return false
             }
         }
     }
@@ -151,28 +174,23 @@ object XmlRenderPluginRegistry {
     @Composable
     private fun RenderComposeDslScreen(
         result: XmlRenderResult.ComposeDslScreen,
-        modifier: Modifier
+        modifier: Modifier,
+        renderInstanceKey: Any?
     ) {
         val context = LocalContext.current
         val packageManager = remember(result.containerPackageName) {
             PackageManager.getInstance(context, AIToolHandler.getInstance(context))
         }
-        val jsEngine = remember(result.containerPackageName, result.screenPath) { JsEngine(context) }
+        val jsEngine = remember(renderInstanceKey, result.containerPackageName, result.screenPath) { JsEngine(context) }
         DisposableEffect(jsEngine) {
             onDispose { jsEngine.destroy() }
         }
 
-        var renderResult by remember(result.containerPackageName, result.screenPath) {
+        var renderResult by remember(renderInstanceKey, result.containerPackageName, result.screenPath) {
             mutableStateOf<ToolPkgComposeDslRenderResult?>(null)
         }
-        var errorMessage by remember(result.containerPackageName, result.screenPath) {
+        var errorMessage by remember(renderInstanceKey, result.containerPackageName, result.screenPath) {
             mutableStateOf<String?>(null)
-        }
-        var isLoading by remember(result.containerPackageName, result.screenPath) {
-            mutableStateOf(true)
-        }
-        var isDispatching by remember(result.containerPackageName, result.screenPath) {
-            mutableStateOf(false)
         }
 
         fun buildModuleSpec(screenPath: String): Map<String, Any?> {
@@ -194,11 +212,6 @@ object XmlRenderPluginRegistry {
             if (normalizedActionId.isBlank()) {
                 return
             }
-            val silent =
-                (payload as? Map<*, *>)?.get("__silent") as? Boolean ?: false
-            if (!silent) {
-                isDispatching = true
-            }
             jsEngine.dispatchComposeDslActionAsync(
                 actionId = normalizedActionId,
                 payload = payload,
@@ -209,28 +222,19 @@ object XmlRenderPluginRegistry {
                         errorMessage = null
                     }
                 },
-                onComplete = {
-                    if (!silent) {
-                        isDispatching = false
-                    }
-                },
+                onComplete = {},
                 onError = { error ->
                     errorMessage = "compose_dsl runtime error: $error"
                     AppLogger.e(TAG, "compose_dsl action failed: $error")
-                    if (!silent) {
-                        isDispatching = false
-                    }
                 }
             )
         }
 
-        LaunchedEffect(result.containerPackageName, result.screenPath, result.state, result.memo) {
-            isLoading = true
+        LaunchedEffect(renderInstanceKey, result.containerPackageName, result.screenPath, result.state, result.memo) {
             errorMessage = null
             val screenPath = result.screenPath.trim()
             if (screenPath.isBlank()) {
                 errorMessage = "compose_dsl screen path is blank"
-                isLoading = false
                 return@LaunchedEffect
             }
             val script =
@@ -242,11 +246,9 @@ object XmlRenderPluginRegistry {
                 }
             if (script.isNullOrBlank()) {
                 errorMessage = "compose_dsl screen not found: ${result.containerPackageName}:$screenPath"
-                isLoading = false
                 return@LaunchedEffect
             }
 
-            val language = LocaleUtils.getCurrentLanguage(context).trim()
             val rawResult =
                 withContext(Dispatchers.IO) {
                     jsEngine.executeComposeDslScript(
@@ -256,7 +258,6 @@ object XmlRenderPluginRegistry {
                                 "packageName" to result.containerPackageName,
                                 "toolPkgId" to result.containerPackageName,
                                 "uiModuleId" to "xml_render",
-                                "__operit_package_lang" to (if (language.isNotBlank()) language else "zh"),
                                 "__operit_script_screen" to screenPath,
                                 "moduleSpec" to buildModuleSpec(screenPath),
                                 "state" to result.state,
@@ -279,13 +280,16 @@ object XmlRenderPluginRegistry {
                     dispatchAction(onLoadActionId, null)
                 }
             }
-            isLoading = false
         }
 
         Box(modifier = modifier) {
             when {
-                isLoading -> {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                renderResult?.tree != null -> {
+                    RenderToolPkgComposeDslNode(
+                        node = renderResult!!.tree,
+                        modifier = Modifier.align(Alignment.TopStart),
+                        onAction = ::dispatchAction
+                    )
                 }
                 errorMessage != null -> {
                     Text(
@@ -294,18 +298,6 @@ object XmlRenderPluginRegistry {
                         modifier = Modifier.padding(8.dp)
                     )
                 }
-                renderResult?.tree != null -> {
-                    RenderToolPkgComposeDslNode(
-                        node = renderResult!!.tree,
-                        modifier = Modifier.align(Alignment.TopStart),
-                        onAction = ::dispatchAction
-                    )
-                }
-            }
-            if (isDispatching) {
-                LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth()
-                )
             }
         }
     }

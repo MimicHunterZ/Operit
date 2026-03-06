@@ -537,7 +537,7 @@ await Tools.UI.swipe(540, 1800, 540, 900);
     -   别名：`Java.use(...)` / `Java.importClass(...)`
 -   包链访问：`Java.java.lang.System.currentTimeMillis()`
 -   静态调用：`Java.callStatic(className, methodName, ...args)`
--   异步挂起调用：`Java.callSuspend(className, methodName, ...args, callback?)`
+-   异步挂起调用：`Java.callSuspend(className, methodName, ...args)`（返回 Promise）
 -   构造实例：`Java.newInstance(className, ...args)` 或 `new Java.java.util.ArrayList()`
 -   接口实现：
     -   `Java.implement(interfaceNameOrNames, impl)`（支持字符串接口名或 `Java.xxx` 类代理）
@@ -608,24 +608,10 @@ console.log(parsed.data); // 42
 
 #### 3.4.7. 示例：suspend 调用（callback / Promise）
 
-`callSuspend` 用于调用 Kotlin `suspend` 方法。最后一个参数可选传入回调，不传则返回 `Promise`。
+`callSuspend` 用于调用 Kotlin `suspend` 方法，始终返回 `Promise`。
 
 ```typescript
 const EnhancedAIService = Java.com.ai.assistance.operit.api.chat.EnhancedAIService;
-
-// callback 形式
-EnhancedAIService.callSuspend(
-    "getAIServiceForFunction",
-    ctx,
-    FunctionType.CHAT,
-    (err, service) => {
-        if (err) {
-            console.log("err=", err);
-            return;
-        }
-        console.log("service=", service);
-    }
-);
 
 // Promise 形式
 const service = await EnhancedAIService.callSuspend(

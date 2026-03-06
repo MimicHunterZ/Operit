@@ -502,7 +502,8 @@ private fun renderNodeContent(
                 xmlContent = content,
                 modifier = Modifier.fillMaxWidth(),
                 textColor = textColor,
-                xmlStream = xmlStream
+                xmlStream = xmlStream,
+                renderInstanceKey = nodeKey
             )
         }
         

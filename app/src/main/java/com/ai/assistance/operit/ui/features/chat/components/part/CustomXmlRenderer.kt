@@ -59,7 +59,8 @@ class CustomXmlRenderer(
         xmlContent: String,
         modifier: Modifier,
         textColor: Color,
-        xmlStream: Stream<String>?
+        xmlStream: Stream<String>?,
+        renderInstanceKey: Any?
     ) {
         val trimmedContent = xmlContent.trim()
         val tagName = extractTagName(trimmedContent)
@@ -81,11 +82,11 @@ class CustomXmlRenderer(
         // 用 Box 包裹所有内容，添加无障碍描述
         if (tagName == "think" || tagName == "thinking") {
             Box(modifier = modifier) {
-                RenderXmlContentInternal(trimmedContent, tagName, textColor, xmlStream, Modifier)
+                RenderXmlContentInternal(trimmedContent, tagName, textColor, xmlStream, renderInstanceKey, Modifier)
             }
         } else {
             Box(modifier = modifier.semantics { contentDescription = accessibilityDesc }) {
-                RenderXmlContentInternal(trimmedContent, tagName, textColor, xmlStream, Modifier)
+                RenderXmlContentInternal(trimmedContent, tagName, textColor, xmlStream, renderInstanceKey, Modifier)
             }
         }
     }
@@ -96,6 +97,7 @@ class CustomXmlRenderer(
         tagName: String?,
         textColor: Color,
         xmlStream: Stream<String>?,
+        renderInstanceKey: Any?,
         modifier: Modifier
     ) {
 
@@ -116,7 +118,7 @@ class CustomXmlRenderer(
 
         // 如果无法识别为有效的XML标签，则交由默认渲染器处理
         if (tagName == null) {
-            fallback.RenderXmlContent(trimmedContent, Modifier, textColor, xmlStream)
+            fallback.RenderXmlContent(trimmedContent, Modifier, textColor, xmlStream, renderInstanceKey)
             return
         }
 
@@ -127,7 +129,8 @@ class CustomXmlRenderer(
                 tagName = tagName,
                 modifier = modifier,
                 textColor = textColor,
-                xmlStream = xmlStream
+                xmlStream = xmlStream,
+                renderInstanceKey = renderInstanceKey
             )
         ) {
             return
@@ -140,7 +143,7 @@ class CustomXmlRenderer(
                 return
             } else if (!(tagName in builtInTags)) {
                 // 是未知标签且未闭合，则交由默认渲染器处理
-                fallback.RenderXmlContent(trimmedContent, Modifier, textColor, xmlStream)
+                fallback.RenderXmlContent(trimmedContent, Modifier, textColor, xmlStream, renderInstanceKey)
                 return
             }
         }
@@ -157,7 +160,7 @@ class CustomXmlRenderer(
             "mood" -> renderMoodTag(trimmedContent, Modifier, textColor)
             "font" -> FontTagRenderer.Render(trimmedContent, Modifier, textColor)
             "details", "detail" -> DetailsTagRenderer.Render(trimmedContent, Modifier, textColor)
-            else -> fallback.RenderXmlContent(trimmedContent, Modifier, textColor, xmlStream)
+            else -> fallback.RenderXmlContent(trimmedContent, Modifier, textColor, xmlStream, renderInstanceKey)
         }
     }
 

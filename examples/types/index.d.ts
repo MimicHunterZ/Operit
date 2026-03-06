@@ -63,9 +63,10 @@ import { Android as AndroidClass } from './android';
 import {
     ComposeDslContext as ComposeDslContextType,
     ComposeDslScreen as ComposeDslScreenType,
-    ComposeNode as ComposeNodeType
+    ComposeNode as ComposeNodeType,
+    ComposeCanvasCommand as ComposeCanvasCommandType
 } from './compose-dsl';
-import type * as ToolPkgTypes from './toolpkg';
+import { ToolPkg as ToolPkgType } from './toolpkg';
 
 // Export core interfaces and functions
 export * from './core';
@@ -100,6 +101,7 @@ export { UI, UINode } from './ui';
 export { FFmpegVideoCodec, FFmpegAudioCodec, FFmpegResolution, FFmpegBitrate } from './ffmpeg';
 export { Tasker } from './tasker';
 export { Workflow } from './workflow';
+export { ToolPkg } from './toolpkg';
 export { Chat } from './chat';
 export { Memory } from './memory';
 
@@ -134,6 +136,7 @@ declare global {
     type ComposeDslContext = ComposeDslContextType;
     type ComposeDslScreen = ComposeDslScreenType;
     type ComposeNode = ComposeNodeType;
+    type ComposeCanvasCommand = ComposeCanvasCommandType;
     type JavaBridgeApi = JavaBridgeApiType;
     type JavaBridgeClass = JavaBridgeClassType;
     type JavaBridgeInstance = JavaBridgeInstanceType;
@@ -144,45 +147,6 @@ declare global {
     type JavaBridgeJsMethod = JavaBridgeJsMethodType;
     type JavaBridgeInterfaceRef = JavaBridgeInterfaceRefType;
     type JavaBridgeCallbackResult = JavaBridgeCallbackResultType;
-
-    // ToolPkg types
-    type ToolPkgLocalizedText = ToolPkgTypes.ToolPkgLocalizedText;
-    type ToolPkgJsonPrimitive = ToolPkgTypes.ToolPkgJsonPrimitive;
-    type ToolPkgJsonValue = ToolPkgTypes.ToolPkgJsonValue;
-    type ToolPkgJsonObject = ToolPkgTypes.ToolPkgJsonObject;
-    type ToolPkgAppLifecycleEvent = ToolPkgTypes.ToolPkgAppLifecycleEvent;
-    type ToolPkgHookEventName = ToolPkgTypes.ToolPkgHookEventName;
-    type ToolPkgHookReturn = ToolPkgTypes.ToolPkgHookReturn;
-    type ToolPkgHookHandler<TEvent> = ToolPkgTypes.ToolPkgHookHandler<TEvent>;
-    type ToolPkgHookEventBase<TEventName extends string, TPayload extends ToolPkgJsonObject = ToolPkgJsonObject> =
-        ToolPkgTypes.ToolPkgHookEventBase<TEventName, TPayload>;
-    type ToolPkgAppLifecycleEventPayload = ToolPkgTypes.ToolPkgAppLifecycleEventPayload;
-    type ToolPkgMessageProcessingEventPayload = ToolPkgTypes.ToolPkgMessageProcessingEventPayload;
-    type ToolPkgXmlRenderEventPayload = ToolPkgTypes.ToolPkgXmlRenderEventPayload;
-    type ToolPkgInputMenuToggleEventPayload = ToolPkgTypes.ToolPkgInputMenuToggleEventPayload;
-    type ToolPkgAppLifecycleHookEvent = ToolPkgTypes.ToolPkgAppLifecycleHookEvent;
-    type ToolPkgMessageProcessingHookEvent = ToolPkgTypes.ToolPkgMessageProcessingHookEvent;
-    type ToolPkgXmlRenderHookEvent = ToolPkgTypes.ToolPkgXmlRenderHookEvent;
-    type ToolPkgInputMenuToggleHookEvent = ToolPkgTypes.ToolPkgInputMenuToggleHookEvent;
-    type ToolPkgAppLifecycleHookReturn = ToolPkgTypes.ToolPkgAppLifecycleHookReturn;
-    type ToolPkgMessageProcessingHookObjectResult = ToolPkgTypes.ToolPkgMessageProcessingHookObjectResult;
-    type ToolPkgMessageProcessingHookReturn = ToolPkgTypes.ToolPkgMessageProcessingHookReturn;
-    type ToolPkgXmlRenderHookObjectResult = ToolPkgTypes.ToolPkgXmlRenderHookObjectResult;
-    type ToolPkgXmlRenderHookReturn = ToolPkgTypes.ToolPkgXmlRenderHookReturn;
-    type ToolPkgInputMenuToggleDefinitionResult = ToolPkgTypes.ToolPkgInputMenuToggleDefinitionResult;
-    type ToolPkgInputMenuToggleObjectResult = ToolPkgTypes.ToolPkgInputMenuToggleObjectResult;
-    type ToolPkgInputMenuToggleHookReturn = ToolPkgTypes.ToolPkgInputMenuToggleHookReturn;
-    type ToolPkgAppLifecycleHookHandler = ToolPkgTypes.ToolPkgAppLifecycleHookHandler;
-    type ToolPkgMessageProcessingHookHandler = ToolPkgTypes.ToolPkgMessageProcessingHookHandler;
-    type ToolPkgXmlRenderHookHandler = ToolPkgTypes.ToolPkgXmlRenderHookHandler;
-    type ToolPkgInputMenuToggleHookHandler = ToolPkgTypes.ToolPkgInputMenuToggleHookHandler;
-    type ToolPkgToolboxUiModuleRegistration = ToolPkgTypes.ToolPkgToolboxUiModuleRegistration;
-    type ToolPkgAppLifecycleHookRegistration = ToolPkgTypes.ToolPkgAppLifecycleHookRegistration;
-    type ToolPkgMessageProcessingPluginRegistration = ToolPkgTypes.ToolPkgMessageProcessingPluginRegistration;
-    type ToolPkgXmlRenderPluginRegistration = ToolPkgTypes.ToolPkgXmlRenderPluginRegistration;
-    type ToolPkgInputMenuTogglePluginRegistration = ToolPkgTypes.ToolPkgInputMenuTogglePluginRegistration;
-    type ToolPkgRegistry = ToolPkgTypes.ToolPkgRegistry;
-
 
     // Make result types available globally
     type CalculationResultData = _CalculationResultData;
@@ -222,33 +186,11 @@ declare global {
     type ModelConfigConnectionTestItemResultData = _ModelConfigConnectionTestItemResultData;
     type ModelConfigConnectionTestResultData = _ModelConfigConnectionTestResultData;
 
-    namespace Tasker {
-        export type TriggerTaskerEventParams = TaskerType.TriggerTaskerEventParams;
-    }
+    export import Tasker = TaskerType;
 
-    namespace Workflow {
-        export type CreateParams = WorkflowType.CreateParams;
-        export type GetParams = WorkflowType.GetParams;
-        export type UpdateParams = WorkflowType.UpdateParams;
-        export type DeleteParams = WorkflowType.DeleteParams;
-        export type TriggerParams = WorkflowType.TriggerParams;
+    export import Workflow = WorkflowType;
 
-        export type Node = WorkflowType.Node;
-        export type Connection = WorkflowType.Connection;
-        export type NodeInput = WorkflowType.NodeInput;
-        export type ConnectionInput = WorkflowType.ConnectionInput;
-        export type ConnectionConditionKeyword = WorkflowType.ConnectionConditionKeyword;
-        export type ConnectionCondition = WorkflowType.ConnectionCondition;
-        export type ParameterValueInput = WorkflowType.ParameterValueInput;
-        export type Info = WorkflowType.Info;
-        export type Detail = WorkflowType.Detail;
-        export type List = WorkflowType.List;
-
-        export type PatchOperation = WorkflowType.PatchOperation;
-        export type NodePatch = WorkflowType.NodePatch;
-        export type ConnectionPatch = WorkflowType.ConnectionPatch;
-        export type PatchParams = WorkflowType.PatchParams;
-    }
+    export import ToolPkg = ToolPkgType;
 
     // Global interface definitions
     interface ToolParams {
@@ -315,7 +257,7 @@ declare global {
         SoftwareSettings: typeof SoftwareSettingsType;
         UI: typeof UIType;
         FFmpeg: typeof FFmpegType;
-        Tasker: typeof TaskerType;
+        Tasker: TaskerType.Runtime;
         Workflow: WorkflowType.Runtime;
         Chat: typeof ChatType;
         Memory: typeof MemoryType;

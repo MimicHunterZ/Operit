@@ -284,7 +284,8 @@ class MessageProcessingDelegate(
             chatModelConfigIdOverride: String? = null,
             chatModelIndexOverride: Int? = null,
             suppressUserMessageInHistory: Boolean = false,
-            isGroupOrchestrationTurn: Boolean = false
+            isGroupOrchestrationTurn: Boolean = false,
+            groupParticipantNamesText: String? = null
     ) {
         val rawMessageText = messageTextOverride ?: _userMessage.value.text
         // 群组编排模式下，允许空消息（后续成员不需要用户消息）
@@ -521,6 +522,7 @@ class MessageProcessingDelegate(
                     currentRoleName = currentRoleName,
                     splitHistoryByRole = true,
                     groupOrchestrationMode = isGroupOrchestrationTurn,
+                    groupParticipantNamesText = groupParticipantNamesText,
                     proxySenderName = proxySenderNameOverride,
                     chatModelConfigIdOverride = chatModelConfigIdOverride,
                     chatModelIndexOverride = chatModelIndexOverride

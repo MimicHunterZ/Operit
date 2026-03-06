@@ -1,6 +1,5 @@
 package com.ai.assistance.operit.plugins
 
-import com.ai.assistance.operit.plugins.deepsearching.DeepSearchPlugin
 import com.ai.assistance.operit.plugins.toolbox.ToolboxPlugin
 import com.ai.assistance.operit.plugins.toolpkg.ToolPkgCommonBridgePlugin
 import java.util.concurrent.CopyOnWriteArrayList

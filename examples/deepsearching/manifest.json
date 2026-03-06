@@ -2,14 +2,14 @@
   "schema_version": 1,
   "toolpkg_id": "com.operit.deepsearching_bundle",
   "version": "0.1.0",
-  "main": "main.js",
+  "main": "dist/main.js",
   "display_name": {
-    "zh": "DeepSearching 调试包",
-    "en": "DeepSearching Debug Bundle"
+    "zh": "深度搜索",
+    "en": "DeepSearching"
   },
   "description": {
-    "zh": "用于验证 ToolPkg 注册与日志输出的调试示例",
-    "en": "Debug sample for ToolPkg registration and log output"
+    "zh": "用于操作多个子Agent进行深度搜索。同时在菜单增加深度搜索开关。",
+    "en": "A tool for operating multiple sub-agents to perform deep searching. Also adds a toggle for deep searching in the menu."
   },
   "subpackages": []
 }

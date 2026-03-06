@@ -533,11 +533,6 @@ export interface ComposeDslContext {
   getCurrentUiModuleId?(): string | undefined;
 
   /**
-   * Returns current UI locale from host, e.g. zh-CN / en-US.
-   */
-  getLocale?(): string | undefined;
-
-  /**
    * Formats template text like "failed: {error}" with provided values.
    */
   formatTemplate?(template: string, values: ComposeTemplateValues): string;

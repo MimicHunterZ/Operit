@@ -20,12 +20,6 @@ object JsTimeoutConfig {
     const val PRE_TIMEOUT_SECONDS = MAIN_TIMEOUT_SECONDS - 5L
     
     /**
-     * Promise 异步超时时间（秒）
-     * 比主超时稍短，确保异步操作能及时完成
-     */
-    const val ASYNC_PROMISE_TIMEOUT_SECONDS = MAIN_TIMEOUT_SECONDS - 10L
-    
-    /**
      * 脚本执行超时时间（毫秒）
      * 用于 JsToolManager 的脚本执行超时
      */
@@ -40,7 +34,6 @@ object JsTimeoutConfig {
     // 便利方法：获取毫秒值
     val mainTimeoutMs: Long get() = MAIN_TIMEOUT_SECONDS * 1000L
     val preTimeoutMs: Long get() = PRE_TIMEOUT_SECONDS * 1000L
-    val asyncPromiseTimeoutMs: Long get() = ASYNC_PROMISE_TIMEOUT_SECONDS * 1000L
     
     /**
      * 修改主超时时间

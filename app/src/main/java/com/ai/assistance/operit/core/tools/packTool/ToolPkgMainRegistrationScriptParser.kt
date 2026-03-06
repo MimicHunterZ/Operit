@@ -54,7 +54,7 @@ internal object ToolPkgMainRegistrationScriptParser {
             AppLogger.e(TAG, "Failed to parse toolpkg main registration: $toolPkgId", e)
             val message = e.message?.takeIf { it.isNotBlank() } ?: e.javaClass.simpleName
             AppLogger.e(
-                "Toolpkg",
+                "ToolPkg",
                 "PKG: main registration parse failed, toolPkgId=$toolPkgId, reason=$message",
                 e
             )

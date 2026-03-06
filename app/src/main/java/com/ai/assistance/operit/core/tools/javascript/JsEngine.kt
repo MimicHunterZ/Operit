@@ -2,6 +2,7 @@ package com.ai.assistance.operit.core.tools.javascript
 
 import android.content.Context
 import com.ai.assistance.operit.util.AppLogger
+import com.ai.assistance.operit.util.LocaleUtils
 import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -49,7 +50,7 @@ import org.json.JSONArray
 class JsEngine(private val context: Context) {
     companion object {
         private const val TAG = "JsEngine"
-        private const val TOOLPKG_TAG = "Toolpkg"
+        private const val TOOLPKG_TAG = "ToolPkg"
         private const val BINARY_DATA_THRESHOLD = 32 * 1024 // 32KB
         private const val BINARY_HANDLE_PREFIX = "@binary_handle:"
     }
@@ -71,24 +72,22 @@ class JsEngine(private val context: Context) {
     // 工具调用接口
     private val toolCallInterface = JsToolCallInterface()
 
-    // 结果回调
-    @Volatile
-    private var resultCallback: CompletableFuture<Any?>? = null
-    @Volatile
-    private var intermediateResultCallback: ((Any?) -> Unit)? = null
-    // A single WebView cannot safely run multiple scripts concurrently.
-    // This lock enforces per-engine serialization; cross-context concurrency must use different JsEngine instances.
-    private val executionLock = java.util.concurrent.locks.ReentrantLock()
+    private data class ExecutionSession(
+        val callId: String,
+        val future: CompletableFuture<Any?>,
+        val intermediateResultCallback: ((Any?) -> Unit)?,
+        val envOverrides: Map<String, String>,
+        val toolPkgLogSnapshot: JsToolPkgExecutionContext.LogSnapshot
+    )
+
+    private val activeExecutionSessions = ConcurrentHashMap<String, ExecutionSession>()
 
     // 用于存储工具调用的回调
-    private val toolCallbacks = mutableMapOf<String, CompletableFuture<String>>()
-    private val composeDslActionCompleteCallbacks = ConcurrentHashMap<String, () -> Unit>()
-    private val composeDslActionErrorCallbacks = ConcurrentHashMap<String, (String) -> Unit>()
+    private val toolCallbacks = ConcurrentHashMap<String, CompletableFuture<String>>()
 
     // 标记 JS 环境是否已初始化
     private var jsEnvironmentInitialized = false
 
-    private var envOverrides: Map<String, String> = emptyMap()
     private val toolPkgExecutionContext = JsToolPkgExecutionContext()
     private val toolPkgRegistrationSession = JsToolPkgRegistrationSession()
 
@@ -181,12 +180,84 @@ class JsEngine(private val context: Context) {
         }
     }
 
-    private fun withToolpkgPluginTag(message: String): String {
-        return toolPkgExecutionContext.withPluginTag(message)
+    private fun nextExecutionCallId(): String {
+        return "operit_call_${UUID.randomUUID().toString().replace("-", "")}" 
     }
 
-    private fun withToolpkgCodeContext(message: String): String {
-        return toolPkgExecutionContext.withCodeContext(message)
+    private fun createExecutionSession(
+        callId: String,
+        script: String,
+        functionName: String,
+        params: Map<String, Any?>,
+        envOverrides: Map<String, String>,
+        onIntermediateResult: ((Any?) -> Unit)?
+    ): ExecutionSession {
+        return ExecutionSession(
+            callId = callId,
+            future = CompletableFuture(),
+            intermediateResultCallback = onIntermediateResult,
+            envOverrides = envOverrides,
+            toolPkgLogSnapshot = toolPkgExecutionContext.capture(script, functionName, params)
+        )
+    }
+
+    private fun resolveExecutionSession(callId: String): ExecutionSession? {
+        return activeExecutionSessions[callId.trim()]
+    }
+
+    private fun removeExecutionSession(callId: String): ExecutionSession? {
+        return activeExecutionSessions.remove(callId.trim())
+    }
+
+    private fun cancelAllExecutionSessions(reason: String) {
+        val sessions = activeExecutionSessions.values.toList()
+        activeExecutionSessions.clear()
+        sessions.forEach { session ->
+            if (!session.future.isDone) {
+                session.future.complete(reason)
+            }
+            cancelExecutionSessionInJs(
+                callId = session.callId,
+                reason = reason
+            )
+        }
+    }
+
+    private fun cancelExecutionSessionInJs(callId: String, reason: String) {
+        val safeCallId = JSONObject.quote(callId)
+        val safeReason = JSONObject.quote(reason)
+        ContextCompat.getMainExecutor(context).execute {
+            try {
+                webView?.evaluateJavascript(
+                    """
+                        (function() {
+                            if (typeof window.__operitCancelCallSession === 'function') {
+                                window.__operitCancelCallSession($safeCallId, $safeReason);
+                            }
+                        })();
+                    """.trimIndent(),
+                    null
+                )
+            } catch (e: Exception) {
+                AppLogger.e(TAG, "Error canceling JS execution session $callId: ${e.message}", e)
+            }
+        }
+    }
+
+    private fun withToolPkgPluginTag(message: String): String {
+        return toolPkgExecutionContext.withPluginTag(null, message)
+    }
+
+    private fun withToolPkgPluginTag(session: ExecutionSession?, message: String): String {
+        return toolPkgExecutionContext.withPluginTag(session?.toolPkgLogSnapshot, message)
+    }
+
+    private fun withToolPkgCodeContext(message: String): String {
+        return toolPkgExecutionContext.withCodeContext(null, message)
+    }
+
+    private fun withToolPkgCodeContext(session: ExecutionSession?, message: String): String {
+        return toolPkgExecutionContext.withCodeContext(session?.toolPkgLogSnapshot, message)
     }
 
     private fun invokeJavaBridgeJsObjectCallbackSync(
@@ -319,7 +390,6 @@ class JsEngine(private val context: Context) {
             buildInitRuntimeScript(
                 operitDownloadDir = operitDownloadDir,
                 operitCleanOnExitDir = operitCleanOnExitDir,
-                asyncPromiseTimeoutSeconds = JsTimeoutConfig.ASYNC_PROMISE_TIMEOUT_SECONDS,
                 toolPkgRegistrationBridgeScript = buildToolPkgRegistrationBridgeScript(),
                 jsToolsDefinition = getJsToolsDefinition(),
                 composeDslContextBridgeDefinition = getComposeDslContextBridgeDefinition(),
@@ -340,18 +410,23 @@ class JsEngine(private val context: Context) {
                 webView?.evaluateJavascript(initScript) { result ->
                     AppLogger.d(TAG, "JS environment initialization completed: $result")
                     try {
-                        webView?.evaluateJavascript("typeof __handleAsync === 'function'") { checkResult ->
-                            val isHandleAsyncDefined = checkResult == "true"
-                            if (isHandleAsyncDefined) {
+                        webView?.evaluateJavascript(
+                            "typeof __operitRegisterCallSession === 'function' && typeof __operitGetCallState === 'function'"
+                        ) { checkResult ->
+                            val isRuntimeReady = checkResult == "true"
+                            if (isRuntimeReady) {
                                 jsEnvironmentInitialized = true
                             } else {
                                 jsEnvironmentInitialized = false
-                                AppLogger.e(TAG, "__handleAsync is not defined after JS environment initialization. Result: $checkResult")
+                                AppLogger.e(
+                                    TAG,
+                                    "JS call runtime bridge is not ready after initialization. Result: $checkResult"
+                                )
                             }
                             initLatch.countDown()
                         }
                     } catch (e: Exception) {
-                        AppLogger.e(TAG, "Failed to verify __handleAsync after JS environment initialization: ${e.message}", e)
+                        AppLogger.e(TAG, "Failed to verify JS call runtime bridge after initialization: ${e.message}", e)
                         jsEnvironmentInitialized = false
                         initLatch.countDown()
                     }
@@ -389,33 +464,37 @@ class JsEngine(private val context: Context) {
             onIntermediateResult: ((Any?) -> Unit)? = null,
             timeoutSec: Long = JsTimeoutConfig.MAIN_TIMEOUT_SECONDS.toLong()
     ): Any? {
-        executionLock.lock()
-        try {
-        // Reset any previous state
-        resetState()
-        this.envOverrides = envOverrides
-        this.intermediateResultCallback = onIntermediateResult
-        this.toolPkgExecutionContext.begin(script, functionName, params)
+        val effectiveParams = params.toMutableMap()
+        val explicitLanguage = effectiveParams["__operit_package_lang"]?.toString()?.trim().orEmpty()
+        if (explicitLanguage.isBlank()) {
+            effectiveParams["__operit_package_lang"] =
+                LocaleUtils.getCurrentLanguage(context).trim().ifBlank { "en" }
+        }
 
         initWebView()
-
-        // 确保JavaScript环境已初始化
         if (!jsEnvironmentInitialized) {
             initJavaScriptEnvironment()
         }
 
-        val future = CompletableFuture<Any?>()
-        resultCallback = future
+        val callId = nextExecutionCallId()
+        val session =
+            createExecutionSession(
+                callId = callId,
+                script = script,
+                functionName = functionName,
+                params = effectiveParams,
+                envOverrides = envOverrides,
+                onIntermediateResult = onIntermediateResult
+            )
+        activeExecutionSessions[callId] = session
 
-        // 将参数转换为 JSON 对象
-        val paramsJson = JSONObject(params).toString()
+        val paramsJson = JSONObject(effectiveParams).toString()
         val scriptJson = JSONObject.quote(script)
         val functionNameJson = JSONObject.quote(functionName)
-
-        // 优化后的脚本执行代码，只包含必要的执行逻辑
-        // 执行脚本内容由独立构建器负责，避免在 JsEngine 中堆叠长字符串逻辑
+        val callIdJson = JSONObject.quote(callId)
         val executionScript =
             buildExecutionScript(
+                callIdJson = callIdJson,
                 paramsJson = paramsJson,
                 scriptJson = scriptJson,
                 functionNameJson = functionNameJson,
@@ -423,74 +502,67 @@ class JsEngine(private val context: Context) {
                 preTimeoutSeconds = JsTimeoutConfig.PRE_TIMEOUT_SECONDS
             )
 
-        // 在主线程中执行脚本
         ContextCompat.getMainExecutor(context).execute {
-            webView?.evaluateJavascript(executionScript) { result ->
-                AppLogger.d(TAG, "Script execution dispatched. Sync result: $result (final async result is handled separately)")
+            try {
+                webView?.evaluateJavascript(executionScript) { result ->
+                    AppLogger.d(
+                        TAG,
+                        "Script execution dispatched: callId=$callId, function=$functionName, syncResult=$result"
+                    )
+                }
+            } catch (e: Exception) {
+                AppLogger.e(
+                    TAG,
+                    "Failed to dispatch script execution: callId=$callId, function=$functionName, reason=${e.message}",
+                    e
+                )
+                removeExecutionSession(callId)
+                if (!session.future.isDone) {
+                    session.future.complete("Error: ${e.message ?: "dispatch failed"}")
+                }
             }
         }
 
-        // 等待结果或超时
+        val preTimeoutTimer = java.util.Timer()
         return try {
-            // 创建一个定时器，在超时前提醒JavaScript
-            val preTimeoutTimer = java.util.Timer()
-
-            // 只在较长的脚本执行中使用超时预警
             preTimeoutTimer.schedule(
-                    object : java.util.TimerTask() {
-                        override fun run() {
-                            try {
-                                // 如果还没完成，尝试提前触发完成
-                                if (!future.isDone) {
-                                    AppLogger.d(TAG, "Pre-timeout warning triggered")
-                                    ContextCompat.getMainExecutor(context).execute {
-                                        webView?.evaluateJavascript(
-                                                """
-                                    if (typeof complete === 'function' && !window._hasCompleted) {
-                                        console.log("Script execution approaching timeout");
-                                        // 不强制完成，只记录警告
-                                    }
-                                """,
-                                                null
-                                        )
-                                    }
-                                }
-                            } catch (e: Exception) {
-                                AppLogger.e(TAG, "Error in pre-timeout handler: ${e.message}", e)
-                            }
+                object : java.util.TimerTask() {
+                    override fun run() {
+                        if (!session.future.isDone) {
+                            AppLogger.d(
+                                TAG,
+                                "Pre-timeout warning triggered: callId=$callId, function=$functionName"
+                            )
                         }
-                    },
-                    JsTimeoutConfig.PRE_TIMEOUT_SECONDS * 1000
+                    }
+                },
+                JsTimeoutConfig.PRE_TIMEOUT_SECONDS * 1000
             )
 
-            try {
-                val safeTimeoutSec = if (timeoutSec <= 0L) 1L else timeoutSec
-                val result = future.get(safeTimeoutSec, TimeUnit.SECONDS)
-                preTimeoutTimer.cancel()
-                result
-            } catch (e: Exception) {
-                preTimeoutTimer.cancel()
-                throw e
-            }
+            val safeTimeoutSec = if (timeoutSec <= 0L) 1L else timeoutSec
+            val result = session.future.get(safeTimeoutSec, TimeUnit.SECONDS)
+            removeExecutionSession(callId)
+            result
         } catch (e: Exception) {
-            AppLogger.e(TAG, "Script execution timed out or failed: ${e.message}", e)
-            // 确保WebView的JavaScript不再继续执行
-            ContextCompat.getMainExecutor(context).execute {
-                webView?.evaluateJavascript(
-                        "window._hasCompleted = true; clearTimeout(window._safetyTimeout);",
-                        null
-                )
+            if (e is InterruptedException) {
+                Thread.currentThread().interrupt()
             }
             val failureReason =
                 when (e) {
                     is java.util.concurrent.TimeoutException ->
                         "Script execution timed out after ${if (timeoutSec <= 0L) 1L else timeoutSec} seconds"
                     else -> e.message ?: e.javaClass.simpleName
-            }
+                }
+            AppLogger.e(
+                TAG,
+                "Script execution timed out or failed: callId=$callId, function=$functionName, reason=$failureReason",
+                e
+            )
+            removeExecutionSession(callId)
+            cancelExecutionSessionInJs(callId, failureReason)
             "Error: $failureReason"
-        }
         } finally {
-            executionLock.unlock()
+            preTimeoutTimer.cancel()
         }
     }
 
@@ -499,23 +571,20 @@ class JsEngine(private val context: Context) {
         functionName: String,
         params: Map<String, Any?> = emptyMap()
     ): ToolPkgMainRegistrationCapture {
-        executionLock.lock()
-        try {
+        synchronized(toolPkgRegistrationSession) {
             toolPkgRegistrationSession.begin()
             try {
                 val executionResult =
                     executeScriptFunction(
-                    script = script,
-                    functionName = functionName,
-                    params = params,
-                    timeoutSec = 12L
-                )
+                        script = script,
+                        functionName = functionName,
+                        params = params,
+                        timeoutSec = 12L
+                    )
                 return toolPkgRegistrationSession.finish(executionResult)
             } finally {
                 toolPkgRegistrationSession.end()
             }
-        } finally {
-            executionLock.unlock()
         }
     }
 
@@ -555,28 +624,6 @@ class JsEngine(private val context: Context) {
         )
     }
 
-    private fun toJsLiteral(value: Any?): String {
-        if (value == null) {
-            return "undefined"
-        }
-        return when (value) {
-            is Number, is Boolean -> value.toString()
-            is String -> JSONObject.quote(value)
-            else -> {
-                try {
-                    val wrapped = JSONObject.wrap(value)
-                    when (wrapped) {
-                        null -> JSONObject.quote(value.toString())
-                        JSONObject.NULL -> "null"
-                        else -> wrapped.toString()
-                    }
-                } catch (e: Exception) {
-                    JSONObject.quote(value.toString())
-                }
-            }
-        }
-    }
-
     fun dispatchComposeDslActionAsync(
             actionId: String,
             payload: Any? = null,
@@ -592,81 +639,44 @@ class JsEngine(private val context: Context) {
             return false
         }
 
-        if (onIntermediateResult != null) {
-            intermediateResultCallback = onIntermediateResult
-        }
-        this.envOverrides = envOverrides
-
-        initWebView()
-        if (!jsEnvironmentInitialized) {
-            initJavaScriptEnvironment()
-        }
-
-        val actionToken = UUID.randomUUID().toString()
-        if (onComplete != null) {
-            composeDslActionCompleteCallbacks[actionToken] = onComplete
-        }
-        if (onError != null) {
-            composeDslActionErrorCallbacks[actionToken] = onError
-        }
-
-        val actionIdJson = JSONObject.quote(normalizedActionId)
-        val actionTokenJson = JSONObject.quote(actionToken)
-        val hasPayload = payload != null
-        val payloadLiteral = if (hasPayload) toJsLiteral(payload) else "undefined"
-        val asyncDispatchScript =
-                """
-            (function() {
-                var __actionToken = $actionTokenJson;
+        Thread {
+            val result =
                 try {
-                    var __dispatchFn =
-                        (typeof window !== 'undefined' && typeof window.__operit_dispatch_compose_dsl_action === 'function')
-                            ? window.__operit_dispatch_compose_dsl_action
-                            : (typeof __operit_dispatch_compose_dsl_action === 'function'
-                                ? __operit_dispatch_compose_dsl_action
-                                : null);
-                    if (typeof __dispatchFn !== 'function') {
-                        NativeInterface.reportComposeDslActionError(__actionToken, 'compose_dsl runtime dispatch function not found');
-                        NativeInterface.reportComposeDslActionCompleted(__actionToken);
-                        return;
+                    executeComposeDslAction(
+                        actionId = normalizedActionId,
+                        payload = payload,
+                        envOverrides = envOverrides,
+                        onIntermediateResult = onIntermediateResult
+                    )
+                } catch (e: Exception) {
+                    val errorText = e.message?.trim().orEmpty().ifBlank { "compose action dispatch failed" }
+                    AppLogger.e(TAG, "dispatch compose action failed: actionId=$normalizedActionId, error=$errorText", e)
+                    ContextCompat.getMainExecutor(context).execute {
+                        onError?.invoke(errorText)
+                        onComplete?.invoke()
                     }
-
-                    var __request = { __action_id: $actionIdJson };
-                    if ($hasPayload) {
-                        __request.__action_payload = $payloadLiteral;
-                    }
-
-                    Promise.resolve(__dispatchFn(__request))
-                        .then(function(__result) {
-                            try {
-                                NativeInterface.sendIntermediateResult(JSON.stringify(__result));
-                            } catch (__ignored) {
-                            }
-                            NativeInterface.reportComposeDslActionCompleted(__actionToken);
-                        })
-                        .catch(function(__error) {
-                            var __message = (__error && __error.message) ? __error.message : String(__error);
-                            NativeInterface.reportComposeDslActionError(__actionToken, __message);
-                            NativeInterface.reportComposeDslActionCompleted(__actionToken);
-                        });
-                } catch (__e) {
-                    var __message = (__e && __e.message) ? __e.message : String(__e);
-                    NativeInterface.reportComposeDslActionError(__actionToken, __message);
-                    NativeInterface.reportComposeDslActionCompleted(__actionToken);
+                    return@Thread
                 }
-            })();
-        """.trimIndent()
 
-        ContextCompat.getMainExecutor(context).execute {
-            try {
-                webView?.evaluateJavascript(asyncDispatchScript, null)
-            } catch (e: Exception) {
-                val errorText = "dispatch compose action failed: ${e.message}"
-                AppLogger.e(TAG, errorText, e)
-                composeDslActionErrorCallbacks.remove(actionToken)?.invoke(errorText)
-                composeDslActionCompleteCallbacks.remove(actionToken)?.invoke()
+            val errorText =
+                result?.toString()
+                    ?.takeIf { it.startsWith("Error:", ignoreCase = true) }
+                    ?.removePrefix("Error:")
+                    ?.trim()
+                    ?.ifBlank { "compose action dispatch failed" }
+            ContextCompat.getMainExecutor(context).execute {
+                if (errorText != null) {
+                    AppLogger.e(
+                        TAG,
+                        "dispatch compose action failed: actionId=$normalizedActionId, error=$errorText"
+                    )
+                    onError?.invoke(errorText)
+                } else if (result != null) {
+                    onIntermediateResult?.invoke(result)
+                }
+                onComplete?.invoke()
             }
-        }
+        }.start()
 
         return true
     }
@@ -674,63 +684,30 @@ class JsEngine(private val context: Context) {
     fun cancelCurrentExecution(reason: String = "Execution canceled: requested by caller") {
         AppLogger.d(TAG, "Cancel current JS execution: $reason")
         resetState(cancellationMessage = reason)
-        if (webView != null) {
-            ContextCompat.getMainExecutor(context).execute {
-                try {
-                    webView?.evaluateJavascript(
-                            "window._hasCompleted = true; clearTimeout(window._safetyTimeout);",
-                            null
-                    )
-                } catch (e: Exception) {
-                    AppLogger.e(TAG, "Error stopping current JS execution: ${e.message}", e)
-                }
-            }
-        }
     }
 
     /** 重置引擎状态，避免多次调用时的状态干扰 */
     private fun resetState(cancellationMessage: String = "Execution canceled: new execution started") {
-        // 只有当之前的回调存在时才需要完成它
-        val callback = resultCallback
-        if (callback != null && !callback.isDone) {
-            try {
-                callback.complete(cancellationMessage)
-            } catch (e: Exception) {
-                AppLogger.e(TAG, "Error completing previous callback: ${e.message}", e)
-            }
-        }
-        resultCallback = null
-        intermediateResultCallback = null
+        cancelAllExecutionSessions(cancellationMessage)
 
-        // 清理所有待处理的工具调用回调
         toolCallbacks.forEach { (_, future) ->
             if (!future.isDone) {
                 future.complete("Operation canceled: engine reset")
             }
         }
         toolCallbacks.clear()
-        composeDslActionCompleteCallbacks.clear()
-        composeDslActionErrorCallbacks.clear()
 
-        envOverrides = emptyMap()
-        toolPkgExecutionContext.clear()
-
-        // 清理Bitmap注册表
         bitmapRegistry.values.forEach { it.recycle() }
         bitmapRegistry.clear()
 
-        // 清理二进制数据注册表
         binaryDataRegistry.clear()
         javaObjectRegistry.clear()
 
-        // 如果WebView已经存在，执行轻量级清理
         if (webView != null) {
             ContextCompat.getMainExecutor(context).execute {
                 try {
-                    // 使用更简单、更安全的清理代码
                     webView?.evaluateJavascript(
                             """
-                        // 清理所有定时器
                         (function() {
                             var highestTimeoutId = setTimeout(";");
                             for (var i = 0 ; i < highestTimeoutId ; i++) {
@@ -763,11 +740,12 @@ class JsEngine(private val context: Context) {
         }
 
         @JavascriptInterface
-        fun getEnv(key: String): String? {
+        fun getEnvForCall(callId: String, key: String): String? {
+            val session = resolveExecutionSession(callId)
             return JsNativeInterfaceDelegates.getEnv(
                 context = context,
                 key = key,
-                envOverrides = envOverrides
+                envOverrides = session?.envOverrides ?: emptyMap()
             )
         }
 
@@ -1223,50 +1201,18 @@ class JsEngine(private val context: Context) {
         }
 
         @JavascriptInterface
-        fun sendIntermediateResult(result: String) {
+        fun sendCallIntermediateResult(callId: String, result: String) {
             try {
+                val session = resolveExecutionSession(callId) ?: return
                 ContextCompat.getMainExecutor(context).execute {
-                    intermediateResultCallback?.invoke(result)
+                    session.intermediateResultCallback?.invoke(result)
                 }
             } catch (e: Exception) {
-                AppLogger.e(TAG, "Error processing intermediate result: ${e.message}", e)
+                AppLogger.e(TAG, "Error processing call intermediate result: callId=$callId, reason=${e.message}", e)
             }
         }
 
-        @JavascriptInterface
-        fun reportComposeDslActionError(actionToken: String, error: String) {
-            try {
-                AppLogger.e(
-                        TAG,
-                        "compose_dsl async action error: token=$actionToken, error=$error"
-                )
-                val callback = composeDslActionErrorCallbacks.remove(actionToken)
-                if (callback != null) {
-                    ContextCompat.getMainExecutor(context).execute {
-                        callback.invoke(error)
-                    }
-                }
-            } catch (e: Exception) {
-                AppLogger.e(TAG, "Error reporting compose_dsl action error: ${e.message}", e)
-            }
-        }
-
-        @JavascriptInterface
-        fun reportComposeDslActionCompleted(actionToken: String) {
-            try {
-                val callback = composeDslActionCompleteCallbacks.remove(actionToken)
-                composeDslActionErrorCallbacks.remove(actionToken)
-                if (callback != null) {
-                    ContextCompat.getMainExecutor(context).execute {
-                        callback.invoke()
-                    }
-                }
-            } catch (e: Exception) {
-                AppLogger.e(TAG, "Error reporting compose_dsl action completion: ${e.message}", e)
-            }
-        }
-
-        /** 同步工具调用（旧版本，保留兼容性） */
+        /** 同步工具调用 */
         @JavascriptInterface
         fun callTool(toolType: String, toolName: String, paramsJson: String): String {
             return JsNativeInterfaceDelegates.callToolSync(
@@ -1321,89 +1267,80 @@ class JsEngine(private val context: Context) {
         }
 
         @JavascriptInterface
-        fun setResult(result: String) {
+        fun setCallResult(callId: String, result: String) {
             try {
-                val callback =
-                    resolveActiveResultCallback(
-                        payloadLength = result.length,
-                        onNullMessage = "Result callback is null when trying to complete",
-                        onDoneMessage = "Result callback is already completed when trying to set result"
-                    )
-                        ?: return
-
-                completeResultCallback(
-                    callback = callback,
+                val session = resolveExecutionSession(callId)
+                AppLogger.d(
+                    TAG,
+                    "Bridge callback from JavaScript: callId=$callId, length=${result.length}, callback=${session != null}, isDone=${session?.future?.isDone}"
+                )
+                if (session == null) {
+                    AppLogger.e(TAG, "Result callback is null when trying to complete: callId=$callId")
+                    return
+                }
+                if (session.future.isDone) {
+                    AppLogger.w(TAG, "Result callback is already completed when trying to set result: callId=$callId")
+                    return
+                }
+                completeCallFuture(
+                    session = session,
                     value = result,
                     failureMessage = "Error completing result callback"
                 )
             } catch (e: Exception) {
-                AppLogger.e(TAG, "Error setting result: ${e.message}", e)
-                resultCallback?.completeExceptionally(e)
+                AppLogger.e(TAG, "Error setting result: callId=$callId, reason=${e.message}", e)
+                resolveExecutionSession(callId)?.future?.completeExceptionally(e)
             }
         }
 
         @JavascriptInterface
-        fun setError(error: String) {
+        fun setCallError(callId: String, error: String) {
             try {
-                val callback =
-                    resolveActiveResultCallback(
-                        payloadLength = error.length,
-                        onNullMessage = "Result callback is null when trying to complete with error",
-                        onDoneMessage = "Result callback is already completed when trying to set error"
-                    )
-                        ?: return
+                val session = resolveExecutionSession(callId)
+                AppLogger.d(
+                    TAG,
+                    "Bridge error from JavaScript: callId=$callId, length=${error.length}, callback=${session != null}, isDone=${session?.future?.isDone}"
+                )
+                if (session == null) {
+                    AppLogger.e(TAG, "Result callback is null when trying to complete with error: callId=$callId")
+                    return
+                }
+                if (session.future.isDone) {
+                    AppLogger.w(TAG, "Result callback is already completed when trying to set error: callId=$callId")
+                    return
+                }
 
                 val logMessage = extractErrorLogMessage(error)
-                val enrichedLogMessage = withToolpkgCodeContext(logMessage)
-                AppLogger.e(TOOLPKG_TAG, withToolpkgPluginTag("JS ERROR: $enrichedLogMessage"))
+                val enrichedLogMessage = withToolPkgCodeContext(session, logMessage)
+                AppLogger.e(TOOLPKG_TAG, withToolPkgPluginTag(session, "JS ERROR: $enrichedLogMessage"))
 
-                completeResultCallback(
-                    callback = callback,
-                    value = "Error: ${withToolpkgCodeContext(error)}",
+                completeCallFuture(
+                    session = session,
+                    value = "Error: ${withToolPkgCodeContext(session, error)}",
                     failureMessage = "Error completing error callback"
                 )
             } catch (e: Exception) {
-                AppLogger.e(TAG, "Error setting error result: ${e.message}", e)
-                resultCallback?.completeExceptionally(e)
+                AppLogger.e(TAG, "Error setting error result: callId=$callId, reason=${e.message}", e)
+                resolveExecutionSession(callId)?.future?.completeExceptionally(e)
             }
         }
 
-        private fun resolveActiveResultCallback(
-            payloadLength: Int,
-            onNullMessage: String,
-            onDoneMessage: String
-        ): CompletableFuture<Any?>? {
-            val callback = resultCallback
-            AppLogger.d(
-                TAG,
-                "Bridge callback from JavaScript: length=$payloadLength, callback=${callback != null}, isDone=${callback?.isDone}"
-            )
-            if (callback == null) {
-                AppLogger.e(TAG, onNullMessage)
-                return null
-            }
-            if (callback.isDone) {
-                AppLogger.w(TAG, onDoneMessage)
-                return null
-            }
-            return callback
-        }
-
-        private fun completeResultCallback(
-            callback: CompletableFuture<Any?>,
+        private fun completeCallFuture(
+            session: ExecutionSession,
             value: String,
             failureMessage: String
         ) {
             try {
-                if (!callback.isDone) {
-                    callback.complete(value)
+                if (!session.future.isDone) {
+                    removeExecutionSession(session.callId)
+                    session.future.complete(value)
                 } else {
-                    AppLogger.w(TAG, "Callback became complete between check and execution")
+                    AppLogger.w(TAG, "Callback became complete between check and execution: callId=${session.callId}")
                 }
             } catch (e: Exception) {
                 AppLogger.e(TAG, "$failureMessage: ${e.message}", e)
-                if (!callback.isDone) {
-                    callback.completeExceptionally(e)
+                if (!session.future.isDone) {
+                    session.future.completeExceptionally(e)
                 }
             }
         }
@@ -1441,17 +1378,29 @@ class JsEngine(private val context: Context) {
 
         @JavascriptInterface
         fun logInfo(message: String) {
-            AppLogger.i(TOOLPKG_TAG, withToolpkgPluginTag(message))
+            AppLogger.i(TOOLPKG_TAG, withToolPkgPluginTag(message))
+        }
+
+        @JavascriptInterface
+        fun logInfoForCall(callId: String, message: String) {
+            val session = resolveExecutionSession(callId)
+            AppLogger.i(TOOLPKG_TAG, withToolPkgPluginTag(session, message))
         }
 
         @JavascriptInterface
         fun logError(message: String) {
-            AppLogger.e(TOOLPKG_TAG, withToolpkgPluginTag(message))
+            AppLogger.e(TOOLPKG_TAG, withToolPkgPluginTag(message))
+        }
+
+        @JavascriptInterface
+        fun logErrorForCall(callId: String, message: String) {
+            val session = resolveExecutionSession(callId)
+            AppLogger.e(TOOLPKG_TAG, withToolPkgPluginTag(session, message))
         }
 
         @JavascriptInterface
         fun logDebug(message: String, data: String) {
-            AppLogger.d(TOOLPKG_TAG, withToolpkgPluginTag("$message | $data"))
+            AppLogger.d(TOOLPKG_TAG, withToolPkgPluginTag("$message | $data"))
         }
 
         @JavascriptInterface
@@ -1463,7 +1412,25 @@ class JsEngine(private val context: Context) {
         ) {
             AppLogger.e(
                     TOOLPKG_TAG,
-                    withToolpkgPluginTag(
+                    withToolPkgPluginTag(
+                        "DETAILED JS ERROR: \nType: $errorType\nMessage: $errorMessage\nLine: $errorLine\nStack: $errorStack"
+                    )
+            )
+        }
+
+        @JavascriptInterface
+        fun reportErrorForCall(
+                callId: String,
+                errorType: String,
+                errorMessage: String,
+                errorLine: Int,
+                errorStack: String
+        ) {
+            val session = resolveExecutionSession(callId)
+            AppLogger.e(
+                    TOOLPKG_TAG,
+                    withToolPkgPluginTag(
+                        session,
                         "DETAILED JS ERROR: \nType: $errorType\nMessage: $errorMessage\nLine: $errorLine\nStack: $errorStack"
                     )
             )
@@ -1474,19 +1441,14 @@ class JsEngine(private val context: Context) {
     fun destroy() {
         try {
             // 确保任何挂起的回调被完成
-            resultCallback?.complete("Engine destroyed")
-            resultCallback = null
-            intermediateResultCallback = null
+            cancelAllExecutionSessions("Engine destroyed")
 
-            // 清理所有待处理的工具调用回调
             toolCallbacks.forEach { (_, future) ->
                 if (!future.isDone) {
                     future.complete("Engine destroyed")
                 }
             }
             toolCallbacks.clear()
-            composeDslActionCompleteCallbacks.clear()
-            composeDslActionErrorCallbacks.clear()
 
             // 清理Bitmap注册表
             bitmapRegistry.values.forEach { it.recycle() }
@@ -1535,7 +1497,7 @@ class JsEngine(private val context: Context) {
         try {
             AppLogger.d(TAG, "=== JsEngine Diagnostics ===")
             AppLogger.d(TAG, "WebView initialized: ${webView != null}")
-            AppLogger.d(TAG, "Result callback: ${resultCallback?.isDone ?: "null"}")
+            AppLogger.d(TAG, "Active execution sessions: ${activeExecutionSessions.size}")
             AppLogger.d(TAG, "Tool callbacks pending: ${toolCallbacks.size}")
 
             // 检查WebView状态

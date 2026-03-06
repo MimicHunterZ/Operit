@@ -235,6 +235,7 @@ class ConversationService(
             enableMemoryQuery: Boolean = true,
             roleCardId: String? = null,
             enableGroupOrchestrationHint: Boolean = false,
+            groupParticipantNamesText: String? = null,
             proxySenderName: String? = null,
             hasImageRecognition: Boolean = false,
             hasAudioRecognition: Boolean = false,
@@ -320,7 +321,8 @@ class ConversationService(
                     toolVisibility = toolPromptVisibility,
                     enableGroupOrchestrationHint = enableGroupOrchestrationHint,
                     groupOrchestrationRoleName = activeCard?.name?.takeIf { it.isNotBlank() }
-                        ?: context.getString(R.string.app_name)
+                        ?: context.getString(R.string.app_name),
+                    groupParticipantNamesText = groupParticipantNamesText.orEmpty()
                 )
 
                 // 构建waifu特殊规则

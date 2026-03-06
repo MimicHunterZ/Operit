@@ -2,7 +2,6 @@ package com.ai.assistance.operit.core.tools.javascript
 
 import android.content.Context
 import com.ai.assistance.operit.util.AppLogger
-import com.ai.assistance.operit.util.LocaleUtils
 import com.ai.assistance.operit.core.tools.StringResultData
 import com.ai.assistance.operit.core.tools.packTool.PackageManager
 import com.ai.assistance.operit.data.model.AITool
@@ -88,12 +87,6 @@ private constructor(private val context: Context, private val packageManager: Pa
                 injectedParams["__operit_package_state"] = stateId
             } else {
                 injectedParams.remove("__operit_package_state")
-            }
-            val language = LocaleUtils.getCurrentLanguage(context)
-            if (language.isNotBlank()) {
-                injectedParams["__operit_package_lang"] = language
-            } else {
-                injectedParams.remove("__operit_package_lang")
             }
             if (params["__operit_package_caller_name"] != null) {
                 injectedParams["__operit_package_caller_name"] = params["__operit_package_caller_name"].toString()
@@ -181,12 +174,6 @@ private constructor(private val context: Context, private val packageManager: Pa
                 injectedParams["__operit_package_state"] = stateId
             } else {
                 injectedParams.remove("__operit_package_state")
-            }
-            val language = LocaleUtils.getCurrentLanguage(context)
-            if (language.isNotBlank()) {
-                injectedParams["__operit_package_lang"] = language
-            } else {
-                injectedParams.remove("__operit_package_lang")
             }
             if (params["__operit_package_caller_name"] != null) {
                 injectedParams["__operit_package_caller_name"] = params["__operit_package_caller_name"].toString()
@@ -348,11 +335,6 @@ private constructor(private val context: Context, private val packageManager: Pa
                     runtimeOptions["__operit_package_state"] = stateId
                 }
             }
-            val language = LocaleUtils.getCurrentLanguage(context)
-            if (language.isNotBlank()) {
-                runtimeOptions["__operit_package_lang"] = language
-            }
-
             val result =
                     engine.executeComposeDslScript(
                             script = script,

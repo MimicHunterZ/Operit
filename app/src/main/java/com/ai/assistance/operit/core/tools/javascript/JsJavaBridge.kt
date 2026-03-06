@@ -358,30 +358,20 @@ internal fun buildJavaClassBridgeDefinition(): String {
 
             function scheduleSuspendCall(invoker, args) {
                 var argList = Array.isArray(args) ? args.slice() : [];
-                var last = argList.length > 0 ? argList[argList.length - 1] : undefined;
-                var callback = typeof last === 'function' ? last : null;
-                if (callback) {
-                    argList = argList.slice(0, -1);
+                if (typeof Promise !== 'function') {
+                    throw new Error('Promise is required for suspend call');
                 }
-                if (!callback && typeof Promise !== 'function') {
-                    throw new Error('callback or Promise is required for suspend call');
-                }
-                if (!callback) {
-                    return new Promise(function(resolve, reject) {
-                        var promiseCallback = function(error, value) {
-                            if (error) {
-                                reject(new Error(error));
-                            } else {
-                                resolve(value);
-                            }
-                        };
-                        var callbackId = registerJsObject(promiseCallback);
-                        invoker(callbackId, argList);
-                    });
-                }
-                var callbackId = registerJsObject(callback);
-                invoker(callbackId, argList);
-                return undefined;
+                return new Promise(function(resolve, reject) {
+                    var promiseCallback = function(error, value) {
+                        if (error) {
+                            reject(new Error(error));
+                        } else {
+                            resolve(value);
+                        }
+                    };
+                    var callbackId = registerJsObject(promiseCallback);
+                    invoker(callbackId, argList);
+                });
             }
 
             function invokeBridge(methodName, args) {
