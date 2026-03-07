@@ -2016,13 +2016,15 @@ private fun AgentExtraSettingsPopup(
     var showToolPromptManagerDialog by remember { mutableStateOf(false) }
     var infoPopupContent by remember { mutableStateOf<Pair<String, String>?>(null) }
     val context = LocalContext.current
-    val inputMenuToggles = InputMenuTogglePluginRegistry.createToggles(
-        params = InputMenuToggleHookParams(
-            context = context,
-            featureStates = featureStates,
-            onToggleFeature = onToggleFeature
+    val inputMenuToggles = InputMenuTogglePluginRegistry.changeVersion.collectAsState().value.let {
+        InputMenuTogglePluginRegistry.createToggles(
+            params = InputMenuToggleHookParams(
+                context = context,
+                featureStates = featureStates,
+                onToggleFeature = onToggleFeature
+            )
         )
-    )
+    }
 
     Popup(
         alignment = Alignment.TopStart,
@@ -2118,6 +2120,7 @@ private fun AgentExtraSettingsPopup(
                             title = toggleTitle,
                             icon = Icons.Outlined.Hub,
                             isChecked = toggle.isChecked,
+                            isEnabled = toggle.isEnabled,
                             onToggle = toggle.onToggle,
                             onInfoClick = {
                                 val infoTitle =
@@ -2482,6 +2485,7 @@ private fun AgentSimpleToggleSettingItem(
     title: String,
     icon: ImageVector,
     isChecked: Boolean,
+    isEnabled: Boolean = true,
     onToggle: () -> Unit,
     onInfoClick: () -> Unit,
 ) {
@@ -2492,6 +2496,7 @@ private fun AgentSimpleToggleSettingItem(
                 .height(36.dp)
                 .toggleable(
                     value = isChecked,
+                    enabled = isEnabled,
                     onValueChange = { onToggle() },
                     role = Role.Switch,
                 )
@@ -2502,7 +2507,9 @@ private fun AgentSimpleToggleSettingItem(
             imageVector = icon,
             contentDescription = null,
             tint =
-                if (isChecked) {
+                if (!isEnabled) {
+                    MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                } else if (isChecked) {
                     MaterialTheme.colorScheme.primary
                 } else {
                     MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
@@ -2521,12 +2528,15 @@ private fun AgentSimpleToggleSettingItem(
         Text(
             text = title,
             fontSize = 13.sp,
-            color = MaterialTheme.colorScheme.onSurface,
+            color =
+                if (isEnabled) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             modifier = Modifier.weight(1f),
         )
         Switch(
             checked = isChecked,
             onCheckedChange = null,
+            enabled = isEnabled,
             modifier = Modifier.scale(0.65f),
             colors =
                 SwitchDefaults.colors(

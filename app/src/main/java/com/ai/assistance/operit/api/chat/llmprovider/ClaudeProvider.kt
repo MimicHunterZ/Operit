@@ -593,7 +593,7 @@ class ClaudeProvider(
             logJson.put("tools", "[${toolsArray.length()} tools omitted for brevity]")
         }
         AppLogger.d("AIService", "Claude请求体: ${logJson.toString(4)}")
-        return jsonObject.toString().toRequestBody(JSON)
+        return jsonObject.toString().toByteArray(Charsets.UTF_8).toRequestBody(JSON)
     }
 
     // 添加模型参数

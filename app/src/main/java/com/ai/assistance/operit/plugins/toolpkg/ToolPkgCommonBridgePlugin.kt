@@ -2,6 +2,7 @@ package com.ai.assistance.operit.plugins.toolpkg
 
 import android.content.Context
 import androidx.compose.ui.graphics.Color
+import com.ai.assistance.operit.R
 import com.ai.assistance.operit.core.application.OperitApplication
 import com.ai.assistance.operit.core.chat.plugins.MessageProcessingController
 import com.ai.assistance.operit.core.chat.plugins.MessageProcessingExecution
@@ -522,17 +523,31 @@ private object ToolPkgInputMenuToggleBridgePlugin : InputMenuTogglePlugin {
     private var hooksCache: List<PackageManager.ToolPkgInputMenuTogglePlugin>? = null
     @Volatile
     private var specsCache: List<InputMenuSpec> = emptyList()
+    @Volatile
+    private var hasLoadedOnce = false
     private val refreshFlag = AtomicBoolean(false)
 
     override fun createToggles(
         params: InputMenuToggleHookParams
     ): List<InputMenuToggleDefinition> {
-        triggerRefresh(params = params)
         val cachedSpecs = specsCache
-        if (cachedSpecs.isEmpty()) {
+        if (!hasLoadedOnce) {
+            triggerRefresh(params = params)
+            if (cachedSpecs.isEmpty()) {
+                return listOf(createLoadingToggle())
+            }
+        }
+        return buildToggleDefinitions(cachedSpecs, params)
+    }
+
+    private fun buildToggleDefinitions(
+        specs: List<InputMenuSpec>,
+        params: InputMenuToggleHookParams
+    ): List<InputMenuToggleDefinition> {
+        if (specs.isEmpty()) {
             return emptyList()
         }
-        return cachedSpecs.map { spec ->
+        return specs.map { spec ->
             val resolvedChecked = params.featureStates[spec.id] ?: spec.isChecked
             InputMenuToggleDefinition(
                 id = spec.id,
@@ -557,10 +572,22 @@ private object ToolPkgInputMenuToggleBridgePlugin : InputMenuTogglePlugin {
                                     "toggleId" to spec.id
                                 )
                         )
+                        triggerRefresh(params = params)
                     }
                 }
             )
         }
+    }
+
+    private fun createLoadingToggle(): InputMenuToggleDefinition {
+        return InputMenuToggleDefinition(
+            id = "toolpkg_input_menu_loading",
+            titleRes = R.string.loading,
+            descriptionRes = R.string.loading,
+            isChecked = false,
+            isEnabled = false,
+            onToggle = {}
+        )
     }
 
     private fun triggerRefresh(params: InputMenuToggleHookParams) {
@@ -569,54 +596,66 @@ private object ToolPkgInputMenuToggleBridgePlugin : InputMenuTogglePlugin {
         }
         scope.launch {
             try {
-                val manager = packageManager(params.context)
-                val hooks = getCachedHooks(manager)
-                val resolved = mutableListOf<InputMenuSpec>()
-                hooks.forEach { hook ->
-                    val result =
-                        manager.runToolPkgMainHook(
-                            containerPackageName = hook.containerPackageName,
-                            functionName = hook.functionName,
-                            event = TOOLPKG_EVENT_INPUT_MENU_TOGGLE,
-                            pluginId = hook.pluginId,
-                            eventPayload =
-                                mapOf(
-                                    "action" to "create"
-                                )
-                        )
-                    val value =
-                        result.getOrElse { error ->
-                            AppLogger.e(
-                                TAG,
-                                "ToolPkg input menu hook failed: ${hook.containerPackageName}:${hook.pluginId}",
-                                error
-                            )
-                            return@getOrElse null
-                        } ?: return@forEach
-                    val decoded =
-                        runCatching { decodeHookResult(value) }
-                            .getOrElse { error ->
-                                AppLogger.e(
-                                    TAG,
-                                    "ToolPkg input menu hook decode failed: ${hook.containerPackageName}:${hook.pluginId}",
-                                    error
-                                )
-                                null
-                            }
-                    resolved.addAll(
-                        parseInputMenuDefinitions(
-                            decoded = decoded,
-                            containerPackageName = hook.containerPackageName,
-                            functionName = hook.functionName,
-                            pluginId = hook.pluginId
-                        )
-                    )
-                }
+                val resolved =
+                    runCatching { loadSpecs(params = params) }
+                        .getOrElse { error ->
+                            AppLogger.e(TAG, "ToolPkg input menu refresh failed", error)
+                            emptyList()
+                        }
                 specsCache = resolved
+                hasLoadedOnce = true
             } finally {
                 refreshFlag.set(false)
+                InputMenuTogglePluginRegistry.notifyChanged()
             }
         }
+    }
+
+    private fun loadSpecs(params: InputMenuToggleHookParams): List<InputMenuSpec> {
+        val manager = packageManager(params.context)
+        val hooks = getCachedHooks(manager)
+        val resolved = mutableListOf<InputMenuSpec>()
+        hooks.forEach { hook ->
+            val result =
+                manager.runToolPkgMainHook(
+                    containerPackageName = hook.containerPackageName,
+                    functionName = hook.functionName,
+                    event = TOOLPKG_EVENT_INPUT_MENU_TOGGLE,
+                    pluginId = hook.pluginId,
+                    eventPayload =
+                        mapOf(
+                            "action" to "create"
+                        )
+                )
+            val value =
+                result.getOrElse { error ->
+                    AppLogger.e(
+                        TAG,
+                        "ToolPkg input menu hook failed: ${hook.containerPackageName}:${hook.pluginId}",
+                        error
+                    )
+                    return@getOrElse null
+                } ?: return@forEach
+            val decoded =
+                runCatching { decodeHookResult(value) }
+                    .getOrElse { error ->
+                        AppLogger.e(
+                            TAG,
+                            "ToolPkg input menu hook decode failed: ${hook.containerPackageName}:${hook.pluginId}",
+                            error
+                        )
+                        null
+                    }
+            resolved.addAll(
+                parseInputMenuDefinitions(
+                    decoded = decoded,
+                    containerPackageName = hook.containerPackageName,
+                    functionName = hook.functionName,
+                    pluginId = hook.pluginId
+                )
+            )
+        }
+        return resolved
     }
 
     private fun getCachedHooks(manager: PackageManager): List<PackageManager.ToolPkgInputMenuTogglePlugin> {

@@ -942,7 +942,7 @@ class GeminiProvider(
         sanitizeImageDataForLogging(logJson)
         logLargeString(TAG, logJson.toString(4), context.getString(R.string.gemini_request_body_json))
 
-        return jsonString.toRequestBody(JSON)
+        return jsonString.toByteArray(Charsets.UTF_8).toRequestBody(JSON)
     }
 
     /** 创建HTTP请求 */

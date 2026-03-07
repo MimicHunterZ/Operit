@@ -68,6 +68,6 @@ class DoubaoAIProvider(
         }
         val sanitizedLogJson = sanitizeImageDataForLogging(logJson)
         // 使用更新后的JSONObject创建新的RequestBody
-        return jsonObject.toString().toRequestBody(JSON)
+        return createJsonRequestBody(jsonObject.toString())
     }
 }

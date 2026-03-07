@@ -357,12 +357,7 @@ object AppLogger {
         if (!tag.equals(TOOLPKG_LOG_TAG, ignoreCase = true)) {
             return false
         }
-        val normalized = msg.trimStart()
-        return normalized.startsWith("JS: LOG:") ||
-            normalized.startsWith("JS ERROR:") ||
-            normalized.startsWith("JS DEBUG:") ||
-            normalized.startsWith("DETAILED JS ERROR:") ||
-            normalized.startsWith("PKG:")
+        return true
     }
 
     private fun extractFirstMatch(text: String, patterns: List<Pattern>): String? {

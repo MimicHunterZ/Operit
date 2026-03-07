@@ -465,7 +465,11 @@ open class OpenAIProvider(
     ): RequestBody {
         val jsonString =
             createRequestBodyInternal(context, message, chatHistory, modelParameters, stream, availableTools, preserveThinkInHistory)
-        return jsonString.toRequestBody(JSON)
+        return createJsonRequestBody(jsonString)
+    }
+
+    protected fun createJsonRequestBody(jsonString: String): RequestBody {
+        return jsonString.toByteArray(Charsets.UTF_8).toRequestBody(JSON)
     }
 
     /**

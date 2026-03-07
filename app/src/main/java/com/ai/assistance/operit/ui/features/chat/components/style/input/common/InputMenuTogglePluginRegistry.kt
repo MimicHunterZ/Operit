@@ -2,6 +2,10 @@ package com.ai.assistance.operit.ui.features.chat.components.style.input.common
 
 import androidx.annotation.StringRes
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 data class InputMenuToggleHookParams(
     val context: android.content.Context,
@@ -16,6 +20,7 @@ data class InputMenuToggleDefinition(
     val title: String? = null,
     val description: String? = null,
     val isChecked: Boolean,
+    val isEnabled: Boolean = true,
     val onToggle: () -> Unit
 )
 
@@ -27,16 +32,26 @@ interface InputMenuTogglePlugin {
 
 object InputMenuTogglePluginRegistry {
     private val plugins = CopyOnWriteArrayList<InputMenuTogglePlugin>()
+    private val changeVersionMutable = MutableStateFlow(0)
+    val changeVersion: StateFlow<Int> = changeVersionMutable.asStateFlow()
 
     @Synchronized
     fun register(plugin: InputMenuTogglePlugin) {
         unregister(plugin.id)
         plugins.add(plugin)
+        notifyChanged()
     }
 
     @Synchronized
     fun unregister(pluginId: String) {
-        plugins.removeAll { it.id == pluginId }
+        val changed = plugins.removeAll { it.id == pluginId }
+        if (changed) {
+            notifyChanged()
+        }
+    }
+
+    fun notifyChanged() {
+        changeVersionMutable.update { current -> current + 1 }
     }
 
     fun createToggles(params: InputMenuToggleHookParams): List<InputMenuToggleDefinition> {

@@ -185,13 +185,15 @@ fun ClassicChatSettingsBar(
     // 获取聊天设置按钮右边距设置
     val chatSettingsBarRightMargin by
             userPreferencesManager.chatSettingsButtonEndPadding.collectAsState(initial = 2f)
-    val inputMenuToggles = InputMenuTogglePluginRegistry.createToggles(
-        params = InputMenuToggleHookParams(
-            context = context,
-            featureStates = featureStates,
-            onToggleFeature = onToggleFeature
+    val inputMenuToggles = InputMenuTogglePluginRegistry.changeVersion.collectAsState().value.let {
+        InputMenuTogglePluginRegistry.createToggles(
+            params = InputMenuToggleHookParams(
+                context = context,
+                featureStates = featureStates,
+                onToggleFeature = onToggleFeature
+            )
         )
-    )
+    }
 
     val onSelectModel: (String, Int) -> Unit = { selectedId, modelIndex ->
         if (isModelSelectionLockedByCharacterCard) {
@@ -659,12 +661,15 @@ fun ClassicChatSettingsBar(
                                     title = toggleTitle,
                                     icon = Icons.Outlined.Hub,
                                     iconTint =
-                                        if (toggle.isChecked) MaterialTheme.colorScheme.primary
+                                        if (!toggle.isEnabled)
+                                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f)
+                                        else if (toggle.isChecked) MaterialTheme.colorScheme.primary
                                         else
                                             MaterialTheme.colorScheme.onSurfaceVariant.copy(
                                                 alpha = 0.7f
                                             ),
                                     isChecked = toggle.isChecked,
+                                    isEnabled = toggle.isEnabled,
                                     onToggle = toggle.onToggle,
                                     onInfoClick = {
                                         val infoTitle =
@@ -796,6 +801,7 @@ private fun SettingItem(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     iconTint: Color,
     isChecked: Boolean,
+    isEnabled: Boolean = true,
     onToggle: () -> Unit,
     onInfoClick: () -> Unit
 ) {
@@ -816,6 +822,7 @@ private fun SettingItem(
             }
             .toggleable(
                 value = isChecked,
+                enabled = isEnabled,
                 onValueChange = { onToggle() },
                 role = Role.Switch
             ),
@@ -844,7 +851,9 @@ private fun SettingItem(
             text = title,
             fontSize = 13.sp,
             fontWeight = FontWeight.Normal,
-            color = MaterialTheme.colorScheme.onSurface,
+            color =
+                if (isEnabled) MaterialTheme.colorScheme.onSurface
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             modifier = Modifier
                 .weight(1f)
                 .padding(horizontal = 8.dp)
@@ -854,6 +863,7 @@ private fun SettingItem(
         Switch(
             checked = isChecked,
             onCheckedChange = null, // 由Row的toggleable处理
+            enabled = isEnabled,
             modifier = Modifier
                 .scale(0.65f)
                 .clearAndSetSemantics {},
