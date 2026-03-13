@@ -198,8 +198,8 @@ class GeminiProvider(
             return Pair(content, null)
         }
         
-        val toolName = match.groupValues[1]
-        val toolBody = match.groupValues[2]
+        val toolName = match.groupValues[2]
+        val toolBody = match.groupValues[3]
         
         // 解析参数
         val args = JSONObject()
@@ -241,8 +241,8 @@ class GeminiProvider(
         var textContent = content
         
         matches.forEach { match ->
-            val toolName = match.groupValues[1]
-            val fullContent = match.groupValues[2].trim()
+            val toolName = match.groupValues[2]
+            val fullContent = match.groupValues[3].trim()
             val contentMatch = ChatMarkupRegex.contentTag.find(fullContent)
             val resultContent = if (contentMatch != null) {
                 contentMatch.groupValues[1].trim()
@@ -1472,7 +1472,8 @@ class GeminiProvider(
                         }
                         
                         // 输出工具开始标签
-                        contentBuilder.append("\n<tool name=\"$toolName\">")
+                        val toolTagName = ChatMarkupRegex.generateRandomToolTagName()
+                        contentBuilder.append("\n<$toolTagName name=\"$toolName\">")
                         
                         // 使用 StreamingJsonXmlConverter 流式转换参数
                         val args = functionCall.optJSONObject("args")
@@ -1497,7 +1498,7 @@ class GeminiProvider(
                         }
                         
                         // 输出工具结束标签
-                        contentBuilder.append("\n</tool>\n")
+                        contentBuilder.append("\n</$toolTagName>\n")
                         logDebug("Gemini FunctionCall流式转XML: $toolName")
                     }
                 }

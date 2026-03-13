@@ -1,48 +1,63 @@
 package com.ai.assistance.operit.util
 
+import java.security.SecureRandom
+
 object ChatMarkupRegex {
+    private const val TOOL_TAG_SUFFIX_REGEX_SOURCE = "[A-Za-z0-9_]+"
+    const val TOOL_TAG_NAME_REGEX_SOURCE =
+        "tool(?:_(?!result(?:_|$))$TOOL_TAG_SUFFIX_REGEX_SOURCE)?"
+    const val TOOL_RESULT_TAG_NAME_REGEX_SOURCE = "tool_result(?:_${TOOL_TAG_SUFFIX_REGEX_SOURCE})?"
+
+    private val toolTagNameRegex = Regex("^$TOOL_TAG_NAME_REGEX_SOURCE$", RegexOption.IGNORE_CASE)
+    private val toolResultTagNameRegex = Regex("^$TOOL_RESULT_TAG_NAME_REGEX_SOURCE$", RegexOption.IGNORE_CASE)
+    private val openingTagNameRegex = Regex("<([A-Za-z][A-Za-z0-9_]*)")
+    private val toolStartTagRegex = Regex("<(?:$TOOL_TAG_NAME_REGEX_SOURCE)\\b", RegexOption.IGNORE_CASE)
+    private val toolResultStartTagRegex = Regex("<(?:$TOOL_RESULT_TAG_NAME_REGEX_SOURCE)\\b", RegexOption.IGNORE_CASE)
+    private val randomTagCodeChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+    private val randomTagCodeSource = SecureRandom()
+
     val toolCallPattern = Regex(
-        "<tool\\s+name=\"([^\"]+)\">([\\s\\S]*?)</tool>",
-        RegexOption.MULTILINE
+        """<($TOOL_TAG_NAME_REGEX_SOURCE)\b[^>]*name="([^"]+)"[^>]*>([\s\S]*?)</\1>""",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
     val toolTag = Regex(
-        "<tool\\b[\\s\\S]*?</tool>",
+        """<($TOOL_TAG_NAME_REGEX_SOURCE)\b[\s\S]*?</\1>""",
         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
     val toolSelfClosingTag = Regex(
-        "<tool\\b[^>]*/>",
+        """<${TOOL_TAG_NAME_REGEX_SOURCE}\b[^>]*/>""",
         RegexOption.IGNORE_CASE
     )
 
     val toolResultTag = Regex(
-        "<tool_result\\b[\\s\\S]*?</tool_result>",
+        """<($TOOL_RESULT_TAG_NAME_REGEX_SOURCE)\b[\s\S]*?</\1>""",
         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
     val toolResultSelfClosingTag = Regex(
-        "<tool_result\\b[^>]*/>",
+        """<${TOOL_RESULT_TAG_NAME_REGEX_SOURCE}\b[^>]*/>""",
         RegexOption.IGNORE_CASE
     )
 
     val toolResultTagWithAttrs = Regex(
-        "<tool_result([^>]*)>([\\s\\S]*?)</tool_result>",
+        """<($TOOL_RESULT_TAG_NAME_REGEX_SOURCE)\b([^>]*)>([\s\S]*?)</\1>""",
         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
     val toolResultAnyPattern = Regex(
-        "<tool_result[^>]*>([\\s\\S]*?)</tool_result>",
-        RegexOption.MULTILINE
+        """<($TOOL_RESULT_TAG_NAME_REGEX_SOURCE)\b[^>]*>([\s\S]*?)</\1>""",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
     val toolResultWithNameAnyPattern = Regex(
-        "<tool_result[^>]*name=\"([^\"]+)\"[^>]*>([\\s\\S]*?)</tool_result>",
-        RegexOption.MULTILINE
+        """<($TOOL_RESULT_TAG_NAME_REGEX_SOURCE)\b[^>]*name="([^"]+)"[^>]*>([\s\S]*?)</\1>""",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
     val toolOrToolResultBlock = Regex(
-        "(<tool\\s+name=\"([^\"]+)\"[\\s\\S]*?</tool>)|(<tool_result([^>]*)>[\\s\\S]*?</tool_result>)",
+        """<($TOOL_RESULT_TAG_NAME_REGEX_SOURCE|$TOOL_TAG_NAME_REGEX_SOURCE)\b[\s\S]*?</\1>""",
         setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
@@ -51,14 +66,19 @@ object ChatMarkupRegex {
     )
 
     val xmlToolResultPattern = Regex(
-        "<tool_result\\s+name=\"([^\"]+)\"\\s+status=\"([^\"]+)\">\\s*<content>([\\s\\S]*?)</content>\\s*</tool_result>"
+        """<($TOOL_RESULT_TAG_NAME_REGEX_SOURCE)\b[^>]*name="([^"]+)"[^>]*status="([^"]+)"[^>]*>\s*<content>([\s\S]*?)</content>\s*</\1>""",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
     val xmlToolRequestPattern = Regex(
-        "<tool\\s+name=\"([^\"]+)\"(?:\\s+description=\"([^\"]+)\")?>([\\s\\S]*?)</tool>"
+        """<($TOOL_TAG_NAME_REGEX_SOURCE)\b[^>]*name="([^"]+)"(?:\s+description="([^"]+)")?[^>]*>([\s\S]*?)</\1>""",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
 
-    val namePattern = Regex("<tool\\s+name=\"([^\"]+)\"")
+    val namePattern = Regex(
+        "<(?:$TOOL_TAG_NAME_REGEX_SOURCE)\\b[^>]*name=\"([^\"]+)\"",
+        RegexOption.IGNORE_CASE
+    )
 
     val toolParamPattern = Regex("<param\\s+name=\"([^\"]+)\">([\\s\\S]*?)</param>")
 
@@ -162,7 +182,51 @@ object ChatMarkupRegex {
     val anyXmlTag = Regex("<[^>]*>")
 
     val pruneToolResultContentPattern = Regex(
-        "<tool_result (.*? status=[\"'](.*?)[\"'])>(.*?)</tool_result>",
-        RegexOption.DOT_MATCHES_ALL
+        """<($TOOL_RESULT_TAG_NAME_REGEX_SOURCE)\b(.*? status=["'](.*?)["'].*?)>(.*?)</\1>""",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
     )
+
+    fun isToolTagName(tagName: String?): Boolean {
+        return tagName?.let { toolTagNameRegex.matches(it) } == true
+    }
+
+    fun isToolResultTagName(tagName: String?): Boolean {
+        return tagName?.let { toolResultTagNameRegex.matches(it) } == true
+    }
+
+    fun normalizeToolLikeTagName(tagName: String?): String? {
+        return when {
+            isToolTagName(tagName) -> "tool"
+            isToolResultTagName(tagName) -> "tool_result"
+            else -> tagName
+        }
+    }
+
+    fun containsToolTag(content: String): Boolean {
+        return toolStartTagRegex.containsMatchIn(content)
+    }
+
+    fun containsToolResultTag(content: String): Boolean {
+        return toolResultStartTagRegex.containsMatchIn(content)
+    }
+
+    fun containsAnyToolLikeTag(content: String): Boolean {
+        return containsToolTag(content) || containsToolResultTag(content)
+    }
+
+    fun extractOpeningTagName(xml: String): String? {
+        return openingTagNameRegex.find(xml.trim())?.groupValues?.getOrNull(1)
+    }
+
+    fun generateRandomToolTagName(): String = "tool_${generateRandomTagCode()}"
+
+    fun generateRandomToolResultTagName(): String = "tool_result_${generateRandomTagCode()}"
+
+    private fun generateRandomTagCode(length: Int = 4): String {
+        return buildString(length) {
+            repeat(length) {
+                append(randomTagCodeChars[randomTagCodeSource.nextInt(randomTagCodeChars.length)])
+            }
+        }
+    }
 }

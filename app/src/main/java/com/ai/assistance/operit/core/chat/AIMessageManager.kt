@@ -625,7 +625,7 @@ object AIMessageManager {
                 )
 
             return ChatMarkupRegex.toolResultTagWithAttrs.replace(removedLargeTags) { mr ->
-                val attrs = mr.groupValues.getOrNull(1) ?: ""
+                val attrs = mr.groupValues.getOrNull(2) ?: ""
                 val name = ChatMarkupRegex.nameAttr
                     .find(attrs)
                     ?.groupValues
@@ -670,13 +670,18 @@ object AIMessageManager {
                 }
 
                 val block = m.value
-                if (block.trimStart().startsWith("<tool", ignoreCase = true)) {
-                    val toolName = m.groupValues.getOrNull(2)?.ifBlank { null } ?: "tool"
+                val tagName =
+                    ChatMarkupRegex.normalizeToolLikeTagName(
+                        ChatMarkupRegex.extractOpeningTagName(block)
+                    )
+                if (tagName == "tool") {
+                    val toolName =
+                        nameAttrRegex.find(block)?.groupValues?.getOrNull(1)?.ifBlank { null } ?: "tool"
                     segments.add(Segment(kind = "tool", raw = block, toolName = toolName))
                 } else {
-                    val attrs = m.groupValues.getOrNull(4) ?: ""
-                    val toolName = nameAttrRegex.find(attrs)?.groupValues?.getOrNull(1)?.ifBlank { null } ?: "tool"
-                    val status = statusAttrRegex.find(attrs)?.groupValues?.getOrNull(1)?.ifBlank { null }
+                    val toolName =
+                        nameAttrRegex.find(block)?.groupValues?.getOrNull(1)?.ifBlank { null } ?: "tool"
+                    val status = statusAttrRegex.find(block)?.groupValues?.getOrNull(1)?.ifBlank { null }
                     segments.add(Segment(kind = "tool_result", raw = block, toolName = toolName, status = status))
                 }
 
@@ -962,8 +967,8 @@ object AIMessageManager {
             .forEach { message ->
                 val content = ChatUtils.removeThinkingContent(message.content)
                 ChatMarkupRegex.toolCallPattern.findAll(content).forEach { match ->
-                    val toolName = match.groupValues.getOrNull(1).orEmpty().trim()
-                    val toolBody = match.groupValues.getOrNull(2).orEmpty()
+                    val toolName = match.groupValues.getOrNull(2).orEmpty().trim()
+                    val toolBody = match.groupValues.getOrNull(3).orEmpty()
 
                     when {
                         toolName == "package_proxy" -> {

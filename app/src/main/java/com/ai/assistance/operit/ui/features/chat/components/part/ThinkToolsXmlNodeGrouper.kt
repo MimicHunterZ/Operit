@@ -340,8 +340,11 @@ class ThinkToolsXmlNodeGrouper(
 }
 
 private fun extractXmlTagName(xml: String): String? {
-    val openTagRegex = "<([a-zA-Z_][a-zA-Z0-9_]*)".toRegex()
-    return openTagRegex.find(xml.trim())?.groupValues?.getOrNull(1)
+    return ChatMarkupRegex.normalizeToolLikeTagName(extractRawXmlTagName(xml))
+}
+
+private fun extractRawXmlTagName(xml: String): String? {
+    return ChatMarkupRegex.extractOpeningTagName(xml)
 }
 
 private fun extractToolName(xml: String): String? {
@@ -350,9 +353,9 @@ private fun extractToolName(xml: String): String? {
 }
 
 private fun isXmlFullyClosed(xml: String): Boolean {
-    val tagName = extractXmlTagName(xml) ?: return false
+    val tagName = extractRawXmlTagName(xml) ?: return false
     val trimmed = xml.trim()
-    if (trimmed.endsWith("/>") || trimmed.startsWith("<$tagName") && trimmed.endsWith("/>") ) {
+    if (trimmed.endsWith("/>") || trimmed.startsWith("<$tagName") && trimmed.endsWith("/>")) {
         return true
     }
     return trimmed.contains("</$tagName>")

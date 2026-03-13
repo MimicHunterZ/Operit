@@ -35,6 +35,10 @@ bool StreamXmlPlugin::isAsciiLetter(char16_t c) {
     return (c >= u'A' && c <= u'Z') || (c >= u'a' && c <= u'z');
 }
 
+bool StreamXmlPlugin::isTagNameContinuationChar(char16_t c) {
+    return isAsciiLetter(c) || (c >= u'0' && c <= u'9') || c == u'_';
+}
+
 bool StreamXmlPlugin::isPunctuationTrigger(char16_t c) {
     switch (c) {
         case u'\uFF0C': // ，
@@ -137,6 +141,12 @@ bool StreamXmlPlugin::processStartMatcher(char16_t c) {
                 startState_ = StartState::WAIT_LT;
                 state_ = PluginState::TRYING;
                 return true;
+            }
+            if (!isTagNameContinuationChar(c)) {
+                startState_ = StartState::WAIT_LT;
+                state_ = PluginState::IDLE;
+                tagName_.clear();
+                return false;
             }
             tagName_.push_back(c);
             state_ = PluginState::TRYING;

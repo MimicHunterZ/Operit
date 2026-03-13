@@ -560,7 +560,7 @@ Use only these tool names: $toolNames
             return content
         }
 
-        if (content.contains("<tool")) {
+        if (ChatMarkupRegex.containsAnyToolLikeTag(content)) {
             return content
         }
 
@@ -780,7 +780,10 @@ Use only these tool names: $toolNames
                 JSONObject(argumentsRaw)
             }.getOrNull()
 
-            xml.append("<tool name=\"")
+            val toolTagName = ChatMarkupRegex.generateRandomToolTagName()
+            xml.append("<")
+                .append(toolTagName)
+                .append(" name=\"")
                 .append(name)
                 .append("\">")
 
@@ -801,7 +804,9 @@ Use only these tool names: $toolNames
                     .append("</param>")
             }
 
-            xml.append("\n</tool>\n")
+            xml.append("\n</")
+                .append(toolTagName)
+                .append(">\n")
         }
 
         return xml.toString().trim()
@@ -819,8 +824,8 @@ Use only these tool names: $toolNames
         var callIndex = 0
 
         matches.forEach { match ->
-            val toolName = match.groupValues[1]
-            val toolBody = match.groupValues[2]
+            val toolName = match.groupValues[2]
+            val toolBody = match.groupValues[3]
 
             val params = JSONObject()
             ChatMarkupRegex.toolParamPattern.findAll(toolBody).forEach { paramMatch ->
@@ -861,7 +866,7 @@ Use only these tool names: $toolNames
         var resultIndex = 0
 
         matches.forEach { match ->
-            val fullContent = match.groupValues[1].trim()
+            val fullContent = match.groupValues[2].trim()
             val contentMatch = ChatMarkupRegex.contentTag.find(fullContent)
             val resultContent = if (contentMatch != null) {
                 contentMatch.groupValues[1].trim()

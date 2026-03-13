@@ -25,7 +25,7 @@ object NativeXmlSplitter {
 
             val chunk = content.substring(start, end)
             if (type == 1) {
-                val tagNameMatch = Regex("<([a-zA-Z0-9_]+)[\\s>]").find(chunk)
+                val tagNameMatch = Regex("<([A-Za-z][A-Za-z0-9_]*)[\\s>]").find(chunk)
                 val tagName = tagNameMatch?.groupValues?.getOrNull(1) ?: "unknown"
                 results.add(listOf(tagName, chunk))
             } else {

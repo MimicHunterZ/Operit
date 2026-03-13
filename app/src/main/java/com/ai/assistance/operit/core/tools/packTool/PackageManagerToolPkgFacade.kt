@@ -28,7 +28,7 @@ internal class PackageManagerToolPkgFacade(
         packageManager.ensureInitialized()
         val normalizedPackageName = packageManager.normalizePackageName(packageName)
         val container = packageManager.toolPkgContainersInternal[normalizedPackageName] ?: return null
-        val importedSet = packageManager.getImportedPackages().toSet()
+        val importedSet = packageManager.getImportedPackageSetInternal()
         val localizationContext = resolveContext ?: packageManager.contextInternal
         val containerEnabled = importedSet.contains(container.packageName)
 
@@ -66,7 +66,7 @@ internal class PackageManagerToolPkgFacade(
         fun resolveLocalized(text: com.ai.assistance.operit.core.tools.LocalizedText): String {
             return text.resolve(localizationContext)
         }
-        val importedSet = packageManager.getImportedPackages().toSet()
+        val importedSet = packageManager.getImportedPackageSetInternal()
 
         val result = packageManager.toolPkgContainersInternal.values
             .filter { container -> importedSet.contains(container.packageName) }
@@ -107,269 +107,6 @@ internal class PackageManagerToolPkgFacade(
                     PackageManager.ToolPkgToolboxUiModule::uiModuleId
                 )
             )
-        return result
-    }
-
-    fun getToolPkgAppLifecycleHooks(event: String): List<PackageManager.ToolPkgAppLifecycleHook> {
-        packageManager.ensureInitialized()
-        val normalizedEvent = event.trim().lowercase()
-        if (normalizedEvent.isBlank()) {
-            return emptyList()
-        }
-        val importedSet = packageManager.getImportedPackages().toSet()
-
-        val result = packageManager.toolPkgContainersInternal.values
-            .asSequence()
-            .filter { container -> importedSet.contains(container.packageName) }
-            .flatMap { container ->
-                container.appLifecycleHooks.asSequence().map { hook ->
-                    PackageManager.ToolPkgAppLifecycleHook(
-                        containerPackageName = container.packageName,
-                        hookId = hook.id,
-                        event = hook.event,
-                        functionName = hook.function
-                    )
-                }
-            }
-            .filter { hook -> hook.event.equals(normalizedEvent, ignoreCase = true) }
-            .sortedWith(
-                compareBy(
-                    PackageManager.ToolPkgAppLifecycleHook::containerPackageName,
-                    PackageManager.ToolPkgAppLifecycleHook::hookId
-                )
-            )
-            .toList()
-        return result
-    }
-
-    fun getToolPkgMessageProcessingPlugins(): List<PackageManager.ToolPkgMessageProcessingPlugin> {
-        packageManager.ensureInitialized()
-        val importedSet = packageManager.getImportedPackages().toSet()
-        val result = packageManager.toolPkgContainersInternal.values
-            .asSequence()
-            .filter { container -> importedSet.contains(container.packageName) }
-            .flatMap { container ->
-                container.messageProcessingPlugins.asSequence().map { plugin ->
-                    PackageManager.ToolPkgMessageProcessingPlugin(
-                        containerPackageName = container.packageName,
-                        pluginId = plugin.id,
-                        functionName = plugin.function
-                    )
-                }
-            }
-            .sortedWith(
-                compareBy(
-                    PackageManager.ToolPkgMessageProcessingPlugin::containerPackageName,
-                    PackageManager.ToolPkgMessageProcessingPlugin::pluginId
-                )
-            )
-            .toList()
-        return result
-    }
-
-    fun getToolPkgXmlRenderPlugins(tagName: String): List<PackageManager.ToolPkgXmlRenderPlugin> {
-        packageManager.ensureInitialized()
-        val normalizedTagName = tagName.trim().lowercase()
-        if (normalizedTagName.isBlank()) {
-            return emptyList()
-        }
-        val importedSet = packageManager.getImportedPackages().toSet()
-        val result = packageManager.toolPkgContainersInternal.values
-            .asSequence()
-            .filter { container -> importedSet.contains(container.packageName) }
-            .flatMap { container ->
-                container.xmlRenderPlugins.asSequence().map { plugin ->
-                    PackageManager.ToolPkgXmlRenderPlugin(
-                        containerPackageName = container.packageName,
-                        pluginId = plugin.id,
-                        tag = plugin.tag,
-                        functionName = plugin.function
-                    )
-                }
-            }
-            .filter { plugin -> plugin.tag.equals(normalizedTagName, ignoreCase = true) }
-            .sortedWith(
-                compareBy(
-                    PackageManager.ToolPkgXmlRenderPlugin::containerPackageName,
-                    PackageManager.ToolPkgXmlRenderPlugin::pluginId
-                )
-            )
-            .toList()
-        return result
-    }
-
-    fun getToolPkgInputMenuTogglePlugins(): List<PackageManager.ToolPkgInputMenuTogglePlugin> {
-        packageManager.ensureInitialized()
-        val importedSet = packageManager.getImportedPackages().toSet()
-        val result = packageManager.toolPkgContainersInternal.values
-            .asSequence()
-            .filter { container -> importedSet.contains(container.packageName) }
-            .flatMap { container ->
-                container.inputMenuTogglePlugins.asSequence().map { plugin ->
-                    PackageManager.ToolPkgInputMenuTogglePlugin(
-                        containerPackageName = container.packageName,
-                        pluginId = plugin.id,
-                        functionName = plugin.function
-                    )
-                }
-            }
-            .sortedWith(
-                compareBy(
-                    PackageManager.ToolPkgInputMenuTogglePlugin::containerPackageName,
-                    PackageManager.ToolPkgInputMenuTogglePlugin::pluginId
-                )
-            )
-            .toList()
-        return result
-    }
-
-    fun getToolPkgToolLifecycleHooks(): List<PackageManager.ToolPkgToolLifecycleHook> {
-        packageManager.ensureInitialized()
-        val importedSet = packageManager.getImportedPackages().toSet()
-        val result = packageManager.toolPkgContainersInternal.values
-            .asSequence()
-            .filter { container -> importedSet.contains(container.packageName) }
-            .flatMap { container ->
-                container.toolLifecycleHooks.asSequence().map { hook ->
-                    PackageManager.ToolPkgToolLifecycleHook(
-                        containerPackageName = container.packageName,
-                        hookId = hook.id,
-                        functionName = hook.function
-                    )
-                }
-            }
-            .sortedWith(
-                compareBy(
-                    PackageManager.ToolPkgToolLifecycleHook::containerPackageName,
-                    PackageManager.ToolPkgToolLifecycleHook::hookId
-                )
-            )
-            .toList()
-        return result
-    }
-
-    fun getToolPkgPromptInputHooks(): List<PackageManager.ToolPkgPromptInputHook> {
-        packageManager.ensureInitialized()
-        val importedSet = packageManager.getImportedPackages().toSet()
-        val result = packageManager.toolPkgContainersInternal.values
-            .asSequence()
-            .filter { container -> importedSet.contains(container.packageName) }
-            .flatMap { container ->
-                container.promptInputHooks.asSequence().map { hook ->
-                    PackageManager.ToolPkgPromptInputHook(
-                        containerPackageName = container.packageName,
-                        hookId = hook.id,
-                        functionName = hook.function
-                    )
-                }
-            }
-            .sortedWith(
-                compareBy(
-                    PackageManager.ToolPkgPromptInputHook::containerPackageName,
-                    PackageManager.ToolPkgPromptInputHook::hookId
-                )
-            )
-            .toList()
-        return result
-    }
-
-    fun getToolPkgPromptHistoryHooks(): List<PackageManager.ToolPkgPromptHistoryHook> {
-        packageManager.ensureInitialized()
-        val importedSet = packageManager.getImportedPackages().toSet()
-        val result = packageManager.toolPkgContainersInternal.values
-            .asSequence()
-            .filter { container -> importedSet.contains(container.packageName) }
-            .flatMap { container ->
-                container.promptHistoryHooks.asSequence().map { hook ->
-                    PackageManager.ToolPkgPromptHistoryHook(
-                        containerPackageName = container.packageName,
-                        hookId = hook.id,
-                        functionName = hook.function
-                    )
-                }
-            }
-            .sortedWith(
-                compareBy(
-                    PackageManager.ToolPkgPromptHistoryHook::containerPackageName,
-                    PackageManager.ToolPkgPromptHistoryHook::hookId
-                )
-            )
-            .toList()
-        return result
-    }
-
-    fun getToolPkgSystemPromptComposeHooks(): List<PackageManager.ToolPkgSystemPromptComposeHook> {
-        packageManager.ensureInitialized()
-        val importedSet = packageManager.getImportedPackages().toSet()
-        val result = packageManager.toolPkgContainersInternal.values
-            .asSequence()
-            .filter { container -> importedSet.contains(container.packageName) }
-            .flatMap { container ->
-                container.systemPromptComposeHooks.asSequence().map { hook ->
-                    PackageManager.ToolPkgSystemPromptComposeHook(
-                        containerPackageName = container.packageName,
-                        hookId = hook.id,
-                        functionName = hook.function
-                    )
-                }
-            }
-            .sortedWith(
-                compareBy(
-                    PackageManager.ToolPkgSystemPromptComposeHook::containerPackageName,
-                    PackageManager.ToolPkgSystemPromptComposeHook::hookId
-                )
-            )
-            .toList()
-        return result
-    }
-
-    fun getToolPkgToolPromptComposeHooks(): List<PackageManager.ToolPkgToolPromptComposeHook> {
-        packageManager.ensureInitialized()
-        val importedSet = packageManager.getImportedPackages().toSet()
-        val result = packageManager.toolPkgContainersInternal.values
-            .asSequence()
-            .filter { container -> importedSet.contains(container.packageName) }
-            .flatMap { container ->
-                container.toolPromptComposeHooks.asSequence().map { hook ->
-                    PackageManager.ToolPkgToolPromptComposeHook(
-                        containerPackageName = container.packageName,
-                        hookId = hook.id,
-                        functionName = hook.function
-                    )
-                }
-            }
-            .sortedWith(
-                compareBy(
-                    PackageManager.ToolPkgToolPromptComposeHook::containerPackageName,
-                    PackageManager.ToolPkgToolPromptComposeHook::hookId
-                )
-            )
-            .toList()
-        return result
-    }
-
-    fun getToolPkgPromptFinalizeHooks(): List<PackageManager.ToolPkgPromptFinalizeHook> {
-        packageManager.ensureInitialized()
-        val importedSet = packageManager.getImportedPackages().toSet()
-        val result = packageManager.toolPkgContainersInternal.values
-            .asSequence()
-            .filter { container -> importedSet.contains(container.packageName) }
-            .flatMap { container ->
-                container.promptFinalizeHooks.asSequence().map { hook ->
-                    PackageManager.ToolPkgPromptFinalizeHook(
-                        containerPackageName = container.packageName,
-                        hookId = hook.id,
-                        functionName = hook.function
-                    )
-                }
-            }
-            .sortedWith(
-                compareBy(
-                    PackageManager.ToolPkgPromptFinalizeHook::containerPackageName,
-                    PackageManager.ToolPkgPromptFinalizeHook::hookId
-                )
-            )
-            .toList()
         return result
     }
 
@@ -470,7 +207,7 @@ internal class PackageManagerToolPkgFacade(
 
         val candidateContainers =
             if (preferImportedContainer) {
-                val imported = packageManager.getImportedPackages().toSet()
+                val imported = packageManager.getImportedPackageSetInternal()
                 val importedContainers =
                     subpackages
                         .map { it.containerPackageName }
@@ -502,7 +239,7 @@ internal class PackageManagerToolPkgFacade(
         packageManager.ensureInitialized()
         val normalizedContainerPackageName = packageManager.normalizePackageName(containerPackageName)
         val runtime = packageManager.toolPkgContainersInternal[normalizedContainerPackageName] ?: return false
-        val importedSet = packageManager.getImportedPackages().toSet()
+        val importedSet = packageManager.getImportedPackageSetInternal()
         if (!importedSet.contains(runtime.packageName)) {
             return false
         }
@@ -567,7 +304,7 @@ internal class PackageManagerToolPkgFacade(
 
         val candidateContainers =
             if (preferImportedContainer) {
-                val imported = packageManager.getImportedPackages().toSet()
+                val imported = packageManager.getImportedPackageSetInternal()
                 val importedContainers =
                     subpackages
                         .map { it.containerPackageName }
@@ -615,7 +352,7 @@ internal class PackageManagerToolPkgFacade(
 
         val candidateContainers =
             if (preferImportedContainer) {
-                val imported = packageManager.getImportedPackages().toSet()
+                val imported = packageManager.getImportedPackageSetInternal()
                 subpackages
                     .map { it.containerPackageName }
                     .distinct()
@@ -641,7 +378,7 @@ internal class PackageManagerToolPkgFacade(
         packageManager.ensureInitialized()
         val normalizedContainerPackageName = packageManager.normalizePackageName(containerPackageName)
         val runtime = packageManager.toolPkgContainersInternal[normalizedContainerPackageName] ?: return null
-        val importedSet = packageManager.getImportedPackages().toSet()
+        val importedSet = packageManager.getImportedPackageSetInternal()
         if (!importedSet.contains(runtime.packageName)) {
             return null
         }
@@ -682,7 +419,7 @@ internal class PackageManagerToolPkgFacade(
         packageManager.ensureInitialized()
         val normalizedContainerPackageName = packageManager.normalizePackageName(containerPackageName)
         val runtime = packageManager.toolPkgContainersInternal[normalizedContainerPackageName] ?: return null
-        val importedSet = packageManager.getImportedPackages().toSet()
+        val importedSet = packageManager.getImportedPackageSetInternal()
         if (!importedSet.contains(runtime.packageName)) {
             return null
         }
@@ -708,6 +445,7 @@ internal class PackageManagerToolPkgFacade(
         event: String,
         eventName: String? = null,
         pluginId: String? = null,
+        inlineFunctionSource: String? = null,
         eventPayload: Map<String, Any?> = emptyMap(),
         onIntermediateResult: ((Any?) -> Unit)? = null
     ): Result<Any?> {
@@ -735,12 +473,7 @@ internal class PackageManagerToolPkgFacade(
             }
 
             val resolveFunctionSourceStartTime = if (shouldLogTiming) messageTimingNow() else 0L
-            val functionSource =
-                resolveToolPkgFunctionSource(
-                    runtime = runtime,
-                    functionName = functionName,
-                    event = event
-                )
+            val functionSource = inlineFunctionSource?.trim().orEmpty().ifBlank { null }
             if (shouldLogTiming) {
                 logMessageTiming(
                     stage = "toolpkg.runMainHook.resolveFunctionSource",
@@ -817,78 +550,6 @@ internal class PackageManagerToolPkgFacade(
         }
     }
 
-    private fun resolveToolPkgFunctionSource(
-        runtime: ToolPkgContainerRuntime,
-        functionName: String,
-        event: String
-    ): String? {
-        val normalizedFunction = functionName.trim()
-        if (normalizedFunction.isBlank()) {
-            return null
-        }
-        val normalizedEvent = event.trim().lowercase()
-
-        runtime.appLifecycleHooks.firstOrNull { hook ->
-            hook.function == normalizedFunction && hook.event.equals(normalizedEvent, ignoreCase = true)
-        }?.functionSource?.let { return it }
-
-        if (normalizedEvent == TOOLPKG_EVENT_MESSAGE_PROCESSING) {
-            runtime.messageProcessingPlugins.firstOrNull { hook ->
-                hook.function == normalizedFunction
-            }?.functionSource?.let { return it }
-        }
-
-        if (normalizedEvent == TOOLPKG_EVENT_XML_RENDER) {
-            runtime.xmlRenderPlugins.firstOrNull { hook ->
-                hook.function == normalizedFunction
-            }?.functionSource?.let { return it }
-        }
-
-        if (normalizedEvent == TOOLPKG_EVENT_INPUT_MENU_TOGGLE) {
-            runtime.inputMenuTogglePlugins.firstOrNull { hook ->
-                hook.function == normalizedFunction
-            }?.functionSource?.let { return it }
-        }
-
-        if (normalizedEvent == TOOLPKG_EVENT_TOOL_LIFECYCLE) {
-            runtime.toolLifecycleHooks.firstOrNull { hook ->
-                hook.function == normalizedFunction
-            }?.functionSource?.let { return it }
-        }
-
-        if (normalizedEvent == TOOLPKG_EVENT_PROMPT_INPUT) {
-            runtime.promptInputHooks.firstOrNull { hook ->
-                hook.function == normalizedFunction
-            }?.functionSource?.let { return it }
-        }
-
-        if (normalizedEvent == TOOLPKG_EVENT_PROMPT_HISTORY) {
-            runtime.promptHistoryHooks.firstOrNull { hook ->
-                hook.function == normalizedFunction
-            }?.functionSource?.let { return it }
-        }
-
-        if (normalizedEvent == TOOLPKG_EVENT_SYSTEM_PROMPT_COMPOSE) {
-            runtime.systemPromptComposeHooks.firstOrNull { hook ->
-                hook.function == normalizedFunction
-            }?.functionSource?.let { return it }
-        }
-
-        if (normalizedEvent == TOOLPKG_EVENT_TOOL_PROMPT_COMPOSE) {
-            runtime.toolPromptComposeHooks.firstOrNull { hook ->
-                hook.function == normalizedFunction
-            }?.functionSource?.let { return it }
-        }
-
-        if (normalizedEvent == TOOLPKG_EVENT_PROMPT_FINALIZE) {
-            runtime.promptFinalizeHooks.firstOrNull { hook ->
-                hook.function == normalizedFunction
-            }?.functionSource?.let { return it }
-        }
-
-        return null
-    }
-
     private fun resolveToolPkgExecutionContextKey(
         containerPackageName: String,
         params: Map<String, Any?>
@@ -922,7 +583,7 @@ internal class PackageManagerToolPkgFacade(
 
         val containerRuntime = packageManager.toolPkgContainersInternal[target]
         if (containerRuntime != null) {
-            val importedSet = packageManager.getImportedPackages().toSet()
+            val importedSet = packageManager.getImportedPackageSetInternal()
             if (!importedSet.contains(containerRuntime.packageName)) {
                 return null
             }
@@ -934,7 +595,7 @@ internal class PackageManagerToolPkgFacade(
         if (directSubpackageRuntime != null) {
             val directContainer = packageManager.toolPkgContainersInternal[directSubpackageRuntime.containerPackageName]
             if (directContainer != null) {
-                val importedSet = packageManager.getImportedPackages().toSet()
+                val importedSet = packageManager.getImportedPackageSetInternal()
                 if (!importedSet.contains(directContainer.packageName)) {
                     return null
                 }
@@ -953,7 +614,7 @@ internal class PackageManagerToolPkgFacade(
 
         val candidateContainers =
             if (preferImportedContainer) {
-                val imported = packageManager.getImportedPackages().toSet()
+                val imported = packageManager.getImportedPackageSetInternal()
                 subpackages
                     .map { it.containerPackageName }
                     .distinct()

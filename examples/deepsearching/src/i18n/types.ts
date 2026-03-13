@@ -9,8 +9,6 @@ export interface DeepSearchI18n {
   executionPlanTarget: (instruction: string) => string;
   executionPlanTools: (count: number) => string;
 
-  complexityIndicators: string[];
-
   planModeExecutingDeepSearch: string;
   planModeStarting: string;
   planModeAnalyzingRequest: string;

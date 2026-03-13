@@ -992,7 +992,8 @@ open class OpenAIProvider(
             }
 
             // 构建XML格式
-            xml.append("<tool name=\"$name\">")
+            val toolTagName = ChatMarkupRegex.generateRandomToolTagName()
+            xml.append("<$toolTagName name=\"$name\">")
 
             // 添加所有参数
             val keys = params.keys()
@@ -1004,7 +1005,7 @@ open class OpenAIProvider(
                 xml.append("\n<param name=\"$key\">$escapedValue</param>")
             }
 
-            xml.append("\n</tool>\n")
+            xml.append("\n</$toolTagName>\n")
         }
 
         return xml.toString()
@@ -1071,9 +1072,13 @@ open class OpenAIProvider(
         val nameEmitted: MutableMap<Int, Boolean> = mutableMapOf(),
         val parser: MutableMap<Int, StreamingJsonXmlConverter> = mutableMapOf(),
         val closed: MutableMap<Int, Boolean> = mutableMapOf(),
-        val fedLength: MutableMap<Int, Int> = mutableMapOf()
+        val fedLength: MutableMap<Int, Int> = mutableMapOf(),
+        val tagNames: MutableMap<Int, String> = mutableMapOf()
     ) {
         fun getParser(index: Int) = parser.getOrPut(index) { StreamingJsonXmlConverter() }
+
+        fun getTagName(index: Int) =
+            tagNames.getOrPut(index) { ChatMarkupRegex.generateRandomToolTagName() }
 
         fun clear() {
             emitted.clear()
@@ -1081,6 +1086,7 @@ open class OpenAIProvider(
             parser.clear()
             closed.clear()
             fedLength.clear()
+            tagNames.clear()
         }
     }
 
@@ -1256,8 +1262,8 @@ open class OpenAIProvider(
         var callIndex = 0
 
         matches.forEach { match ->
-            val toolName = match.groupValues[1]
-            val toolBody = match.groupValues[2]
+            val toolName = match.groupValues[2]
+            val toolBody = match.groupValues[3]
 
             // 解析参数
             val params = JSONObject()
@@ -1309,7 +1315,7 @@ open class OpenAIProvider(
 
         matches.forEach { match ->
             // 提取<content>标签内的内容，如果有的话
-            val fullContent = match.groupValues[1].trim()
+            val fullContent = match.groupValues[2].trim()
             val contentMatch = ChatMarkupRegex.contentTag.find(fullContent)
             val resultContent = if (contentMatch != null) {
                 contentMatch.groupValues[1].trim()
@@ -1413,9 +1419,10 @@ open class OpenAIProvider(
             accFunction.put("name", name)
             // 流式输出开始标签
             if (state.toolCallState.nameEmitted[index] != true) {
+                val toolTagName = state.toolCallState.getTagName(index)
                 val toolStartTag = if (state.toolCallState.emitted[index] != true) {
                     state.toolCallState.emitted[index] = true
-                    "\n<tool name=\"$name\">"
+                    "\n<$toolTagName name=\"$name\">"
                 } else {
                     ""
                 }
@@ -1531,6 +1538,10 @@ open class OpenAIProvider(
         }
 
         val accumulatedArgsBeforeFlush = getAccumulatedToolArguments(state, index)
+        val toolTagName =
+            requireNotNull(state.toolCallState.tagNames[index]) {
+                "Missing tool XML tag name for streaming tool call index=$index"
+            }
 
         val parser = state.toolCallState.getParser(index)
         val events = parser.flush()
@@ -1544,7 +1555,7 @@ open class OpenAIProvider(
                     "Tool 参数解析器状态未闭合，但累计 arguments 已是合法 JSON，强制补全标签收尾，index=$index"
                 )
                 emitter.emitTag("</param>")
-                emitter.emitTag("\n</tool>")
+                emitter.emitTag("\n</$toolTagName>")
                 state.toolCallState.closed[index] = true
                 return
             }
@@ -1556,7 +1567,7 @@ open class OpenAIProvider(
             return
         }
 
-        emitter.emitTag("\n</tool>")
+        emitter.emitTag("\n</$toolTagName>")
         state.toolCallState.closed[index] = true
     }
 

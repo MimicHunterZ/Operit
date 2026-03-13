@@ -16,6 +16,7 @@ import kotlinx.coroutines.coroutineScope
 import com.ai.assistance.operit.data.model.AITool
 import com.ai.assistance.operit.data.model.ToolParameter
 import com.ai.assistance.operit.ui.common.displays.MessageContentParser
+import com.ai.assistance.operit.util.ChatMarkupRegex
 import com.ai.assistance.operit.util.stream.plugins.StreamXmlPlugin
 import com.ai.assistance.operit.util.stream.splitBy
 import com.ai.assistance.operit.util.stream.stream
@@ -64,12 +65,13 @@ object ToolExecutionManager {
             if (chunkString.isEmpty()) return@collect
 
             if (group.tag is StreamXmlPlugin) {
-                if (chunkString.startsWith("<tool") && chunkString.contains("</tool>")) {
-                    val nameMatch = MessageContentParser.namePattern.find(chunkString)
-                    val toolName = nameMatch?.groupValues?.get(1) ?: return@collect
+                val toolMatch = ChatMarkupRegex.toolCallPattern.find(chunkString)
+                if (toolMatch != null) {
+                    val toolName = toolMatch.groupValues.getOrNull(2) ?: return@collect
+                    val toolBody = toolMatch.groupValues.getOrNull(3).orEmpty()
 
                     val parameters = mutableListOf<ToolParameter>()
-                    MessageContentParser.toolParamPattern.findAll(chunkString)
+                    MessageContentParser.toolParamPattern.findAll(toolBody)
                         .forEach { paramMatch ->
                             val paramName = paramMatch.groupValues[1]
                             val paramValue = paramMatch.groupValues[2]

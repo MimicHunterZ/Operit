@@ -10,29 +10,44 @@ import com.ai.assistance.operit.core.chat.hooks.PromptMessage
 import com.ai.assistance.operit.core.chat.hooks.SystemPromptComposeHook
 import com.ai.assistance.operit.core.chat.hooks.ToolPromptComposeHook
 import com.ai.assistance.operit.core.tools.packTool.PackageManager
+import com.ai.assistance.operit.core.tools.packTool.ToolPkgContainerRuntime
 import com.ai.assistance.operit.core.tools.packTool.TOOLPKG_EVENT_PROMPT_FINALIZE
 import com.ai.assistance.operit.core.tools.packTool.TOOLPKG_EVENT_PROMPT_HISTORY
 import com.ai.assistance.operit.core.tools.packTool.TOOLPKG_EVENT_PROMPT_INPUT
 import com.ai.assistance.operit.core.tools.packTool.TOOLPKG_EVENT_SYSTEM_PROMPT_COMPOSE
 import com.ai.assistance.operit.core.tools.packTool.TOOLPKG_EVENT_TOOL_PROMPT_COMPOSE
 import com.ai.assistance.operit.util.AppLogger
+import java.util.concurrent.atomic.AtomicBoolean
 import org.json.JSONArray
 import org.json.JSONObject
 
 private const val TAG = "ToolPkgPromptHookBridge"
 
 internal object ToolPkgPromptHookBridge {
+    private val installed = AtomicBoolean(false)
+    @Volatile
+    private var promptInputHooks: List<ToolPkgPromptHookRegistration> = emptyList()
+    @Volatile
+    private var promptHistoryHooks: List<ToolPkgPromptHookRegistration> = emptyList()
+    @Volatile
+    private var systemPromptComposeHooks: List<ToolPkgPromptHookRegistration> = emptyList()
+    @Volatile
+    private var toolPromptComposeHooks: List<ToolPkgPromptHookRegistration> = emptyList()
+    @Volatile
+    private var promptFinalizeHooks: List<ToolPkgPromptHookRegistration> = emptyList()
+    private val runtimeChangeListener =
+        PackageManager.ToolPkgRuntimeChangeListener {
+            syncToolPkgRegistrations(toolPkgPackageManager().getImportedToolPkgContainerRuntimes())
+        }
+
     private object PromptInputBridge : PromptInputHook {
         override val id: String = "builtin.toolpkg.prompt-input-hook-bridge"
 
         override fun onEvent(context: PromptHookContext): PromptHookMutation? {
             return dispatchPromptHooks(
-                hooks = toolPkgPackageManager().getToolPkgPromptInputHooks(),
+                hooks = promptInputHooks,
                 familyEvent = TOOLPKG_EVENT_PROMPT_INPUT,
                 context = context,
-                hookId = { it.hookId },
-                containerPackageName = { it.containerPackageName },
-                functionName = { it.functionName },
                 parseMutation = ::parsePromptInputMutation
             )
         }
@@ -43,12 +58,9 @@ internal object ToolPkgPromptHookBridge {
 
         override fun onEvent(context: PromptHookContext): PromptHookMutation? {
             return dispatchPromptHooks(
-                hooks = toolPkgPackageManager().getToolPkgPromptHistoryHooks(),
+                hooks = promptHistoryHooks,
                 familyEvent = TOOLPKG_EVENT_PROMPT_HISTORY,
                 context = context,
-                hookId = { it.hookId },
-                containerPackageName = { it.containerPackageName },
-                functionName = { it.functionName },
                 parseMutation = ::parsePromptHistoryMutation
             )
         }
@@ -59,12 +71,9 @@ internal object ToolPkgPromptHookBridge {
 
         override fun onEvent(context: PromptHookContext): PromptHookMutation? {
             return dispatchPromptHooks(
-                hooks = toolPkgPackageManager().getToolPkgSystemPromptComposeHooks(),
+                hooks = systemPromptComposeHooks,
                 familyEvent = TOOLPKG_EVENT_SYSTEM_PROMPT_COMPOSE,
                 context = context,
-                hookId = { it.hookId },
-                containerPackageName = { it.containerPackageName },
-                functionName = { it.functionName },
                 parseMutation = ::parseSystemPromptMutation
             )
         }
@@ -75,12 +84,9 @@ internal object ToolPkgPromptHookBridge {
 
         override fun onEvent(context: PromptHookContext): PromptHookMutation? {
             return dispatchPromptHooks(
-                hooks = toolPkgPackageManager().getToolPkgToolPromptComposeHooks(),
+                hooks = toolPromptComposeHooks,
                 familyEvent = TOOLPKG_EVENT_TOOL_PROMPT_COMPOSE,
                 context = context,
-                hookId = { it.hookId },
-                containerPackageName = { it.containerPackageName },
-                functionName = { it.functionName },
                 parseMutation = ::parseToolPromptMutation
             )
         }
@@ -91,32 +97,32 @@ internal object ToolPkgPromptHookBridge {
 
         override fun onEvent(context: PromptHookContext): PromptHookMutation? {
             return dispatchPromptHooks(
-                hooks = toolPkgPackageManager().getToolPkgPromptFinalizeHooks(),
+                hooks = promptFinalizeHooks,
                 familyEvent = TOOLPKG_EVENT_PROMPT_FINALIZE,
                 context = context,
-                hookId = { it.hookId },
-                containerPackageName = { it.containerPackageName },
-                functionName = { it.functionName },
                 parseMutation = ::parsePromptFinalizeMutation
             )
         }
     }
 
     fun register() {
+        if (!installed.compareAndSet(false, true)) {
+            return
+        }
         PromptHookRegistry.registerPromptInputHook(PromptInputBridge)
         PromptHookRegistry.registerPromptHistoryHook(PromptHistoryBridge)
         PromptHookRegistry.registerSystemPromptComposeHook(SystemPromptComposeBridge)
         PromptHookRegistry.registerToolPromptComposeHook(ToolPromptComposeBridge)
         PromptHookRegistry.registerPromptFinalizeHook(PromptFinalizeBridge)
+
+        val manager = toolPkgPackageManager()
+        manager.addToolPkgRuntimeChangeListener(runtimeChangeListener)
     }
 
-    private fun <THook> dispatchPromptHooks(
-        hooks: List<THook>,
+    private fun dispatchPromptHooks(
+        hooks: List<ToolPkgPromptHookRegistration>,
         familyEvent: String,
         context: PromptHookContext,
-        hookId: (THook) -> String,
-        containerPackageName: (THook) -> String,
-        functionName: (THook) -> String,
         parseMutation: (Any?, PromptHookContext) -> PromptHookMutation?
     ): PromptHookMutation? {
         if (hooks.isEmpty()) {
@@ -126,9 +132,9 @@ internal object ToolPkgPromptHookBridge {
         val manager = toolPkgPackageManager()
         var current = context
         hooks.forEach { hook ->
-            val resolvedHookId = hookId(hook)
-            val resolvedContainer = containerPackageName(hook)
-            val resolvedFunction = functionName(hook)
+            val resolvedHookId = hook.hookId
+            val resolvedContainer = hook.containerPackageName
+            val resolvedFunction = hook.functionName
             val result =
                 manager.runToolPkgMainHook(
                     containerPackageName = resolvedContainer,
@@ -136,6 +142,7 @@ internal object ToolPkgPromptHookBridge {
                     event = familyEvent,
                     eventName = current.stage,
                     pluginId = resolvedHookId,
+                    inlineFunctionSource = hook.functionSource,
                     eventPayload = buildPromptEventPayload(current)
                 )
             val decoded =
@@ -170,6 +177,93 @@ internal object ToolPkgPromptHookBridge {
             toolPrompt = current.toolPrompt,
             metadata = current.metadata
         )
+    }
+
+    private fun syncToolPkgRegistrations(activeContainers: List<ToolPkgContainerRuntime>) {
+        promptInputHooks =
+            activeContainers.flatMap { runtime ->
+                runtime.promptInputHooks.map { hook ->
+                    ToolPkgPromptHookRegistration(
+                        containerPackageName = runtime.packageName,
+                        hookId = hook.id,
+                        functionName = hook.function,
+                        functionSource = hook.functionSource
+                    )
+                }
+            }.sortedWith(
+                compareBy(
+                    ToolPkgPromptHookRegistration::containerPackageName,
+                    ToolPkgPromptHookRegistration::hookId
+                )
+            )
+
+        promptHistoryHooks =
+            activeContainers.flatMap { runtime ->
+                runtime.promptHistoryHooks.map { hook ->
+                    ToolPkgPromptHookRegistration(
+                        containerPackageName = runtime.packageName,
+                        hookId = hook.id,
+                        functionName = hook.function,
+                        functionSource = hook.functionSource
+                    )
+                }
+            }.sortedWith(
+                compareBy(
+                    ToolPkgPromptHookRegistration::containerPackageName,
+                    ToolPkgPromptHookRegistration::hookId
+                )
+            )
+
+        systemPromptComposeHooks =
+            activeContainers.flatMap { runtime ->
+                runtime.systemPromptComposeHooks.map { hook ->
+                    ToolPkgPromptHookRegistration(
+                        containerPackageName = runtime.packageName,
+                        hookId = hook.id,
+                        functionName = hook.function,
+                        functionSource = hook.functionSource
+                    )
+                }
+            }.sortedWith(
+                compareBy(
+                    ToolPkgPromptHookRegistration::containerPackageName,
+                    ToolPkgPromptHookRegistration::hookId
+                )
+            )
+
+        toolPromptComposeHooks =
+            activeContainers.flatMap { runtime ->
+                runtime.toolPromptComposeHooks.map { hook ->
+                    ToolPkgPromptHookRegistration(
+                        containerPackageName = runtime.packageName,
+                        hookId = hook.id,
+                        functionName = hook.function,
+                        functionSource = hook.functionSource
+                    )
+                }
+            }.sortedWith(
+                compareBy(
+                    ToolPkgPromptHookRegistration::containerPackageName,
+                    ToolPkgPromptHookRegistration::hookId
+                )
+            )
+
+        promptFinalizeHooks =
+            activeContainers.flatMap { runtime ->
+                runtime.promptFinalizeHooks.map { hook ->
+                    ToolPkgPromptHookRegistration(
+                        containerPackageName = runtime.packageName,
+                        hookId = hook.id,
+                        functionName = hook.function,
+                        functionSource = hook.functionSource
+                    )
+                }
+            }.sortedWith(
+                compareBy(
+                    ToolPkgPromptHookRegistration::containerPackageName,
+                    ToolPkgPromptHookRegistration::hookId
+                )
+            )
     }
 
     private fun buildPromptEventPayload(context: PromptHookContext): Map<String, Any?> {

@@ -91,6 +91,7 @@ object XmlRenderPluginRegistry {
         renderInstanceKey: Any? = null
     ): Boolean {
         val plugin = plugins.firstOrNull { it.supports(tagName) } ?: return false
+
         val context = LocalContext.current
         var result by remember(renderInstanceKey, tagName, plugin.id) {
             mutableStateOf<XmlRenderResult?>(null)
@@ -125,10 +126,10 @@ object XmlRenderPluginRegistry {
             resolutionFinished = true
         }
 
-        when (val resolved = result) {
+        return when (val resolved = result) {
             is XmlRenderResult.ComposableRender -> {
                 resolved.render(modifier, textColor, xmlStream)
-                return true
+                true
             }
             is XmlRenderResult.Text -> {
                 Text(
@@ -139,7 +140,7 @@ object XmlRenderPluginRegistry {
                     overflow = TextOverflow.Clip,
                     modifier = modifier
                 )
-                return true
+                true
             }
             is XmlRenderResult.ComposeDslScreen -> {
                 RenderComposeDslScreen(
@@ -147,7 +148,7 @@ object XmlRenderPluginRegistry {
                     modifier = modifier,
                     renderInstanceKey = renderInstanceKey
                 )
-                return true
+                true
             }
             null -> {
                 if (!errorMessage.isNullOrBlank()) {
@@ -157,9 +158,8 @@ object XmlRenderPluginRegistry {
                         style = MaterialTheme.typography.bodySmall,
                         modifier = modifier
                     )
-                    return true
-                }
-                if (!resolutionFinished) {
+                    true
+                } else if (!resolutionFinished) {
                     Box(
                         modifier = modifier
                             .fillMaxWidth()
@@ -168,9 +168,10 @@ object XmlRenderPluginRegistry {
                     ) {
                         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
-                    return true
+                    true
+                } else {
+                    false
                 }
-                return false
             }
         }
     }

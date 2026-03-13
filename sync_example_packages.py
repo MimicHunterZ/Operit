@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import functools
 import json
 import shutil
 import subprocess
@@ -170,27 +169,31 @@ def _resolve_plan_item(examples_dir: Path, item: str) -> SyncPlanItem | None:
     return None
 
 
-@functools.lru_cache(maxsize=None)
-def _is_git_ignored(repo_root: Path, file_path: Path) -> bool:
-    relative_path = file_path.relative_to(repo_root).as_posix()
-    completed = subprocess.run(
-        ["git", "check-ignore", "--quiet", relative_path],
-        cwd=str(repo_root),
-    )
-    if completed.returncode == 0:
-        return True
-    if completed.returncode == 1:
-        return False
-    raise RuntimeError(f"git check-ignore failed for: {relative_path}")
-
-
 def _iter_files_for_pack(repo_root: Path, folder: Path) -> list[Path]:
+    folder_rel = folder.relative_to(repo_root).as_posix()
+    completed = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", folder_rel],
+        cwd=str(repo_root),
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(f"git ls-files failed for: {folder_rel}")
+
     files: list[Path] = []
-    for p in folder.rglob("*"):
-        if p.is_file():
-            if _is_git_ignored(repo_root, p):
-                continue
-            files.append(p)
+    seen: set[Path] = set()
+    for raw_path in completed.stdout.split(b"\x00"):
+        if not raw_path:
+            continue
+        repo_relative = Path(raw_path.decode("utf-8"))
+        file_path = repo_root / repo_relative
+        if not file_path.is_file():
+            continue
+        if file_path in seen:
+            continue
+        seen.add(file_path)
+        files.append(file_path)
+
     files.sort(key=lambda x: x.relative_to(folder).as_posix())
     return files
 

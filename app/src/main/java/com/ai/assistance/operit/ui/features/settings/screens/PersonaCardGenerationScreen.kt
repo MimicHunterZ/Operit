@@ -23,6 +23,7 @@ import com.ai.assistance.operit.R
 import com.ai.assistance.operit.api.chat.EnhancedAIService
 import com.ai.assistance.operit.api.chat.llmprovider.AIService
 import com.ai.assistance.operit.core.tools.StringResultData
+import com.ai.assistance.operit.util.ChatMarkupRegex
 import com.ai.assistance.operit.data.model.CharacterCard
 import com.ai.assistance.operit.data.model.FunctionType
 import com.ai.assistance.operit.data.model.PromptTag
@@ -50,13 +51,11 @@ private object LocalCharacterToolExecutor {
     fun extractInvocations(raw: String): List<Pair<String, Map<String, String>>> {
         val list = mutableListOf<Pair<String, Map<String, String>>>()
         // 简单 XML 提取：<tool name="..."> <param name="field">..</param><param name="content">..</param></tool>
-        val toolRegex = Regex("(?s)<tool\\s+name=\"([^\"]+)\">([\\s\\S]*?)</tool>")
-        val paramRegex = Regex("(?s)<param\\s+name=\"([^\"]+)\">([\\s\\S]*?)</param>")
-        toolRegex.findAll(raw).forEach { m ->
-            val name = m.groupValues.getOrNull(1)?.trim().orEmpty()
-            val body = m.groupValues.getOrNull(2) ?: ""
+        ChatMarkupRegex.toolCallPattern.findAll(raw).forEach { m ->
+            val name = m.groupValues.getOrNull(2)?.trim().orEmpty()
+            val body = m.groupValues.getOrNull(3) ?: ""
             val params = mutableMapOf<String, String>()
-            paramRegex.findAll(body).forEach { pm ->
+            ChatMarkupRegex.toolParamPattern.findAll(body).forEach { pm ->
                 val pName = pm.groupValues.getOrNull(1)?.trim().orEmpty()
                 val pVal = pm.groupValues.getOrNull(2)?.trim().orEmpty()
                 params[pName] = pVal
@@ -483,8 +482,14 @@ fun PersonaCardGenerationScreen(
             chatMessages.add(CharacterChatMessage("assistant", generatingText))
             val assistantIndex = chatMessages.lastIndex
 
-            val toolTagRegex = Regex("(?s)\\s*<tool\\b[\\s\\S]*?</tool>\\s*")
-            val toolResultRegex = Regex("(?s)\\s*<tool_result\\s+name=\"[^\"]+\"\\s+status=\"[^\"]+\"[^>]*>[\\s\\S]*?</tool_result>\\s*")
+            val toolTagRegex = Regex(
+                """\s*(?:${ChatMarkupRegex.toolTag.pattern})\s*""",
+                setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+            )
+            val toolResultRegex = Regex(
+                """\s*(?:${ChatMarkupRegex.toolResultTag.pattern})\s*""",
+                setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+            )
             val statusRegex = Regex("(?s)\\s*<status\\b[^>]*>[\\s\\S]*?</status>\\s*")
 
             // 原始缓冲，用于工具解析

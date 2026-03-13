@@ -83,15 +83,8 @@ class PlanModeManager {
             console.log(`${TAG} shouldUseDeepSearchMode empty message elapsedMs=${Date.now() - startTime}`);
             return false;
         }
-        const i18n = getI18n();
-        const indicators = (i18n.complexityIndicators || [])
-            .map(item => String(item || "").trim())
-            .filter(Boolean);
-        const normalizedLower = normalized.toLowerCase();
-        const matchedIndicator = indicators.find(ind => normalizedLower.indexOf(ind.toLowerCase()) >= 0) || "";
-        const shouldUse = Boolean(matchedIndicator);
-        console.log(`${TAG} shouldUseDeepSearchMode elapsedMs=${Date.now() - startTime} indicators=${indicators.length} matched=${shouldUse} matchedIndicator=${matchedIndicator || "none"}`);
-        return shouldUse;
+        console.log(`${TAG} shouldUseDeepSearchMode elapsedMs=${Date.now() - startTime} matched=true mode=always_on`);
+        return true;
     }
     async executeDeepSearchMode(userMessage, chatHistory, workspacePath, maxTokens, tokenUsageThreshold, onChunk) {
         this.isCancelled = false;

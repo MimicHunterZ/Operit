@@ -3,7 +3,6 @@ package com.ai.assistance.operit.plugins.toolpkg
 import android.content.Context
 import androidx.compose.ui.graphics.Color
 import com.ai.assistance.operit.R
-import com.ai.assistance.operit.core.application.OperitApplication
 import com.ai.assistance.operit.core.chat.logMessageTiming
 import com.ai.assistance.operit.core.chat.messageTimingNow
 import com.ai.assistance.operit.core.chat.plugins.MessageProcessingController
@@ -13,6 +12,7 @@ import com.ai.assistance.operit.core.chat.plugins.MessageProcessingPlugin
 import com.ai.assistance.operit.core.chat.plugins.MessageProcessingPluginRegistry
 import com.ai.assistance.operit.core.tools.AIToolHandler
 import com.ai.assistance.operit.core.tools.packTool.PackageManager
+import com.ai.assistance.operit.core.tools.packTool.ToolPkgContainerRuntime
 import com.ai.assistance.operit.core.tools.packTool.TOOLPKG_EVENT_INPUT_MENU_TOGGLE
 import com.ai.assistance.operit.core.tools.packTool.TOOLPKG_EVENT_MESSAGE_PROCESSING
 import com.ai.assistance.operit.core.tools.packTool.TOOLPKG_EVENT_XML_RENDER
@@ -85,6 +85,12 @@ private fun summarizeHookValue(value: Any?): String {
 
 private object ToolPkgMessageProcessingBridgePlugin : MessageProcessingPlugin {
     override val id: String = "builtin.toolpkg.message-processing-bridge"
+    @Volatile
+    private var hooks: List<ToolPkgMessageProcessingHookRegistration> = emptyList()
+
+    internal fun replaceHooks(updatedHooks: List<ToolPkgMessageProcessingHookRegistration>) {
+        hooks = updatedHooks
+    }
 
     override suspend fun createExecutionIfMatched(
         params: MessageProcessingHookParams
@@ -92,14 +98,11 @@ private object ToolPkgMessageProcessingBridgePlugin : MessageProcessingPlugin {
         val totalStartTime = messageTimingNow()
         val manager = packageManager(params.context)
         val loadHooksStartTime = messageTimingNow()
-        val hooks =
-            withContext(Dispatchers.IO) {
-                manager.getToolPkgMessageProcessingPlugins()
-            }
+        val registeredHooks = hooks
         logMessageTiming(
             stage = "toolpkg.messageProcessing.loadHooks",
             startTimeMs = loadHooksStartTime,
-            details = "hooks=${hooks.size}"
+            details = "hooks=${registeredHooks.size}"
         )
 
         val buildPayloadStartTime = messageTimingNow()
@@ -111,7 +114,7 @@ private object ToolPkgMessageProcessingBridgePlugin : MessageProcessingPlugin {
             details = "history=${params.chatHistory.size}, messageLength=${params.messageContent.length}"
         )
 
-        for ((index, hook) in hooks.withIndex()) {
+        for ((index, hook) in registeredHooks.withIndex()) {
             val hookProbeStartTime = messageTimingNow()
             val hookKey = "${hook.containerPackageName}:${hook.pluginId}"
             val probeDecoded =
@@ -166,7 +169,7 @@ private object ToolPkgMessageProcessingBridgePlugin : MessageProcessingPlugin {
             logMessageTiming(
                 stage = "toolpkg.messageProcessing.matchTotal",
                 startTimeMs = totalStartTime,
-                details = "hooks=${hooks.size}, matchedHook=$hookKey, index=$index"
+                details = "hooks=${registeredHooks.size}, matchedHook=$hookKey, index=$index"
             )
             return execution
         }
@@ -174,7 +177,7 @@ private object ToolPkgMessageProcessingBridgePlugin : MessageProcessingPlugin {
         logMessageTiming(
             stage = "toolpkg.messageProcessing.matchTotal",
             startTimeMs = totalStartTime,
-            details = "hooks=${hooks.size}, matchedHook=none"
+            details = "hooks=${registeredHooks.size}, matchedHook=none"
         )
         return null
     }
@@ -195,7 +198,7 @@ private object ToolPkgMessageProcessingBridgePlugin : MessageProcessingPlugin {
 
     private suspend fun runMessageProcessingHook(
         manager: PackageManager,
-        hook: PackageManager.ToolPkgMessageProcessingPlugin,
+        hook: ToolPkgMessageProcessingHookRegistration,
         eventPayload: Map<String, Any?>,
         onIntermediateResult: ((Any?) -> Unit)? = null
     ): Any? {
@@ -211,6 +214,7 @@ private object ToolPkgMessageProcessingBridgePlugin : MessageProcessingPlugin {
                     functionName = hook.functionName,
                     event = TOOLPKG_EVENT_MESSAGE_PROCESSING,
                     pluginId = hook.pluginId,
+                    inlineFunctionSource = hook.functionSource,
                     eventPayload = eventPayload,
                     onIntermediateResult = onIntermediateResult
                 )
@@ -264,14 +268,14 @@ private object ToolPkgMessageProcessingBridgePlugin : MessageProcessingPlugin {
     }
 
     private fun nextMessageProcessingExecutionId(
-        hook: PackageManager.ToolPkgMessageProcessingPlugin
+        hook: ToolPkgMessageProcessingHookRegistration
     ): String {
         return "toolpkg-msg:${hook.containerPackageName}:${hook.pluginId}:${UUID.randomUUID()}"
     }
 
     private fun createStreamingExecution(
         manager: PackageManager,
-        hook: PackageManager.ToolPkgMessageProcessingPlugin,
+        hook: ToolPkgMessageProcessingHookRegistration,
         eventPayload: Map<String, Any?>,
         executionId: String
     ): MessageProcessingExecution {
@@ -417,7 +421,7 @@ private object ToolPkgMessageProcessingBridgePlugin : MessageProcessingPlugin {
 
 private class RegisteredMessageProcessingController(
     private val executionId: String,
-    private val hook: PackageManager.ToolPkgMessageProcessingPlugin
+    private val hook: ToolPkgMessageProcessingHookRegistration
 ) : MessageProcessingController {
     override fun cancel() {
         val handled = ToolPkgMessageProcessingCancellationRegistry.cancel(executionId)
@@ -430,22 +434,21 @@ private class RegisteredMessageProcessingController(
 
 private object ToolPkgXmlRenderBridgePlugin : XmlRenderPlugin {
     override val id: String = "builtin.toolpkg.xml-render-bridge"
+    @Volatile
+    private var hooksByTag: Map<String, List<ToolPkgXmlRenderHookRegistration>> = emptyMap()
+
+    internal fun replaceHooksByTag(
+        updatedHooksByTag: Map<String, List<ToolPkgXmlRenderHookRegistration>>
+    ) {
+        hooksByTag = updatedHooksByTag
+    }
 
     override fun supports(tagName: String): Boolean {
-        val normalizedTagName = tagName.trim()
+        val normalizedTagName = tagName.trim().lowercase()
         if (normalizedTagName.isBlank()) {
             return false
         }
-        return runCatching {
-            val hooks = packageManager(OperitApplication.instance).getToolPkgXmlRenderPlugins(normalizedTagName)
-            hooks.isNotEmpty()
-        }.onFailure { error ->
-            AppLogger.e(
-                TOOLPKG_LOG_TAG,
-                "xml-render supports failed tag=$normalizedTagName",
-                error
-            )
-        }.getOrDefault(false)
+        return hooksByTag[normalizedTagName].orEmpty().isNotEmpty()
     }
 
     override suspend fun resolve(
@@ -456,10 +459,7 @@ private object ToolPkgXmlRenderBridgePlugin : XmlRenderPlugin {
         xmlStream: Stream<String>?
     ): XmlRenderResult? {
         val manager = packageManager(context)
-        val hooks =
-            withContext(Dispatchers.IO) {
-                manager.getToolPkgXmlRenderPlugins(tagName)
-            }
+        val hooks = hooksByTag[tagName.trim().lowercase()].orEmpty()
         for (hook in hooks) {
             val result =
                 withContext(Dispatchers.IO) {
@@ -468,6 +468,7 @@ private object ToolPkgXmlRenderBridgePlugin : XmlRenderPlugin {
                         functionName = hook.functionName,
                         event = TOOLPKG_EVENT_XML_RENDER,
                         pluginId = hook.pluginId,
+                        inlineFunctionSource = hook.functionSource,
                         eventPayload =
                             mapOf(
                                 "xmlContent" to xmlContent,
@@ -615,20 +616,35 @@ private object ToolPkgXmlRenderBridgePlugin : XmlRenderPlugin {
 private object ToolPkgInputMenuToggleBridgePlugin : InputMenuTogglePlugin {
     override val id: String = "builtin.toolpkg.input-menu-toggle-bridge"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val hooksLock = Any()
     @Volatile
-    private var hooksCache: List<PackageManager.ToolPkgInputMenuTogglePlugin>? = null
+    private var hooks: List<ToolPkgInputMenuToggleHookRegistration> = emptyList()
     @Volatile
     private var specsCache: List<InputMenuSpec> = emptyList()
     @Volatile
     private var hasLoadedOnce = false
+    @Volatile
+    private var hookRegistryVersion = 0L
+    @Volatile
+    private var lastHookRegistryVersion = -1L
     private val refreshFlag = AtomicBoolean(false)
+
+    internal fun replaceHooks(updatedHooks: List<ToolPkgInputMenuToggleHookRegistration>) {
+        if (hooks == updatedHooks) {
+            return
+        }
+        hooks = updatedHooks
+        specsCache = emptyList()
+        hasLoadedOnce = false
+        hookRegistryVersion += 1L
+        InputMenuTogglePluginRegistry.notifyChanged()
+    }
 
     override fun createToggles(
         params: InputMenuToggleHookParams
     ): List<InputMenuToggleDefinition> {
+        val registryVersion = hookRegistryVersion
         val cachedSpecs = specsCache
-        if (!hasLoadedOnce) {
+        if (!hasLoadedOnce || lastHookRegistryVersion != registryVersion) {
             triggerRefresh(params = params)
             if (cachedSpecs.isEmpty()) {
                 return listOf(createLoadingToggle())
@@ -663,6 +679,7 @@ private object ToolPkgInputMenuToggleBridgePlugin : InputMenuTogglePlugin {
                             functionName = spec.functionName,
                             event = TOOLPKG_EVENT_INPUT_MENU_TOGGLE,
                             pluginId = spec.pluginId,
+                            inlineFunctionSource = spec.functionSource,
                             eventPayload =
                                 mapOf(
                                     "action" to "toggle",
@@ -710,15 +727,16 @@ private object ToolPkgInputMenuToggleBridgePlugin : InputMenuTogglePlugin {
 
     private fun loadSpecs(params: InputMenuToggleHookParams): List<InputMenuSpec> {
         val manager = packageManager(params.context)
-        val hooks = getCachedHooks(manager)
+        val registeredHooks = hooks
         val resolved = mutableListOf<InputMenuSpec>()
-        hooks.forEach { hook ->
+        registeredHooks.forEach { hook ->
             val result =
                 manager.runToolPkgMainHook(
                     containerPackageName = hook.containerPackageName,
                     functionName = hook.functionName,
                     event = TOOLPKG_EVENT_INPUT_MENU_TOGGLE,
                     pluginId = hook.pluginId,
+                    inlineFunctionSource = hook.functionSource,
                     eventPayload =
                         mapOf(
                             "action" to "create"
@@ -748,27 +766,20 @@ private object ToolPkgInputMenuToggleBridgePlugin : InputMenuTogglePlugin {
                     decoded = decoded,
                     containerPackageName = hook.containerPackageName,
                     functionName = hook.functionName,
-                    pluginId = hook.pluginId
+                    pluginId = hook.pluginId,
+                    functionSource = hook.functionSource
                 )
             )
         }
+        lastHookRegistryVersion = hookRegistryVersion
         return resolved
-    }
-
-    private fun getCachedHooks(manager: PackageManager): List<PackageManager.ToolPkgInputMenuTogglePlugin> {
-        hooksCache?.let { return it }
-        synchronized(hooksLock) {
-            hooksCache?.let { return it }
-            val loaded = manager.getToolPkgInputMenuTogglePlugins()
-            hooksCache = loaded
-            return loaded
-        }
     }
 
     private data class InputMenuSpec(
         val containerPackageName: String,
         val functionName: String,
         val pluginId: String,
+        val functionSource: String?,
         val id: String,
         val title: String,
         val description: String,
@@ -779,7 +790,8 @@ private object ToolPkgInputMenuToggleBridgePlugin : InputMenuTogglePlugin {
         decoded: Any?,
         containerPackageName: String,
         functionName: String,
-        pluginId: String
+        pluginId: String,
+        functionSource: String?
     ): List<InputMenuSpec> {
         val array =
             when (decoded) {
@@ -801,6 +813,7 @@ private object ToolPkgInputMenuToggleBridgePlugin : InputMenuTogglePlugin {
                     containerPackageName = containerPackageName,
                     functionName = functionName,
                     pluginId = pluginId,
+                    functionSource = functionSource,
                     id = id,
                     title = title,
                     description = item.optString("description").trim(),
@@ -814,12 +827,92 @@ private object ToolPkgInputMenuToggleBridgePlugin : InputMenuTogglePlugin {
 
 object ToolPkgCommonBridgePlugin : OperitPlugin {
     override val id: String = "builtin.toolpkg.common-bridge"
+    private val installed = AtomicBoolean(false)
+    private val runtimeChangeListener =
+        PackageManager.ToolPkgRuntimeChangeListener {
+            syncToolPkgRegistrations(toolPkgPackageManager().getImportedToolPkgContainerRuntimes())
+        }
 
     override fun register() {
+        if (!installed.compareAndSet(false, true)) {
+            return
+        }
         MessageProcessingPluginRegistry.register(ToolPkgMessageProcessingBridgePlugin)
         XmlRenderPluginRegistry.register(ToolPkgXmlRenderBridgePlugin)
         InputMenuTogglePluginRegistry.register(ToolPkgInputMenuToggleBridgePlugin)
         ToolPkgPromptHookBridge.register()
         ToolPkgToolLifecycleBridge.register()
+
+        val manager = toolPkgPackageManager()
+        manager.addToolPkgRuntimeChangeListener(runtimeChangeListener)
+    }
+
+    private fun syncToolPkgRegistrations(
+        activeContainers: List<ToolPkgContainerRuntime>
+    ) {
+        val messageHooks =
+            activeContainers.flatMap { runtime ->
+                runtime.messageProcessingPlugins.map { hook ->
+                    ToolPkgMessageProcessingHookRegistration(
+                        containerPackageName = runtime.packageName,
+                        pluginId = hook.id,
+                        functionName = hook.function,
+                        functionSource = hook.functionSource
+                    )
+                }
+            }.sortedWith(
+                compareBy(
+                    ToolPkgMessageProcessingHookRegistration::containerPackageName,
+                    ToolPkgMessageProcessingHookRegistration::pluginId
+                )
+            )
+
+        val xmlHooksByTag =
+            activeContainers.flatMap { runtime ->
+                runtime.xmlRenderPlugins.mapNotNull { hook ->
+                    val normalizedTag = hook.tag.trim().lowercase()
+                    if (normalizedTag.isBlank()) {
+                        null
+                    } else {
+                        ToolPkgXmlRenderHookRegistration(
+                            containerPackageName = runtime.packageName,
+                            pluginId = hook.id,
+                            tag = normalizedTag,
+                            functionName = hook.function,
+                            functionSource = hook.functionSource
+                        )
+                    }
+                }
+            }
+                .groupBy(ToolPkgXmlRenderHookRegistration::tag)
+                .mapValues { (_, hooks) ->
+                    hooks.sortedWith(
+                        compareBy(
+                            ToolPkgXmlRenderHookRegistration::containerPackageName,
+                            ToolPkgXmlRenderHookRegistration::pluginId
+                        )
+                    )
+                }
+
+        val inputMenuHooks =
+            activeContainers.flatMap { runtime ->
+                runtime.inputMenuTogglePlugins.map { hook ->
+                    ToolPkgInputMenuToggleHookRegistration(
+                        containerPackageName = runtime.packageName,
+                        pluginId = hook.id,
+                        functionName = hook.function,
+                        functionSource = hook.functionSource
+                    )
+                }
+            }.sortedWith(
+                compareBy(
+                    ToolPkgInputMenuToggleHookRegistration::containerPackageName,
+                    ToolPkgInputMenuToggleHookRegistration::pluginId
+                )
+            )
+
+        ToolPkgMessageProcessingBridgePlugin.replaceHooks(messageHooks)
+        ToolPkgXmlRenderBridgePlugin.replaceHooksByTag(xmlHooksByTag)
+        ToolPkgInputMenuToggleBridgePlugin.replaceHooks(inputMenuHooks)
     }
 }

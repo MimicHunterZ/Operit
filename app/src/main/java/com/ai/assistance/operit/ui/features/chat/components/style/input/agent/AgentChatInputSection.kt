@@ -71,7 +71,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Rect
@@ -95,7 +94,6 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.TextStyle
@@ -386,6 +384,7 @@ fun AgentChatInputSection(
     LaunchedEffect(showAttachmentPanel) {
         onAttachmentPanelStateChange?.invoke(showAttachmentPanel)
     }
+
     fun handleEnterSendAction() {
         if (!canSendMessage) return
         if (showQueueAction) {
@@ -558,16 +557,7 @@ fun AgentChatInputSection(
             Triple(MaterialTheme.colorScheme.primary, "", 0f)
         }
 
-    val density = LocalDensity.current
-    val imeBottomPx = WindowInsets.ime.getBottom(density)
-    val imeLiftModifier =
-        if (imeBottomPx > 0) {
-            Modifier.graphicsLayer { translationY = -imeBottomPx.toFloat() }
-        } else {
-            Modifier
-        }
-
-    Surface(color = Color.Transparent, modifier = modifier.then(imeLiftModifier)) {
+    Surface(color = Color.Transparent, modifier = modifier) {
         Column {
             replyToMessage?.let { message ->
                 Surface(

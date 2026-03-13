@@ -369,8 +369,12 @@ const various_search = (function () {
     for (const platform of platformKeys) {
       const searchFn = searchFunctions[platform];
       if (searchFn) {
-        // 注意：这里我们假设组合搜索总是从第一页开始
-        searchPromises.push(searchFn(query, '1', includeLinks));
+        if (platform === 'bing') {
+          searchPromises.push(searchFn(query, includeLinks));
+        } else {
+          // 注意：这里我们假设组合搜索总是从第一页开始
+          searchPromises.push(searchFn(query, '1', includeLinks));
+        }
       } else {
         searchPromises.push(Promise.resolve({ platform, success: false, message: `不支持的搜索平台: ${platform}` }));
       }
@@ -384,12 +388,9 @@ const various_search = (function () {
     console.log(JSON.stringify(result, null, 2));
   }
 
-  function wrap(coreFunction: (...args: any[]) => Promise<any>) {
+  function wrap(coreFunction: (...args: any[]) => Promise<any>, parameterNames: string[]) {
     return async (params: any) => {
-      // wrap函数负责将JSON对象参数解构为独立参数
-      // 并调用核心函数。
-      // 它直接返回核心函数的JSON结果，不做任何修改。
-      const args = Object.values(params);
+      const args = parameterNames.map((name) => params[name]);
       return coreFunction(...args);
     };
   }
@@ -411,16 +412,16 @@ const various_search = (function () {
   };
 })();
 
-exports.search_bing = various_search.wrap(various_search.search_bing);
-exports.search_baidu = various_search.wrap(various_search.search_baidu);
-exports.search_sogou = various_search.wrap(various_search.search_sogou);
-exports.search_quark = various_search.wrap(various_search.search_quark);
-exports.search_bing_images = various_search.wrap(various_search.search_bing_images);
-exports.search_wikimedia_images = various_search.wrap(various_search.search_wikimedia_images);
-exports.search_duckduckgo_images = various_search.wrap(various_search.search_duckduckgo_images);
-exports.search_ecosia_images = various_search.wrap(various_search.search_ecosia_images);
-exports.search_pexels_images = various_search.wrap(various_search.search_pexels_images);
-exports.search_pixabay_images = various_search.wrap(various_search.search_pixabay_images);
-exports.combined_search = various_search.wrap(various_search.combined_search);
+exports.search_bing = various_search.wrap(various_search.search_bing, ['query', 'includeLinks']);
+exports.search_baidu = various_search.wrap(various_search.search_baidu, ['query', 'page', 'includeLinks']);
+exports.search_sogou = various_search.wrap(various_search.search_sogou, ['query', 'page', 'includeLinks']);
+exports.search_quark = various_search.wrap(various_search.search_quark, ['query', 'page', 'includeLinks']);
+exports.search_bing_images = various_search.wrap(various_search.search_bing_images, ['query']);
+exports.search_wikimedia_images = various_search.wrap(various_search.search_wikimedia_images, ['query']);
+exports.search_duckduckgo_images = various_search.wrap(various_search.search_duckduckgo_images, ['query']);
+exports.search_ecosia_images = various_search.wrap(various_search.search_ecosia_images, ['query']);
+exports.search_pexels_images = various_search.wrap(various_search.search_pexels_images, ['query']);
+exports.search_pixabay_images = various_search.wrap(various_search.search_pixabay_images, ['query']);
+exports.combined_search = various_search.wrap(various_search.combined_search, ['query', 'platforms', 'includeLinks']);
 
 exports.main = various_search.main;

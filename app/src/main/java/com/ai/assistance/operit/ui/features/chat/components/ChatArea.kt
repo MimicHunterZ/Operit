@@ -254,11 +254,12 @@ fun ChatArea(
                 showLoadingIndicator && chatStyle == ChatStyle.BUBBLE && lastMessage?.sender == "ai"
 
             val messagesCount = chatHistory.size
-            val paginationWindow = calculatePaginationWindow(
-                chatHistory = chatHistory,
-                messagesPerPage = messagesPerPage,
-                depth = currentDepth.value
-            )
+            val paginationWindow =
+                calculatePaginationWindow(
+                    chatHistory = chatHistory,
+                    messagesPerPage = messagesPerPage,
+                    depth = currentDepth.value,
+                )
             val minVisibleIndex = paginationWindow.minVisibleIndex
             val hasMoreMessages = paginationWindow.hasMoreMessages
 
@@ -279,8 +280,7 @@ fun ChatArea(
             }
 
             // 根据当前深度筛选显示的消息
-            chatHistory.subList(minVisibleIndex, messagesCount).forEachIndexed { relativeIndex,
-                                                                                 message ->
+            chatHistory.subList(minVisibleIndex, messagesCount).forEachIndexed { relativeIndex, message ->
                 val actualIndex = minVisibleIndex + relativeIndex
                 val isLastAiMessage = actualIndex == messagesCount - 1 && message.sender == "ai"
                 val shouldHide = shouldHideLastAiMessage && isLastAiMessage
@@ -754,6 +754,7 @@ private fun MessageItem(
         }
     }
 }
+
 
 
 

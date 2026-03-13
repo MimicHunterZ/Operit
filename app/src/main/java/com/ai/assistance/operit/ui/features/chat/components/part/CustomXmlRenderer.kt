@@ -54,6 +54,20 @@ class CustomXmlRenderer(
     private val builtInTags =
             setOf("think", "thinking", "search", "tool", "status", "tool_result", "html", "mood", "font", "details", "detail")
 
+    private data class ToolRequestRenderState(
+        val rawToolName: String,
+        val paramText: String,
+        val displayToolName: String,
+        val isLongContent: Boolean,
+        val isClosed: Boolean,
+    )
+
+    private data class ToolResultRenderState(
+        val toolName: String,
+        val isSuccess: Boolean,
+        val resultContent: String,
+    )
+
     @Composable
     override fun RenderXmlContent(
         xmlContent: String,
@@ -100,48 +114,52 @@ class CustomXmlRenderer(
         renderInstanceKey: Any?,
         modifier: Modifier
     ) {
-
-        // 根据设置决定是否渲染 think 和 thinking 标签
-        if ((tagName == "think" || tagName == "thinking") && !showThinkingProcess) {
+        val shouldSkipHiddenThink =
+            (tagName == "think" || tagName == "thinking") && !showThinkingProcess
+        if (shouldSkipHiddenThink) {
             return
         }
 
-        // 根据设置决定是否渲染特定的 status 标签
-        if (tagName == "status") {
-            val typeMatch = ChatMarkupRegex.typeAttr.find(trimmedContent)
-            val statusType = typeMatch?.groupValues?.get(1)
-            if (statusType in listOf("completion", "complete", "wait_for_user_need") && !showStatusTags) {
-                return
+        val shouldSkipHiddenStatus =
+            if (tagName != "status") {
+                false
+            } else {
+                val typeMatch = ChatMarkupRegex.typeAttr.find(trimmedContent)
+                val statusType = typeMatch?.groupValues?.get(1)
+                statusType in listOf("completion", "complete", "wait_for_user_need") && !showStatusTags
             }
+        if (shouldSkipHiddenStatus) {
+            return
         }
-
 
         // 如果无法识别为有效的XML标签，则交由默认渲染器处理
         if (tagName == null) {
             fallback.RenderXmlContent(trimmedContent, Modifier, textColor, xmlStream, renderInstanceKey)
             return
         }
+        val resolvedTagName = tagName
 
         // 优先分发到已注册的 XML 渲染插件（例如 deepsearch 的 <plan>）
-        if (
+        val pluginHandled =
             XmlRenderPluginRegistry.RenderIfMatched(
                 xmlContent = trimmedContent,
-                tagName = tagName,
+                tagName = resolvedTagName,
                 modifier = modifier,
                 textColor = textColor,
                 xmlStream = xmlStream,
                 renderInstanceKey = renderInstanceKey
             )
-        ) {
+        if (pluginHandled) {
             return
         }
 
         // 根据新规则处理未闭合的标签
-        if (!isXmlFullyClosed(trimmedContent)) {
-            if (tagName in builtInTags && tagName != "tool" && tagName != "think" && tagName != "thinking" && tagName != "search") {
+        val isClosed = isXmlFullyClosed(trimmedContent)
+        if (!isClosed) {
+            if (resolvedTagName in builtInTags && resolvedTagName != "tool" && resolvedTagName != "think" && resolvedTagName != "thinking" && resolvedTagName != "search") {
                 // 是内置标签但未闭合，则不显示任何内容，等待其闭合
                 return
-            } else if (!(tagName in builtInTags)) {
+            } else if (resolvedTagName !in builtInTags) {
                 // 是未知标签且未闭合，则交由默认渲染器处理
                 fallback.RenderXmlContent(trimmedContent, Modifier, textColor, xmlStream, renderInstanceKey)
                 return
@@ -149,7 +167,7 @@ class CustomXmlRenderer(
         }
 
         // 标签已正确闭合，根据标签名分发到对应的渲染函数
-        when (tagName) {
+        when (resolvedTagName) {
             "think" -> renderThinkContent(trimmedContent, Modifier, textColor, xmlStream)
             "thinking" -> renderThinkContent(trimmedContent, Modifier, textColor, xmlStream)
             "search" -> renderSearchContent(trimmedContent, Modifier, textColor)
@@ -166,13 +184,16 @@ class CustomXmlRenderer(
 
     /** 从XML字符串中提取第一个标签的名称。 例如: "<think>...</think>" -> "think" */
     private fun extractTagName(content: String): String? {
-        val openTagRegex = "<([a-zA-Z_][a-zA-Z0-9_]*)".toRegex()
-        return openTagRegex.find(content)?.groupValues?.getOrNull(1)
+        return ChatMarkupRegex.normalizeToolLikeTagName(extractRawTagName(content))
+    }
+
+    private fun extractRawTagName(content: String): String? {
+        return ChatMarkupRegex.extractOpeningTagName(content)
     }
 
     /** 检查XML标签是否完全闭合。 支持标准配对标签 (<tag>...</tag>) 和自闭合标签 (<tag/>)。 */
     private fun isXmlFullyClosed(content: String): Boolean {
-        val tagName = extractTagName(content) ?: return false
+        val tagName = extractRawTagName(content) ?: return false
 
         // 处理自闭合标签，例如 <status type="completion"/>
         if (content.endsWith("/>")) {
@@ -185,9 +206,16 @@ class CustomXmlRenderer(
     }
 
     /** 从XML内容中提取纯文本内容 */
-    private fun extractContentFromXml(content: String, tagName: String): String {
-        val startTag = "<$tagName"
-        val endTag = "</$tagName>"
+    private fun extractContentFromXml(content: String, tagName: String? = null): String {
+        val rawTagName = extractRawTagName(content) ?: return content
+        val effectiveTagName =
+            if (tagName != null && ChatMarkupRegex.normalizeToolLikeTagName(rawTagName) != tagName) {
+                tagName
+            } else {
+                rawTagName
+            }
+        val startTag = "<$effectiveTagName"
+        val endTag = "</$effectiveTagName>"
 
         // 找到开始标签的结束位置
         val startTagEnd = content.indexOf('>', content.indexOf(startTag)) + 1
@@ -313,9 +341,8 @@ class CustomXmlRenderer(
         textColor: Color,
         xmlStream: Stream<String>?
     ) {
-        // 检测使用的是哪个标签
-        val tagName = if (content.contains("<thinking")) "thinking" else "think"
-        val thinkText = extractContentFromXml(content, tagName).trim()
+        val tagName =
+            if (content.contains("<thinking")) "thinking" else "think"
 
         var expandThinkingProcess by rememberLocal(key = "expand_thinking_process_default", defaultValue = false)
         // 仅在"流仍然存在"且标签未闭合时，才判定为进行中。
@@ -370,16 +397,7 @@ class CustomXmlRenderer(
         var autoScrollEnabled by remember { mutableStateOf(true) }
         var userHasInteractedWithScroll by remember { mutableStateOf(false) }
         var isProgrammaticScroll by remember { mutableStateOf(false) }
-
-        val thinkMarkdownStream =
-            remember(thinkExpandSession, xmlStream, tagName) {
-                if (thinkExpandSession <= 0) {
-                    null
-                } else {
-                    xmlStream?.let { createThinkMarkdownCharStream(it, tagName) }
-                }
-            }
-        val useStreamingThinkMarkdown = isThinkingInProgress && (thinkMarkdownStream != null)
+        val thinkVisibilityState = remember { MutableTransitionState(false) }
 
         val accessibilityDesc = stringResource(R.string.thinking_process_block)
 
@@ -404,6 +422,10 @@ class CustomXmlRenderer(
                 // 仅跳过一次自动收起动画，随后恢复手动交互动画
                 skipCollapseAnimationOnce = false
             }
+        }
+
+        LaunchedEffect(expanded) {
+            thinkVisibilityState.targetState = expanded
         }
 
         LaunchedEffect(expanded) {
@@ -432,8 +454,26 @@ class CustomXmlRenderer(
             }
         }
 
+        val shouldComposeThinkBody =
+            thinkVisibilityState.currentState || thinkVisibilityState.targetState
+        val thinkText =
+            if (shouldComposeThinkBody) {
+                extractContentFromXml(content, tagName).trim()
+            } else {
+                ""
+            }
+        val thinkMarkdownStream =
+            remember(shouldComposeThinkBody, thinkExpandSession, xmlStream, tagName) {
+                if (!shouldComposeThinkBody || thinkExpandSession <= 0) {
+                    null
+                } else {
+                    xmlStream?.let { createThinkMarkdownCharStream(it, tagName) }
+                }
+            }
+        val useStreamingThinkMarkdown = shouldComposeThinkBody && isThinkingInProgress && (thinkMarkdownStream != null)
+
         LaunchedEffect(expanded, thinkText) {
-            if (expanded && autoScrollEnabled) {
+            if (shouldComposeThinkBody && autoScrollEnabled) {
                 isProgrammaticScroll = true
                 try {
                     withFrameNanos { }
@@ -445,61 +485,61 @@ class CustomXmlRenderer(
         }
 
         Column(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(start = 0.dp, top = 0.dp, end = 0.dp, bottom = 2.dp)
-                .semantics(mergeDescendants = true) {
-                    contentDescription = if (expanded && thinkText.isNotBlank()) {
-                        "$accessibilityDesc\n$thinkText"
-                    } else {
-                        accessibilityDesc
+                modifier = modifier
+                    .fillMaxWidth()
+                    .padding(start = 0.dp, top = 0.dp, end = 0.dp, bottom = 2.dp)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = if (expanded && thinkText.isNotBlank()) {
+                            "$accessibilityDesc\n$thinkText"
+                        } else {
+                            accessibilityDesc
+                        }
                     }
-                }
-        ) {
-            Row(
-                    modifier = Modifier.fillMaxWidth().clickable {
-                        // 用户手动交互时始终保留动画
-                        skipCollapseAnimationOnce = false
-                        val newExpandedValue = !expanded
-                        if (newExpandedValue) {
-                            thinkExpandSession += 1
-                        }
-                        expanded = newExpandedValue
-                        if (isThinkingInProgress) {
-                            expandThinkingProcess = newExpandedValue
-                        }
-                    },
-                    horizontalArrangement = Arrangement.Start,
-                    verticalAlignment = Alignment.CenterVertically
             ) {
-                val rotation by
-                        animateFloatAsState(
-                                targetValue = if (expanded) 90f else 0f,
-                                animationSpec =
-                                    if (skipCollapseAnimationOnce && !expanded) snap()
-                                    else tween(durationMillis = 300),
-                                label = "arrowRotation"
-                        )
+                Row(
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            // 用户手动交互时始终保留动画
+                            skipCollapseAnimationOnce = false
+                            val newExpandedValue = !expanded
+                            if (newExpandedValue) {
+                                thinkExpandSession += 1
+                            }
+                            expanded = newExpandedValue
+                            if (isThinkingInProgress) {
+                                expandThinkingProcess = newExpandedValue
+                            }
+                        },
+                        horizontalArrangement = Arrangement.Start,
+                        verticalAlignment = Alignment.CenterVertically
+                ) {
+                    val rotation by
+                            animateFloatAsState(
+                                    targetValue = if (expanded) 90f else 0f,
+                                    animationSpec =
+                                        if (skipCollapseAnimationOnce && !expanded) snap()
+                                        else tween(durationMillis = 300),
+                                    label = "arrowRotation"
+                            )
 
-                Icon(
-                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = if (expanded) stringResource(R.string.common_collapse) else stringResource(R.string.common_expand),
-                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
-                        modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = rotation }
-                )
+                    Icon(
+                            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                            contentDescription = if (expanded) stringResource(R.string.common_collapse) else stringResource(R.string.common_expand),
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                            modifier = Modifier.size(20.dp).graphicsLayer { rotationZ = rotation }
+                    )
 
-                Spacer(modifier = Modifier.width(4.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
 
-                Text(
-                        text = stringResource(id = R.string.thinking_process),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = thinkingTitleBaseColor,
-                        modifier = thinkingTitleModifier
-                )
-            }
+                    Text(
+                            text = stringResource(id = R.string.thinking_process),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = thinkingTitleBaseColor,
+                            modifier = thinkingTitleModifier
+                    )
+                }
 
-            AnimatedVisibility(
-                    visible = expanded,
+                AnimatedVisibility(
+                    visibleState = thinkVisibilityState,
                     enter =
                         androidx.compose.animation.expandVertically(
                             animationSpec = tween(durationMillis = 220),
@@ -518,105 +558,105 @@ class CustomXmlRenderer(
                                 animationSpec = tween(durationMillis = 220)
                             )
                         }
-            ) {
-                if (thinkText.isNotBlank() || thinkMarkdownStream != null) {
-                    val hierarchyLineColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
-                    Box(
-                        modifier =
-                            Modifier.fillMaxWidth()
-                                .padding(top = 2.dp, bottom = 4.dp)
-                                .animateContentSize(
-                                    animationSpec = tween(durationMillis = 240)
-                                )
-                                .heightIn(max = 300.dp)
-                    ) {
-                        Box(
-                            modifier =
-                                Modifier.matchParentSize()
-                                    .padding(start = 10.dp, top = 1.dp, bottom = 1.dp),
-                            contentAlignment = Alignment.CenterStart
-                        ) {
+                ) {
+                    if (shouldComposeThinkBody && (thinkText.isNotBlank() || thinkMarkdownStream != null)) {
+                            val hierarchyLineColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
                             Box(
                                 modifier =
-                                    Modifier.fillMaxHeight()
-                                        .width(1.dp)
-                                        .background(
-                                            brush =
-                                                Brush.verticalGradient(
-                                                    colorStops =
-                                                        arrayOf(
-                                                            0f to Color.Transparent,
-                                                            0.16f to hierarchyLineColor,
-                                                            0.84f to hierarchyLineColor,
-                                                            1f to Color.Transparent
+                                    Modifier.fillMaxWidth()
+                                        .padding(top = 2.dp, bottom = 4.dp)
+                                        .animateContentSize(
+                                            animationSpec = tween(durationMillis = 240)
+                                        )
+                                        .heightIn(max = 300.dp)
+                            ) {
+                                Box(
+                                    modifier =
+                                        Modifier.matchParentSize()
+                                            .padding(start = 10.dp, top = 1.dp, bottom = 1.dp),
+                                    contentAlignment = Alignment.CenterStart
+                                ) {
+                                    Box(
+                                        modifier =
+                                            Modifier.fillMaxHeight()
+                                                .width(1.dp)
+                                                .background(
+                                                    brush =
+                                                        Brush.verticalGradient(
+                                                            colorStops =
+                                                                arrayOf(
+                                                                    0f to Color.Transparent,
+                                                                    0.16f to hierarchyLineColor,
+                                                                    0.84f to hierarchyLineColor,
+                                                                    1f to Color.Transparent
+                                                                )
                                                         )
                                                 )
-                                        )
-                            )
-                        }
+                                    )
+                                }
 
-                        Box(
-                            modifier =
-                                Modifier.fillMaxWidth()
-                                    .verticalScroll(scrollState)
-                                    .padding(start = 24.dp)
-                        ) {
-                            if (useStreamingThinkMarkdown) {
-                                val baseTypography = MaterialTheme.typography
-                                val thinkTypography =
-                                    remember(baseTypography) {
-                                        baseTypography.copy(
-                                            bodyMedium = baseTypography.bodySmall
+                                Box(
+                                    modifier =
+                                        Modifier.fillMaxWidth()
+                                            .verticalScroll(scrollState)
+                                            .padding(start = 24.dp)
+                                ) {
+                                    if (useStreamingThinkMarkdown) {
+                                            val baseTypography = MaterialTheme.typography
+                                            val thinkTypography =
+                                                remember(baseTypography) {
+                                                    baseTypography.copy(
+                                                        bodyMedium = baseTypography.bodySmall
+                                                    )
+                                                }
+                                            MaterialTheme(
+                                                colorScheme = MaterialTheme.colorScheme,
+                                                typography = thinkTypography,
+                                                shapes = MaterialTheme.shapes
+                                            ) {
+                                                StreamMarkdownRenderer(
+                                                    markdownStream = thinkMarkdownStream!!,
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    textColor = textColor.copy(alpha = 0.6f),
+                                                    backgroundColor = Color.Transparent,
+                                                    enableDialogs = enableDialogs,
+                                                    fillMaxWidth = true
+                                                )
+                                            }
+                                    } else if (thinkText.isNotBlank()) {
+                                            val baseTypography = MaterialTheme.typography
+                                            val thinkTypography =
+                                                remember(baseTypography) {
+                                                    baseTypography.copy(
+                                                        bodyMedium = baseTypography.bodySmall
+                                                    )
+                                                }
+                                            MaterialTheme(
+                                                colorScheme = MaterialTheme.colorScheme,
+                                                typography = thinkTypography,
+                                                shapes = MaterialTheme.shapes
+                                            ) {
+                                                StreamMarkdownRenderer(
+                                                    content = thinkText,
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    textColor = textColor.copy(alpha = 0.6f),
+                                                    backgroundColor = Color.Transparent,
+                                                    enableDialogs = enableDialogs,
+                                                    fillMaxWidth = true
+                                                )
+                                            }
+                                    } else {
+                                        Text(
+                                            text = thinkText,
+                                            color = textColor.copy(alpha = 0.6f),
+                                            style = MaterialTheme.typography.bodySmall
                                         )
                                     }
-                                MaterialTheme(
-                                    colorScheme = MaterialTheme.colorScheme,
-                                    typography = thinkTypography,
-                                    shapes = MaterialTheme.shapes
-                                ) {
-                                    StreamMarkdownRenderer(
-                                        markdownStream = thinkMarkdownStream!!,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        textColor = textColor.copy(alpha = 0.6f),
-                                        backgroundColor = Color.Transparent,
-                                        enableDialogs = enableDialogs,
-                                        fillMaxWidth = true
-                                    )
                                 }
-                            } else if (thinkText.isNotBlank()) {
-                                val baseTypography = MaterialTheme.typography
-                                val thinkTypography =
-                                    remember(baseTypography) {
-                                        baseTypography.copy(
-                                            bodyMedium = baseTypography.bodySmall
-                                        )
-                                    }
-                                MaterialTheme(
-                                    colorScheme = MaterialTheme.colorScheme,
-                                    typography = thinkTypography,
-                                    shapes = MaterialTheme.shapes
-                                ) {
-                                    StreamMarkdownRenderer(
-                                        content = thinkText,
-                                        modifier = Modifier.fillMaxWidth(),
-                                        textColor = textColor.copy(alpha = 0.6f),
-                                        backgroundColor = Color.Transparent,
-                                        enableDialogs = enableDialogs,
-                                        fillMaxWidth = true
-                                    )
-                                }
-                            } else {
-                                Text(
-                                    text = thinkText,
-                                    color = textColor.copy(alpha = 0.6f),
-                                    style = MaterialTheme.typography.bodySmall
-                                )
                             }
-                        }
                     }
                 }
             }
-        }
     }
 
     private fun createThinkMarkdownCharStream(
@@ -661,40 +701,39 @@ class CustomXmlRenderer(
     /** 渲染标准工具请求标签 <tool name="..."><param name="param_name">param_value</param></tool> */
     @Composable
     private fun renderToolRequest(content: String, modifier: Modifier, textColor: Color) {
-        // 提取工具名称
-        val nameRegex = "name=\"([^\"]+)\"".toRegex()
-        val nameMatch = nameRegex.find(content)
-        val rawToolName = nameMatch?.groupValues?.get(1) ?: "Unknown tool"
+        val renderState =
+            run {
+                val nameRegex = "name=\"([^\"]+)\"".toRegex()
+                val nameMatch = nameRegex.find(content)
+                val rawToolName = nameMatch?.groupValues?.get(1) ?: "Unknown tool"
+                val params = extractParamsFromTool(content)
+                val paramText = extractContentFromXml(content, "tool").trim()
+                val displayToolName = resolveToolDisplayNameForRender(rawToolName, params)
+                val contentLengthThreshold = 200
 
-        // 提取参数
-        val params = extractParamsFromTool(content)
-
-        // 构建参数显示文本
-        val paramText = extractContentFromXml(content, "tool").trim()
-        val displayToolName = resolveToolDisplayNameForRender(rawToolName, params)
-
-        // 定义短内容和长内容的阈值
-        val contentLengthThreshold = 200
-        val isLongContent = paramText.length > contentLengthThreshold
-
-        val isClosed = isXmlFullyClosed(content)
+                ToolRequestRenderState(
+                    rawToolName = rawToolName,
+                    paramText = paramText,
+                    displayToolName = displayToolName,
+                    isLongContent = paramText.length > contentLengthThreshold,
+                    isClosed = isXmlFullyClosed(content),
+                )
+            }
 
         // 特殊处理 apply_file 工具
-        if (displayToolName == "apply_file") {
-            if (isClosed) {
-                // 调用完成后，使用紧凑视图
+        if (renderState.displayToolName == "apply_file") {
+            if (renderState.isClosed) {
                 CompactToolDisplay(
-                    toolName = rawToolName,
-                    params = paramText,
+                    toolName = renderState.rawToolName,
+                    params = renderState.paramText,
                     textColor = textColor,
                     modifier = modifier,
                     enableDialog = enableDialogs
                 )
             } else {
-                // 调用过程中，使用详细视图
                 DetailedToolDisplay(
-                    toolName = rawToolName,
-                    params = paramText,
+                    toolName = renderState.rawToolName,
+                    params = renderState.paramText,
                     textColor = textColor,
                     modifier = modifier,
                     enableDialog = enableDialogs
@@ -702,20 +741,18 @@ class CustomXmlRenderer(
             }
         } else {
             // 对于其他工具，保持原有逻辑
-            if (isLongContent) {
-                // 使用详细工具显示组件
+            if (renderState.isLongContent) {
                 DetailedToolDisplay(
-                        toolName = rawToolName,
-                        params = paramText,
+                        toolName = renderState.rawToolName,
+                        params = renderState.paramText,
                         textColor = textColor,
                         modifier = modifier,
                         enableDialog = enableDialogs  // 传递弹窗启用状态
                 )
             } else {
-                // 使用简洁工具显示组件
                 CompactToolDisplay(
-                        toolName = rawToolName,
-                        params = paramText,
+                        toolName = renderState.rawToolName,
+                        params = renderState.paramText,
                         textColor = textColor,
                         modifier = modifier,
                         enableDialog = enableDialogs  // 传递弹窗启用状态
@@ -729,53 +766,63 @@ class CustomXmlRenderer(
     private fun renderToolResult(content: String, _modifier: Modifier, _textColor: Color) {
         val clipboardManager = LocalClipboardManager.current
 
-        // 提取工具名称
-        val nameMatch = ChatMarkupRegex.nameAttr.find(content)
-        val toolName = nameMatch?.groupValues?.get(1) ?: stringResource(R.string.unknown_tool)
+        val renderState =
+            run {
+                val nameMatch = ChatMarkupRegex.nameAttr.find(content)
+                val toolName = nameMatch?.groupValues?.get(1) ?: ""
+                val statusMatch = ChatMarkupRegex.statusAttr.find(content)
+                val status = statusMatch?.groupValues?.get(1) ?: "success"
+                val contentMatch = ChatMarkupRegex.contentTag.find(content)
+                val resultContent = contentMatch?.groupValues?.get(1)?.trim() ?: ""
 
-        // 提取状态
-        val statusMatch = ChatMarkupRegex.statusAttr.find(content)
-        val status = statusMatch?.groupValues?.get(1) ?: "success"
-        val isSuccess = status.toLowerCase() == "success"
-
-        // 提取结果内容
-        val contentMatch = ChatMarkupRegex.contentTag.find(content)
-        val resultContent = contentMatch?.groupValues?.get(1)?.trim() ?: ""
+                ToolResultRenderState(
+                    toolName = toolName,
+                    isSuccess = status.lowercase() == "success",
+                    resultContent = resultContent,
+                )
+            }
+        val toolName = renderState.toolName.ifBlank { stringResource(R.string.unknown_tool) }
 
         // 检查结果是否为 file-diff
-        if (toolName == "apply_file" && isSuccess && resultContent.contains("<file-diff")) {
-            val pathRegex = "<file-diff path=\"([^\"]+)\"".toRegex()
-            val detailsRegex = "details=\"([^\"]+)\"".toRegex()
-            val cdataRegex = "<!\\[CDATA\\[(.*?)\\]\\]>".toRegex(RegexOption.DOT_MATCHES_ALL)
+        if (toolName == "apply_file" && renderState.isSuccess && renderState.resultContent.contains("<file-diff")) {
+            val (path, details, unescapedDiffContent) =
+                run {
+                    val pathRegex = "<file-diff path=\"([^\"]+)\"".toRegex()
+                    val detailsRegex = "details=\"([^\"]+)\"".toRegex()
+                    val cdataRegex = "<!\\[CDATA\\[(.*?)\\]\\]>".toRegex(RegexOption.DOT_MATCHES_ALL)
 
-            val path = pathRegex.find(resultContent)?.groupValues?.get(1) ?: ""
-            val details = detailsRegex.find(resultContent)?.groupValues?.get(1) ?: ""
-            val diffContent = cdataRegex.find(resultContent)?.groupValues?.get(1)?.trim() ?: ""
+                    val path = pathRegex.find(renderState.resultContent)?.groupValues?.get(1) ?: ""
+                    val details = detailsRegex.find(renderState.resultContent)?.groupValues?.get(1) ?: ""
+                    val diffContent = cdataRegex.find(renderState.resultContent)?.groupValues?.get(1)?.trim() ?: ""
 
-            // unescape XML characters
-            val unescapedDiffContent = diffContent
-                .replace("<", "<")
-                .replace(">", ">")
-                .replace("&", "&")
+                    Triple(
+                        path,
+                        details,
+                        diffContent
+                            .replace("<", "<")
+                            .replace(">", ">")
+                            .replace("&", "&"),
+                    )
+                }
 
             FileDiffDisplay(diff = FileDiff(path, unescapedDiffContent, details))
         } else {
             // 如果是错误状态，尝试提取错误信息
             val errorContent =
-                    if (!isSuccess) {
-                        val errorMatch = ChatMarkupRegex.errorTag.find(resultContent)
-                        errorMatch?.groupValues?.get(1)?.trim() ?: resultContent
+                    if (!renderState.isSuccess) {
+                        val errorMatch = ChatMarkupRegex.errorTag.find(renderState.resultContent)
+                        errorMatch?.groupValues?.get(1)?.trim() ?: renderState.resultContent
                     } else {
                         // 从结果中移除 file-diff 块（如果存在）
                         val fileDiffRegex = """<file-diff.*</file-diff>""".toRegex(RegexOption.DOT_MATCHES_ALL)
-                        resultContent.replace(fileDiffRegex, "").trim()
+                        renderState.resultContent.replace(fileDiffRegex, "").trim()
                     }
 
             // 使用ToolResultDisplay组件显示结果
             ToolResultDisplay(
                     toolName = toolName,
                     result = errorContent,
-                    isSuccess = isSuccess,
+                    isSuccess = renderState.isSuccess,
                     onCopyResult = {
                         if (errorContent.isNotBlank()) {
                             clipboardManager.setText(AnnotatedString(errorContent))
@@ -789,16 +836,28 @@ class CustomXmlRenderer(
     /** 渲染状态信息标签 <status type="..." tool="..." uuid="..." title="..." subtitle="...">...</status> */
     @Composable
     private fun renderStatus(content: String, modifier: Modifier, textColor: Color) {
-        val typeMatch = ChatMarkupRegex.typeAttr.find(content)
-        val statusType = typeMatch?.groupValues?.get(1) ?: "info"
+        val (statusType, statusContent, statusText) =
+            run {
+                val typeMatch = ChatMarkupRegex.typeAttr.find(content)
+                val statusType = typeMatch?.groupValues?.get(1) ?: "info"
+                val statusContent =
+                    if (statusType !in listOf("completion", "complete", "wait_for_user_need")) {
+                        extractContentFromXml(content, "status")
+                    } else {
+                        ""
+                    }
+                val statusText =
+                    when (statusType) {
+                        "completion", "complete" -> "✓ Task completed"
+                        "wait_for_user_need" -> "✓ Ready for further assistance"
+                        "warning" ->
+                            if (statusContent.isNotBlank()) statusContent
+                            else "Warning: AI made a mistake"
+                        else -> statusContent
+                    }
 
-        // 提取状态内容 - 只有在非特殊状态类型时才需要
-        val statusContent =
-                if (statusType !in listOf("completion", "complete", "wait_for_user_need")) {
-                    extractContentFromXml(content, "status")
-                } else {
-                    "" // 特殊状态类型不需要内容
-                }
+                Triple(statusType, statusContent, statusText)
+            }
 
         // 非工具相关的状态信息
         val bgColor =
@@ -817,17 +876,6 @@ class CustomXmlRenderer(
                     "wait_for_user_need" -> MaterialTheme.colorScheme.tertiary.copy(alpha = 0.3f)
                     "warning" -> MaterialTheme.colorScheme.error.copy(alpha = 0.3f)
                     else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-                }
-
-        // 使用硬编码的文本，不管标签内有无内容
-        val statusText =
-                when (statusType) {
-                    "completion", "complete" -> "✓ Task completed"
-                    "wait_for_user_need" -> "✓ Ready for further assistance"
-                    "warning" ->
-                            if (statusContent.isNotBlank()) statusContent
-                            else "Warning: AI made a mistake"
-                    else -> statusContent
                 }
 
         Card(

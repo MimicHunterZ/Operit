@@ -31,6 +31,16 @@ function setDeepSearchEnabled(context: unknown, enabled: boolean) {
   ApiPreferences.setFeatureToggleBlocking(context, FEATURE_KEY, !!enabled);
 }
 
+function disableDeepSearchAfterSend(context: unknown, reason: string) {
+  try {
+    setDeepSearchEnabled(context, false);
+    logProbe(`autoDisableDeepSearch reason=${reason}`);
+  } catch (error) {
+    console.log("deepsearching auto disable error", String(error));
+    logProbe(`autoDisableDeepSearch error reason=${reason} error=${String(error)}`);
+  }
+}
+
 function normalizePayload(input: unknown): Record<string, unknown> {
   const record = input as { eventPayload?: Record<string, unknown> } | null;
   if (record && record.eventPayload && typeof record.eventPayload === "object") {
@@ -133,10 +143,7 @@ export async function onMessageProcessing(
       logProbe(`onMessageProcessing return probe matched=${shouldUse} elapsedMs=${Date.now() - totalStartTime}`);
       return { matched: shouldUse };
     }
-    if (!shouldUse) {
-      logProbe(`onMessageProcessing return matched=false reason=should_use_false elapsedMs=${Date.now() - totalStartTime}`);
-      return { matched: false };
-    }
+    disableDeepSearchAfterSend(context, "execute_start");
     if (!executionId) {
       throw new Error("deepsearching missing executionId");
     }

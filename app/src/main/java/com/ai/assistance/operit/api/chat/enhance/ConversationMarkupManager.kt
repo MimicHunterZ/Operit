@@ -3,6 +3,7 @@ package com.ai.assistance.operit.api.chat.enhance
 import android.content.Context
 import com.ai.assistance.operit.R
 import com.ai.assistance.operit.util.AppLogger
+import com.ai.assistance.operit.util.ChatMarkupRegex
 import com.ai.assistance.operit.data.model.ToolResult
 
 /**
@@ -45,7 +46,11 @@ class ConversationMarkupManager {
          * @return The formatted status element
          */
         fun createToolErrorStatus(toolName: String, errorMessage: String): String {
-            return """<tool_result name="${toolName}" status="error"><content><error>${errorMessage}</error></content></tool_result>""".trimIndent()
+            return createToolResultXml(
+                toolName = toolName,
+                status = "error",
+                content = "<content><error>${errorMessage}</error></content>"
+            )
         }
 
         /**
@@ -67,9 +72,17 @@ class ConversationMarkupManager {
          */
         fun formatToolResultForMessage(result: ToolResult): String {
             return if (result.success) {
-                """<tool_result name="${result.toolName}" status="success"><content>${result.result}</content></tool_result>""".trimIndent()
+                createToolResultXml(
+                    toolName = result.toolName,
+                    status = "success",
+                    content = "<content>${result.result}</content>"
+                )
             } else {
-                """<tool_result name="${result.toolName}" status="error"><content><error>${result.error ?: "Unknown error"}</error></content></tool_result>""".trimIndent()
+                createToolResultXml(
+                    toolName = result.toolName,
+                    status = "error",
+                    content = "<content><error>${result.error ?: "Unknown error"}</error></content>"
+                )
             }
         }
 
@@ -174,6 +187,11 @@ class ConversationMarkupManager {
                 setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
             )
             return statusRegex.containsMatchIn(content)
+        }
+
+        private fun createToolResultXml(toolName: String, status: String, content: String): String {
+            val tagName = ChatMarkupRegex.generateRandomToolResultTagName()
+            return """<$tagName name="$toolName" status="$status">$content</$tagName>""".trimIndent()
         }
 
     }

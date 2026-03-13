@@ -719,7 +719,6 @@ private fun AnimatedNode(
     // graphicsLayer 只影响绘制层，不会触发内容的 recompose
     // CanvasMarkdownNodeRenderer 内部已经使用 key 来控制重组
     Box(modifier = Modifier.graphicsLayer { this.alpha = alpha }) {
-        
         // 所有节点都使用CanvasMarkdownNodeRenderer
         // 它内部已经实现了Canvas绘制优化和基于内容长度的 key 控制
         CanvasMarkdownNodeRenderer(
@@ -787,9 +786,10 @@ private fun UnifiedMarkdownCanvas(
         Triple(nodes.size, tailNode?.content?.length ?: -1, tailNode?.type)
     }
 
-    val groupedItems = remember(groupingKey, rendererId, nodeGrouper) {
-        nodeGrouper.group(nodes, rendererId)
-    }
+    val groupedItems =
+        remember(groupingKey, rendererId, nodeGrouper) {
+            nodeGrouper.group(nodes, rendererId)
+        }
 
     Column(modifier = modifier) {
         groupedItems.forEach { item ->

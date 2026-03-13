@@ -146,9 +146,6 @@ fun ChatScreenContent(
     }
     var isGeneratingImage by remember { mutableStateOf(false) }
 
-    // 获取WebView状态
-    val showWebView = actualViewModel.showWebView.collectAsState().value
-    
     // 使用 rememberLocal 持久化历史记录显示设置
     var historyDisplayMode by rememberLocal(
         "chat_history_display_mode", 
@@ -237,6 +234,7 @@ fun ChatScreenContent(
                     }
                 }
             }
+
     LaunchedEffect(
         activePrompt,
         activeCharacterCard,

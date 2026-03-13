@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import com.ai.assistance.operit.util.AppLogger
+import com.ai.assistance.operit.util.ChatMarkupRegex
 import com.ai.assistance.operit.api.chat.enhance.ConversationMarkupManager
 import com.ai.assistance.operit.api.chat.enhance.ConversationRoundManager
 import com.ai.assistance.operit.api.chat.enhance.ConversationService
@@ -812,7 +813,7 @@ class EnhancedAIService private constructor(private val context: Context) {
     private suspend fun enhanceToolDetection(content: String): String {
         try {
             // 检查内容是否包含可能的工具调用标记
-            if (!content.contains("<tool") && !content.contains("</tool>")) {
+            if (!ChatMarkupRegex.containsToolTag(content)) {
                 return content
             }
 
@@ -838,7 +839,8 @@ class EnhancedAIService private constructor(private val context: Context) {
 
                         val xml = xmlContent.toString()
                         // 检查是否是工具标签
-                        if (xml.contains("<tool") && xml.contains("</tool>")) {
+                        val tagName = ChatMarkupRegex.extractOpeningTagName(xml)
+                        if (ChatMarkupRegex.isToolTagName(tagName) && tagName != null && isToolXmlBlock(xml, tagName)) {
                             foundToolTag = true
                             // 格式标准化，使其符合工具调用的正则表达式预期格式
                             val normalizedXml = normalizeToolXml(xml)
@@ -886,14 +888,28 @@ class EnhancedAIService private constructor(private val context: Context) {
      */
     private fun normalizeToolXml(xml: String): String {
         var result = xml.trim()
+        val toolTagName = ChatMarkupRegex.extractOpeningTagName(result)
 
         // 确保工具名称格式正确
-        result = result.replace(Regex("<tool\\s+name\\s*="), "<tool name=")
+        if (ChatMarkupRegex.isToolTagName(toolTagName) && toolTagName != null) {
+            result = result.replace(
+                Regex("<${Regex.escape(toolTagName)}\\s+name\\s*=", RegexOption.IGNORE_CASE),
+                "<$toolTagName name="
+            )
+        }
 
         // 确保参数格式正确
         result = result.replace(Regex("<param\\s+name\\s*="), "<param name=")
 
         return result
+    }
+
+    private fun isToolXmlBlock(xml: String, tagName: String): Boolean {
+        val trimmed = xml.trim()
+        if (trimmed.endsWith("/>")) {
+            return true
+        }
+        return trimmed.contains("</$tagName>")
     }
 
     /** 在处理完流后调用，使用增强的工具检测功能 */

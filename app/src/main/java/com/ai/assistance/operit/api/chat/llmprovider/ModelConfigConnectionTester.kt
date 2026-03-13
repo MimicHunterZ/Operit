@@ -9,6 +9,7 @@ import com.ai.assistance.operit.data.model.getModelByIndex
 import com.ai.assistance.operit.data.model.getValidModelIndex
 import com.ai.assistance.operit.data.preferences.ModelConfigManager
 import com.ai.assistance.operit.util.AssetCopyUtils
+import com.ai.assistance.operit.util.ChatMarkupRegex
 import com.ai.assistance.operit.util.ImagePoolManager
 import com.ai.assistance.operit.util.MediaPoolManager
 
@@ -107,14 +108,16 @@ object ModelConfigConnectionTester {
                         )
 
                     suspend fun runToolCallTest(toolName: String) {
+                        val toolTagName = ChatMarkupRegex.generateRandomToolTagName()
+                        val toolResultTagName = ChatMarkupRegex.generateRandomToolResultTagName()
                         val testHistory = mutableListOf("system" to "You are a helpful assistant.")
                         testHistory.add(
                             "assistant" to
-                                "<tool name=\"$toolName\"><param name=\"text\">ping</param></tool>"
+                                "<$toolTagName name=\"$toolName\"><param name=\"text\">ping</param></$toolTagName>"
                         )
                         testHistory.add(
                             "user" to
-                                "<tool_result name=\"$toolName\" status=\"success\"><content>pong</content></tool_result>"
+                                "<$toolResultTagName name=\"$toolName\" status=\"success\"><content>pong</content></$toolResultTagName>"
                         )
                         service.sendMessage(
                             context,

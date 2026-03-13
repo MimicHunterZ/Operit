@@ -3,6 +3,8 @@ package com.ai.assistance.operit.plugins.toolpkg
 import com.ai.assistance.operit.core.application.OperitApplication
 import com.ai.assistance.operit.core.tools.AIToolHook
 import com.ai.assistance.operit.core.tools.AIToolHandler
+import com.ai.assistance.operit.core.tools.packTool.PackageManager
+import com.ai.assistance.operit.core.tools.packTool.ToolPkgContainerRuntime
 import com.ai.assistance.operit.core.tools.packTool.TOOLPKG_EVENT_TOOL_LIFECYCLE
 import com.ai.assistance.operit.data.model.AITool
 import com.ai.assistance.operit.data.model.ToolResult
@@ -28,6 +30,12 @@ internal object ToolPkgToolLifecycleBridge : AIToolHook {
     private val installed = AtomicBoolean(false)
     private val dispatchScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val dispatchChannel = Channel<ToolLifecycleDispatch>(Channel.UNLIMITED)
+    @Volatile
+    private var hooks: List<ToolPkgToolLifecycleHookRegistration> = emptyList()
+    private val runtimeChangeListener =
+        PackageManager.ToolPkgRuntimeChangeListener {
+            syncToolPkgRegistrations(toolPkgPackageManager().getImportedToolPkgContainerRuntimes())
+        }
 
     init {
         dispatchScope.launch {
@@ -43,6 +51,8 @@ internal object ToolPkgToolLifecycleBridge : AIToolHook {
         }
         val application = OperitApplication.instance.applicationContext
         AIToolHandler.getInstance(application).addToolHook(this)
+        val manager = toolPkgPackageManager()
+        manager.addToolPkgRuntimeChangeListener(runtimeChangeListener)
     }
 
     override fun onToolCallRequested(tool: AITool) {
@@ -112,7 +122,6 @@ internal object ToolPkgToolLifecycleBridge : AIToolHook {
 
     private fun deliver(dispatch: ToolLifecycleDispatch) {
         val manager = toolPkgPackageManager()
-        val hooks = manager.getToolPkgToolLifecycleHooks()
         hooks.forEach { hook ->
             val result =
                 manager.runToolPkgMainHook(
@@ -121,6 +130,7 @@ internal object ToolPkgToolLifecycleBridge : AIToolHook {
                     event = TOOLPKG_EVENT_TOOL_LIFECYCLE,
                     eventName = dispatch.eventName,
                     pluginId = hook.hookId,
+                    inlineFunctionSource = hook.functionSource,
                     eventPayload = dispatch.eventPayload
                 )
             result.onFailure { error ->
@@ -152,5 +162,24 @@ internal object ToolPkgToolLifecycleBridge : AIToolHook {
             is JSONArray -> jsonArrayToList(parsed)
             else -> null
         }
+    }
+
+    private fun syncToolPkgRegistrations(activeContainers: List<ToolPkgContainerRuntime>) {
+        hooks =
+            activeContainers.flatMap { runtime ->
+                runtime.toolLifecycleHooks.map { hook ->
+                    ToolPkgToolLifecycleHookRegistration(
+                        containerPackageName = runtime.packageName,
+                        hookId = hook.id,
+                        functionName = hook.function,
+                        functionSource = hook.functionSource
+                    )
+                }
+            }.sortedWith(
+                compareBy(
+                    ToolPkgToolLifecycleHookRegistration::containerPackageName,
+                    ToolPkgToolLifecycleHookRegistration::hookId
+                )
+            )
     }
 }

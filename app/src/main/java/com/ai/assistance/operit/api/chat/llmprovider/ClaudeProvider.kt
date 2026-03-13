@@ -181,8 +181,8 @@ class ClaudeProvider(
         var callIndex = 0
 
         matches.forEach { match ->
-            val toolName = match.groupValues[1]
-            val toolBody = match.groupValues[2]
+            val toolName = match.groupValues[2]
+            val toolBody = match.groupValues[3]
 
             // 解析参数
             val input = JSONObject()
@@ -232,7 +232,7 @@ class ClaudeProvider(
         var resultIndex = 0
         
         matches.forEach { match ->
-            val fullContent = match.groupValues[1].trim()
+            val fullContent = match.groupValues[2].trim()
             val contentMatch = ChatMarkupRegex.contentTag.find(fullContent)
             val resultContent = if (contentMatch != null) {
                 contentMatch.groupValues[1].trim()
@@ -766,7 +766,8 @@ class ClaudeProvider(
                         if (enableToolCall) {
                             val toolName = block.optString("name", "")
                             if (toolName.isNotEmpty()) {
-                                fullText.append("\n<tool name=\"$toolName\">")
+                                val toolTagName = ChatMarkupRegex.generateRandomToolTagName()
+                                fullText.append("\n<$toolTagName name=\"$toolName\">")
                                 val input = block.optJSONObject("input")
                                 if (input != null) {
                                     val converter = StreamingJsonXmlConverter()
@@ -785,7 +786,7 @@ class ClaudeProvider(
                                         }
                                     }
                                 }
-                                fullText.append("\n</tool>\n")
+                                fullText.append("\n</$toolTagName>\n")
                             }
                         }
                     }
@@ -916,6 +917,7 @@ class ClaudeProvider(
 
                         val reader = responseBody.charStream().buffered()
                         var currentToolParser: StreamingJsonXmlConverter? = null
+                        var currentToolTagName: String? = null
                         var isInToolCall = false
                         var isInThinkingBlock = false
                         var emittedAny = false
@@ -975,7 +977,9 @@ class ClaudeProvider(
                                                 if (enableToolCall) {
                                                     val toolName = contentBlock.optString("name", "")
                                                     if (toolName.isNotEmpty()) {
-                                                        val toolStartTag = "\n<tool name=\"$toolName\">"
+                                                        val toolTagName = ChatMarkupRegex.generateRandomToolTagName()
+                                                        currentToolTagName = toolTagName
+                                                        val toolStartTag = "\n<$toolTagName name=\"$toolName\">"
                                                         emittedAny = true
                                                         emit(toolStartTag)
                                                         receivedContent.append(toolStartTag)
@@ -1091,12 +1095,15 @@ class ClaudeProvider(
                                                 }
                                             }
                                         }
-                                        val toolEndTag = "\n</tool>\n"
+                                        val toolTagName =
+                                            requireNotNull(currentToolTagName) { "Missing Claude tool XML tag name" }
+                                        val toolEndTag = "\n</$toolTagName>\n"
                                         emit(toolEndTag)
                                         receivedContent.append(toolEndTag)
 
                                         isInToolCall = false
                                         currentToolParser = null
+                                        currentToolTagName = null
                                     } else if (isInThinkingBlock) {
                                         val thinkingEndTag = "</think>\n"
                                         emit(thinkingEndTag)
@@ -1121,11 +1128,14 @@ class ClaudeProvider(
                                                 }
                                             }
                                         }
-                                        val toolEndTag = "\n</tool>\n"
+                                        val toolTagName =
+                                            requireNotNull(currentToolTagName) { "Missing Claude tool XML tag name" }
+                                        val toolEndTag = "\n</$toolTagName>\n"
                                         emit(toolEndTag)
                                         receivedContent.append(toolEndTag)
                                         isInToolCall = false
                                         currentToolParser = null
+                                        currentToolTagName = null
                                     }
                                     if (isInThinkingBlock) {
                                         val thinkingEndTag = "</think>\n"

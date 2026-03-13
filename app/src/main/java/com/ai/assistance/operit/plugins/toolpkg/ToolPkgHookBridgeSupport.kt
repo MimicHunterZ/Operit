@@ -7,6 +7,50 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
 
+internal data class ToolPkgAppLifecycleHookRegistration(
+    val containerPackageName: String,
+    val hookId: String,
+    val event: String,
+    val functionName: String,
+    val functionSource: String? = null
+)
+
+internal data class ToolPkgMessageProcessingHookRegistration(
+    val containerPackageName: String,
+    val pluginId: String,
+    val functionName: String,
+    val functionSource: String? = null
+)
+
+internal data class ToolPkgXmlRenderHookRegistration(
+    val containerPackageName: String,
+    val pluginId: String,
+    val tag: String,
+    val functionName: String,
+    val functionSource: String? = null
+)
+
+internal data class ToolPkgInputMenuToggleHookRegistration(
+    val containerPackageName: String,
+    val pluginId: String,
+    val functionName: String,
+    val functionSource: String? = null
+)
+
+internal data class ToolPkgToolLifecycleHookRegistration(
+    val containerPackageName: String,
+    val hookId: String,
+    val functionName: String,
+    val functionSource: String? = null
+)
+
+internal data class ToolPkgPromptHookRegistration(
+    val containerPackageName: String,
+    val hookId: String,
+    val functionName: String,
+    val functionSource: String? = null
+)
+
 internal fun toolPkgPackageManager(): PackageManager {
     val application = OperitApplication.instance.applicationContext
     return PackageManager.getInstance(application, AIToolHandler.getInstance(application))

@@ -40,8 +40,14 @@ class StreamXmlPlugin(private val includeTagsInOutput: Boolean = true) : StreamP
                                     // with a letter.
                                     // This prevents matching comments (<!--) or closing tags (</).
                                     group(GROUP_TAG_NAME) {
-                                        letter()
-                                        greedyStar { noneOf(' ', '>') }
+                                        predicate("asciiXmlTagFirstChar") {
+                                            it in 'A'..'Z' || it in 'a'..'z'
+                                        }
+                                        greedyStar {
+                                            predicate("xmlTagNameContinuation") {
+                                                (it in 'A'..'Z') || (it in 'a'..'z') || (it in '0'..'9') || it == '_'
+                                            }
+                                        }
                                     }
                                     // Optional: Match attributes until the tag closes
                                     greedyStar { notChar('>') }

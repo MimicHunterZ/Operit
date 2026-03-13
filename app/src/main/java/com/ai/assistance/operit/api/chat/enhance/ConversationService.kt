@@ -23,6 +23,7 @@ import com.ai.assistance.operit.data.preferences.WaifuPreferences
 import com.ai.assistance.operit.data.preferences.CharacterCardManager
 import com.ai.assistance.operit.data.model.PromptFunctionType
 import com.ai.assistance.operit.data.preferences.preferencesManager
+import com.ai.assistance.operit.util.ChatMarkupRegex
 import com.ai.assistance.operit.util.ChatUtils
 import com.ai.assistance.operit.core.tools.ToolProgressBus
 import com.ai.assistance.operit.util.streamnative.NativeXmlSplitter
@@ -447,6 +448,7 @@ class ConversationService(
 
         for (tag in xmlTags) {
             val tagName = tag[0]
+            val normalizedTagName = ChatMarkupRegex.normalizeToolLikeTagName(tagName) ?: tagName
             var tagContent = tag[1]
 
             // 对于text类型（纯文本），直接作为AI消息
@@ -458,7 +460,7 @@ class ConversationService(
             }
 
             // 根据标签类型分配角色
-            when (tagName) {
+            when (normalizedTagName) {
                 "think", "thinking" -> {
                     // 保留完整的think标签（用于DeepSeek推理模式）
                     segments.add(Pair("assistant", tagContent))

@@ -42,8 +42,8 @@ class MistralProvider(
         var callIndex = 0
 
         matches.forEach { match ->
-            val toolName = match.groupValues[1]
-            val toolBody = match.groupValues[2]
+            val toolName = match.groupValues[2]
+            val toolBody = match.groupValues[3]
             val params = JSONObject()
 
             ChatMarkupRegex.toolParamPattern.findAll(toolBody).forEach { paramMatch ->
