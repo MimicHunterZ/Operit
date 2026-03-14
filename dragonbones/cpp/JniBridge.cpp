@@ -550,6 +550,26 @@ Java_com_dragonbones_JniBridge_getAnimationNames(JNIEnv *env, jclass clazz) {
     return stringArray;
 }
 
+JNIEXPORT jfloat JNICALL
+Java_com_dragonbones_JniBridge_getAnimationDuration(JNIEnv *env, jclass clazz, jstring animation_name) {
+    auto* instance = getInstance();
+    if (!instance || !instance->armature || !animation_name) {
+        return 0.0f;
+    }
+
+    const char* nameChars = env->GetStringUTFChars(animation_name, nullptr);
+    std::string name(nameChars);
+    env->ReleaseStringUTFChars(animation_name, nameChars);
+
+    const auto& animations = instance->armature->getAnimation()->getAnimations();
+    const auto it = animations.find(name);
+    if (it == animations.end() || it->second == nullptr) {
+        return 0.0f;
+    }
+
+    return it->second->duration;
+}
+
 JNIEXPORT void JNICALL
 Java_com_dragonbones_JniBridge_fadeInAnimation(JNIEnv *env, jclass clazz, jstring animation_name, jint layer, jint loop, jfloat fade_in_time) {
     auto* instance = getInstance();

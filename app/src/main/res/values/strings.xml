@@ -346,6 +346,8 @@
     <string name="processing">处理中...</string>
     <string name="error_occurred">发生错误: %1$s</string>
     <string name="avatar_config">虚拟形象配置</string>
+    <string name="avatar_voice_call_enable_title">虚拟形象是否启用</string>
+    <string name="avatar_voice_call_enable_summary">启用后，语音通话界面会使用虚拟形象，并根据返回的 &lt;mood&gt; 标签播放情绪动作。</string>
     <string name="select_model">选择模型</string>
     <string name="current_model">当前模型</string>
     <string name="scale">缩放: %1$s</string>

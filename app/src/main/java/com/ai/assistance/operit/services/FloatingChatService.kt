@@ -15,7 +15,6 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.view.View
-import android.widget.Toast
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Typography
 import androidx.compose.runtime.State
@@ -311,16 +310,6 @@ class FloatingChatService : Service(), FloatingWindowCallback {
                 }
             }
 
-            // 订阅 Toast 事件
-            serviceScope.launch {
-                chatCore.getUiStateDelegate().toastEvent.collect { message ->
-                    message?.let {
-                        Toast.makeText(this@FloatingChatService, it, Toast.LENGTH_SHORT).show()
-                        chatCore.getUiStateDelegate().clearToastEvent()
-                    }
-                }
-            }
-            
             lifecycleOwner = ServiceLifecycleOwner()
             lifecycleOwner.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
             windowState = FloatingWindowState(this)

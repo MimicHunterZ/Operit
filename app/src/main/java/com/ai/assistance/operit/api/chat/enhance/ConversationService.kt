@@ -23,6 +23,8 @@ import com.ai.assistance.operit.data.preferences.WaifuPreferences
 import com.ai.assistance.operit.data.preferences.CharacterCardManager
 import com.ai.assistance.operit.data.model.PromptFunctionType
 import com.ai.assistance.operit.data.preferences.preferencesManager
+import com.ai.assistance.operit.core.avatar.impl.factory.AvatarModelFactoryImpl
+import com.ai.assistance.operit.data.repository.AvatarRepository
 import com.ai.assistance.operit.util.ChatMarkupRegex
 import com.ai.assistance.operit.util.ChatUtils
 import com.ai.assistance.operit.core.tools.ToolProgressBus
@@ -59,6 +61,9 @@ class ConversationService(
     private val waifuPreferences = WaifuPreferences.getInstance(context)
     private val characterCardManager = CharacterCardManager.getInstance(context)
     private val userPreferencesManager = preferencesManager
+    private val avatarRepository by lazy {
+        AvatarRepository.getInstance(context, AvatarModelFactoryImpl())
+    }
     private val conversationMutex = Mutex()
 
     /**
@@ -365,7 +370,12 @@ class ConversationService(
                 // 构建waifu特殊规则
                 val waifuRulesText = if(waifuPreferences.enableWaifuModeFlow.first()) buildWaifuRulesText() else ""
                 // 桌宠模式：添加<mood>标签协议（仅桌宠环境生效）
-                val desktopPetRulesText = if (promptFunctionType == PromptFunctionType.DESKTOP_PET) buildDesktopPetMoodRulesText() else ""
+                val desktopPetRulesText =
+                    if (shouldInjectMoodRules(promptFunctionType)) {
+                        buildDesktopPetMoodRulesText()
+                    } else {
+                        ""
+                    }
                 AppLogger.d("petRules", desktopPetRulesText)
 
                 // 构建最终的系统提示词
@@ -749,6 +759,19 @@ class ConversationService(
      */
     private fun buildDesktopPetMoodRulesText(): String {
         return FunctionalPrompts.desktopPetMoodRulesText()
+    }
+
+    private fun shouldInjectMoodRules(promptFunctionType: PromptFunctionType): Boolean {
+        if (promptFunctionType == PromptFunctionType.DESKTOP_PET) {
+            return true
+        }
+        if (promptFunctionType != PromptFunctionType.VOICE) {
+            return false
+        }
+
+        val settings = avatarRepository.settings.value
+        val currentAvatar = avatarRepository.currentAvatar.value
+        return settings.isVoiceCallAvatarEnabled && currentAvatar != null
     }
 
     /**

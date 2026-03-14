@@ -34,6 +34,9 @@ Java_com_dragonbones_JniBridge_onDrawFrame(JNIEnv *env, jclass clazz);
 JNIEXPORT jobjectArray JNICALL
 Java_com_dragonbones_JniBridge_getAnimationNames(JNIEnv *env, jclass clazz);
 
+JNIEXPORT jfloat JNICALL
+Java_com_dragonbones_JniBridge_getAnimationDuration(JNIEnv *env, jclass clazz, jstring animation_name);
+
 JNIEXPORT void JNICALL
 Java_com_dragonbones_JniBridge_fadeInAnimation(JNIEnv *env, jclass clazz, jstring animation_name, jint layer, jint loop, jfloat fade_in_time);
 

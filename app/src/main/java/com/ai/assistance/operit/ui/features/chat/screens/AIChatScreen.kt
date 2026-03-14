@@ -40,6 +40,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -572,16 +573,7 @@ val actualViewModel: ChatViewModel = viewModel ?: viewModel { ChatViewModel(cont
         ErrorDialog(errorMessage = message, onDismiss = { actualViewModel.dismissErrorDialog() })
     }
 
-    // 处理toast事件 (保留)
     val toastEvent by actualViewModel.toastEvent.collectAsState()
-
-    toastEvent?.let { message ->
-        LaunchedEffect(message) {
-            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG)
-                    .show()
-            actualViewModel.clearToastEvent()
-        }
-    }
 
     // Save chat on app exit
     DisposableEffect(Unit) {
@@ -1012,12 +1004,20 @@ val actualViewModel: ChatViewModel = viewModel ?: viewModel { ChatViewModel(cont
             backgroundColor = inputSurfaceColor,
         )
 
+        val workspaceOverlayModifier =
+            if (showWebView) {
+                Modifier
+                    .fillMaxSize()
+                    .clipToBounds()
+            } else {
+                Modifier
+                    .size(0.dp)
+                    .clearAndSetSemantics {}
+            }
+
         // Web开发模式作为浮层，现在位于Scaffold外部，可以覆盖整个屏幕
         Layout(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer(alpha = if (showWebView) 1f else 0f)
-                .clipToBounds(),
+            modifier = workspaceOverlayModifier,
             content = {
                 // The content is composed unconditionally, keeping it "alive"
                 val currentChat = chatHistories.find { it.id == currentChatId }
@@ -1218,6 +1218,19 @@ val actualViewModel: ChatViewModel = viewModel ?: viewModel { ChatViewModel(cont
                     }
             )
         }
+
+        ChatToastHost(
+            message = toastEvent,
+            onDismiss = { actualViewModel.clearToastEvent() },
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(
+                    start = 16.dp,
+                    top = padding.calculateTopPadding() + 12.dp,
+                    end = 16.dp
+                ),
+            maxHeight = 280.dp
+        )
     }
 
     // Show popup message dialog when needed

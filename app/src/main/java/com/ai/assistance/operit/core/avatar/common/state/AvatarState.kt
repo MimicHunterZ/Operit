@@ -8,9 +8,11 @@ package com.ai.assistance.operit.core.avatar.common.state
  * @param currentAnimation The name of the specific animation currently playing.
  *                         This could be null if no animation is active.
  * @param isLooping Whether the current animation is set to loop indefinitely.
+ * @param playbackNonce A monotonically increasing token that allows renderers to restart the same animation.
  */
 data class AvatarState(
     val emotion: AvatarEmotion = AvatarEmotion.IDLE,
     val currentAnimation: String? = null,
-    val isLooping: Boolean = false
-) 
+    val isLooping: Boolean = false,
+    val playbackNonce: Long = 0L
+)

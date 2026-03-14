@@ -44,8 +44,16 @@ class GltfAvatarController(
         get() = _availableAnimations.value
 
     private var emotionAnimationMapping: Map<AvatarEmotion, String> = emptyMap()
+    private var animationDurationMillisByName: Map<String, Long> = emptyMap()
 
     fun updateAvailableAnimations(discoveredAnimations: List<String>) {
+        updateAnimationMetadata(discoveredAnimations, emptyMap())
+    }
+
+    fun updateAnimationMetadata(
+        discoveredAnimations: List<String>,
+        durationMillisByName: Map<String, Long>
+    ) {
         val normalized = discoveredAnimations
             .map { it.trim() }
             .filter { it.isNotBlank() }
@@ -58,6 +66,10 @@ class GltfAvatarController(
         }
 
         _availableAnimations.value = merged
+        animationDurationMillisByName =
+            durationMillisByName
+                .filterKeys { animationName -> merged.contains(animationName) }
+                .mapValues { (_, durationMillis) -> durationMillis.coerceAtLeast(1L) }
 
         if (merged.isEmpty()) {
             if (_state.value.currentAnimation != null) {
@@ -81,11 +93,20 @@ class GltfAvatarController(
     }
 
     override fun setEmotion(newEmotion: AvatarEmotion) {
-        _state.value = _state.value.copy(emotion = newEmotion)
+        playEmotion(newEmotion, loop = 0)
+    }
 
-        resolveAnimationForEmotion(newEmotion)?.let { animationName ->
-            playAnimation(animationName, loop = 0)
+    override fun playEmotion(emotion: AvatarEmotion, loop: Int) {
+        _state.value = _state.value.copy(emotion = emotion)
+
+        resolveAnimationForEmotion(emotion)?.let { animationName ->
+            playAnimation(animationName, loop = loop)
         }
+    }
+
+    override fun estimateEmotionDurationMillis(emotion: AvatarEmotion): Long? {
+        val animationName = resolveAnimationForEmotion(emotion) ?: return null
+        return animationDurationMillisByName[animationName]
     }
 
     override fun playAnimation(animationName: String, loop: Int) {

@@ -32,6 +32,7 @@ class AssistantConfigViewModel(
         val currentAvatarConfig: AvatarConfig? = null,
         val currentAvatarModel: AvatarModel? = null,
         val config: AvatarInstanceSettings? = null,
+        val isVoiceCallAvatarEnabled: Boolean = false,
         val emotionAnimationMapping: Map<AvatarEmotion, String> = emptyMap(),
         val errorMessage: String? = null,
         val operationSuccess: Boolean = false,
@@ -47,8 +48,9 @@ class AssistantConfigViewModel(
             combine(
                 repository.configs,
                 repository.currentAvatar,
-                repository.instanceSettings
-            ) { configs, currentAvatar, instanceSettings ->
+                repository.instanceSettings,
+                repository.settings
+            ) { configs, currentAvatar, instanceSettings, settings ->
                 val persistedSettings = currentAvatar?.let { instanceSettings[it.id] }
                 val currentSettings =
                     when {
@@ -63,15 +65,21 @@ class AssistantConfigViewModel(
                 Triple(
                     configs,
                     currentConfig,
-                    Triple(currentSettings, currentAvatar, emotionAnimationMapping)
+                    Triple(
+                        currentSettings,
+                        currentAvatar,
+                        Pair(emotionAnimationMapping, settings.isVoiceCallAvatarEnabled)
+                    )
                 )
             }.collectLatest { (configs, currentConfig, mergedState) ->
-                val (currentSettings, currentAvatar, emotionAnimationMapping) = mergedState
+                val (currentSettings, currentAvatar, emotionState) = mergedState
+                val (emotionAnimationMapping, isVoiceCallAvatarEnabled) = emotionState
                 updateUiState(
                     avatarConfigs = configs,
                     currentAvatarConfig = currentConfig,
                     currentAvatarModel = currentAvatar,
                     config = currentSettings,
+                    isVoiceCallAvatarEnabled = isVoiceCallAvatarEnabled,
                     emotionAnimationMapping = emotionAnimationMapping
                 )
             }
@@ -84,6 +92,7 @@ class AssistantConfigViewModel(
         currentAvatarConfig: AvatarConfig? = null,
         currentAvatarModel: AvatarModel? = null,
         config: AvatarInstanceSettings? = null,
+        isVoiceCallAvatarEnabled: Boolean? = null,
         emotionAnimationMapping: Map<AvatarEmotion, String>? = null,
         errorMessage: String? = null,
         operationSuccess: Boolean? = null,
@@ -97,6 +106,8 @@ class AssistantConfigViewModel(
                 currentAvatarConfig = currentAvatarConfig ?: currentState.currentAvatarConfig,
                 currentAvatarModel = currentAvatarModel ?: currentState.currentAvatarModel,
                 config = config ?: currentState.config,
+                isVoiceCallAvatarEnabled =
+                    isVoiceCallAvatarEnabled ?: currentState.isVoiceCallAvatarEnabled,
                 emotionAnimationMapping =
                     emotionAnimationMapping ?: currentState.emotionAnimationMapping,
                 errorMessage = errorMessage,
@@ -158,6 +169,10 @@ class AssistantConfigViewModel(
         }
 
         repository.updateAvatarEmotionAnimationMapping(currentAvatarConfig.id, mapping)
+    }
+
+    fun updateVoiceCallAvatarEnabled(enabled: Boolean) {
+        repository.updateVoiceCallAvatarEnabled(enabled)
     }
 
     fun deleteAvatar(modelId: String) {

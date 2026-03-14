@@ -92,8 +92,11 @@ fun GltfRenderer(
                             onError(normalized)
                         }
                     }
-                    setOnAnimationsDiscoveredListener { animationNames ->
-                        gltfController.updateAvailableAnimations(animationNames)
+                    setOnAnimationsDiscoveredListener { animationNames, durationMillisByName ->
+                        gltfController.updateAnimationMetadata(
+                            discoveredAnimations = animationNames,
+                            durationMillisByName = durationMillisByName
+                        )
                     }
                     setModelPath(model.modelPath)
                     setAnimationState(avatarState.currentAnimation, avatarState.isLooping)
@@ -103,8 +106,11 @@ fun GltfRenderer(
             },
             update = { view ->
                 surfaceViewState.value = view
-                view.setOnAnimationsDiscoveredListener { animationNames ->
-                    gltfController.updateAvailableAnimations(animationNames)
+                view.setOnAnimationsDiscoveredListener { animationNames, durationMillisByName ->
+                    gltfController.updateAnimationMetadata(
+                        discoveredAnimations = animationNames,
+                        durationMillisByName = durationMillisByName
+                    )
                 }
                 view.setModelPath(model.modelPath)
                 view.setAnimationState(avatarState.currentAnimation, avatarState.isLooping)

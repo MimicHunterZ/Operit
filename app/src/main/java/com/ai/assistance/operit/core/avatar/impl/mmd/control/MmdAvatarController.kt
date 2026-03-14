@@ -2,10 +2,13 @@ package com.ai.assistance.operit.core.avatar.impl.mmd.control
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import com.ai.assistance.mmd.MmdNative
 import com.ai.assistance.operit.core.avatar.common.control.AvatarController
 import com.ai.assistance.operit.core.avatar.common.control.AvatarSettingKeys
 import com.ai.assistance.operit.core.avatar.common.state.AvatarEmotion
 import com.ai.assistance.operit.core.avatar.common.state.AvatarState
+import java.io.File
+import kotlin.math.roundToLong
 import com.ai.assistance.operit.core.avatar.impl.mmd.model.MmdAvatarModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -48,11 +51,26 @@ class MmdAvatarController(
     private var emotionAnimationMapping: Map<AvatarEmotion, String> = emptyMap()
 
     override fun setEmotion(newEmotion: AvatarEmotion) {
-        _state.value = _state.value.copy(emotion = newEmotion)
+        playEmotion(newEmotion, loop = 0)
+    }
 
-        resolveAnimationForEmotion(newEmotion)?.let { animationName ->
-            playAnimation(animationName, 0)
+    override fun playEmotion(emotion: AvatarEmotion, loop: Int) {
+        _state.value = _state.value.copy(emotion = emotion)
+
+        resolveAnimationForEmotion(emotion)?.let { animationName ->
+            playAnimation(animationName, loop)
         }
+    }
+
+    override fun estimateEmotionDurationMillis(emotion: AvatarEmotion): Long? {
+        val animationName = resolveAnimationForEmotion(emotion) ?: return null
+        val motionPath = File(model.basePath, animationName).absolutePath
+        val maxFrame = MmdNative.nativeReadMotionMaxFrame(motionPath)
+        if (maxFrame <= 0) {
+            return null
+        }
+
+        return ((maxFrame / 30f) * 1000f).roundToLong().coerceAtLeast(1L)
     }
 
     override fun playAnimation(animationName: String, loop: Int) {

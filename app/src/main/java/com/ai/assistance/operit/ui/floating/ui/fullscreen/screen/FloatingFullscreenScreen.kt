@@ -51,6 +51,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import com.ai.assistance.operit.R
+import com.ai.assistance.operit.core.avatar.common.control.AvatarSettingKeys
+import com.ai.assistance.operit.core.avatar.common.state.AvatarEmotion
+import com.ai.assistance.operit.core.avatar.common.view.AvatarView
+import com.ai.assistance.operit.core.avatar.impl.factory.AvatarControllerFactoryImpl
+import com.ai.assistance.operit.core.avatar.impl.factory.AvatarModelFactoryImpl
+import com.ai.assistance.operit.core.avatar.impl.factory.AvatarRendererFactoryImpl
 import com.ai.assistance.operit.data.preferences.CharacterCardManager
 import com.ai.assistance.operit.data.preferences.CharacterGroupCardManager
 import com.ai.assistance.operit.data.preferences.ActivePromptManager
@@ -58,6 +64,9 @@ import com.ai.assistance.operit.data.model.ActivePrompt
 import com.ai.assistance.operit.data.preferences.SpeechServicesPreferences
 import com.ai.assistance.operit.data.preferences.UserPreferencesManager
 import com.ai.assistance.operit.data.preferences.WakeWordPreferences
+import com.ai.assistance.operit.data.repository.AvatarRepository
+import com.ai.assistance.operit.data.repository.AvatarSettings
+import com.ai.assistance.operit.data.repository.getEmotionAnimationMapping
 import com.ai.assistance.operit.ui.floating.FloatContext
 import com.ai.assistance.operit.ui.floating.FloatingMode
 import com.ai.assistance.operit.ui.floating.ui.fullscreen.components.BottomControlBar
@@ -127,6 +136,42 @@ fun FloatingFullscreenMode(floatContext: FloatContext) {
     val globalAiAvatarUri by preferencesManager.customAiAvatarUri.collectAsState(initial = null)
     val aiAvatarUri = activeCharacterAvatarUri ?: globalAiAvatarUri
 
+    val avatarModelFactory = remember { AvatarModelFactoryImpl() }
+    val avatarRepository = remember { AvatarRepository.getInstance(context, avatarModelFactory) }
+    val avatarControllerFactory = remember { AvatarControllerFactoryImpl() }
+    val avatarRendererFactory = remember { AvatarRendererFactoryImpl() }
+    val currentAvatarModel by avatarRepository.currentAvatar.collectAsState(initial = null)
+    val avatarSettings by avatarRepository.settings.collectAsState(initial = AvatarSettings())
+    val avatarConfigs by avatarRepository.configs.collectAsState(initial = emptyList())
+    val avatarInstanceSettings by avatarRepository.instanceSettings.collectAsState(initial = emptyMap())
+    val currentAvatarConfig = remember(avatarConfigs, currentAvatarModel?.id) {
+        currentAvatarModel?.let { avatar -> avatarConfigs.find { it.id == avatar.id } }
+    }
+    val currentAvatarEmotionMapping = remember(currentAvatarConfig) {
+        currentAvatarConfig?.getEmotionAnimationMapping().orEmpty()
+    }
+    val currentAvatarSettings = remember(currentAvatarModel?.id, avatarInstanceSettings) {
+        currentAvatarModel?.id?.let { avatarId -> avatarInstanceSettings[avatarId] }
+    }
+    val currentAvatarRuntimeSettings = remember(currentAvatarSettings) {
+        currentAvatarSettings?.let { settings ->
+            mutableMapOf<String, Any>(
+                AvatarSettingKeys.SCALE to settings.scale,
+                AvatarSettingKeys.TRANSLATE_X to settings.translateX,
+                AvatarSettingKeys.TRANSLATE_Y to settings.translateY
+            ).apply {
+                settings.customSettings.forEach { (key, value) ->
+                    this[key] = value
+                }
+            }
+        }
+    }
+    val voiceAvatarController = currentAvatarModel?.let { avatarControllerFactory.createController(it) }
+    val isVoiceAvatarEnabled =
+        avatarSettings.isVoiceCallAvatarEnabled &&
+            currentAvatarModel != null &&
+            voiceAvatarController != null
+
     val speechServicesPrefs = SpeechServicesPreferences(context)
     val ttsCleanerRegexs by speechServicesPrefs.ttsCleanerRegexsFlow.collectAsState(initial = emptyList())
     
@@ -134,8 +179,6 @@ fun FloatingFullscreenMode(floatContext: FloatContext) {
     val autoNewChatGroup by wakePrefs.autoNewChatGroupFlow.collectAsState(initial = WakeWordPreferences.DEFAULT_AUTO_NEW_CHAT_GROUP)
     
     val volumeLevel by viewModel.volumeLevelFlow.collectAsState()
-    
-    val speed = 1.2f
     
     var pendingSpeechPreview by remember { mutableStateOf<String?>(null) }
     var lastUserMessageTimestampBeforeSpeech by remember { mutableStateOf<Long?>(null) }
@@ -192,13 +235,54 @@ fun FloatingFullscreenMode(floatContext: FloatContext) {
             autoEnteringVoice = false
         }
     }
-    
+
+    val latestMessage = floatContext.messages.lastOrNull()
+
     // 监听最新的AI消息
-    LaunchedEffect(floatContext.messages.lastOrNull()?.timestamp) {
+    LaunchedEffect(latestMessage?.timestamp) {
         viewModel.processAndSpeakAiMessage(
-            floatContext.messages.lastOrNull(),
+            latestMessage,
             ttsCleanerRegexs
         )
+    }
+
+    LaunchedEffect(latestMessage?.timestamp, latestMessage?.contentStream == null) {
+        viewModel.handleVoiceAvatarMessage(latestMessage)
+    }
+
+    LaunchedEffect(floatContext.inputProcessingState.value, latestMessage?.timestamp, latestMessage?.contentStream == null) {
+        viewModel.syncVoiceAvatarWithProcessingState(
+            state = floatContext.inputProcessingState.value,
+            latestMessage = latestMessage
+        )
+    }
+
+    LaunchedEffect(voiceAvatarController, currentAvatarEmotionMapping) {
+        voiceAvatarController?.updateEmotionAnimationMapping(currentAvatarEmotionMapping)
+    }
+
+    LaunchedEffect(voiceAvatarController, currentAvatarRuntimeSettings) {
+        currentAvatarRuntimeSettings?.let { settings ->
+            voiceAvatarController?.updateSettings(settings)
+        }
+    }
+
+    LaunchedEffect(voiceAvatarController, isVoiceAvatarEnabled, viewModel.voiceAvatarMotionRequest.sequence) {
+        val controller = voiceAvatarController ?: return@LaunchedEffect
+        if (!isVoiceAvatarEnabled) {
+            return@LaunchedEffect
+        }
+
+        val request = viewModel.voiceAvatarMotionRequest
+        if (request.playOnce) {
+            controller.playEmotion(request.emotion, loop = 1)
+            controller.estimateEmotionDurationMillis(request.emotion)?.let { durationMillis ->
+                delay(durationMillis)
+                controller.setEmotion(AvatarEmotion.IDLE)
+            }
+        } else {
+            controller.setEmotion(request.emotion)
+        }
     }
     
     // 清理资源
@@ -380,6 +464,25 @@ fun FloatingFullscreenMode(floatContext: FloatContext) {
                     volumeLevelFlow = if (viewModel.isWaveActive && viewModel.isRecording)
                         viewModel.volumeLevelFlow else null,
                     aiAvatarUri = aiAvatarUri,
+                    avatarContent =
+                        if (isVoiceAvatarEnabled) {
+                            {
+                                AvatarView(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer(
+                                            scaleX = 3.1f,
+                                            scaleY = 3.1f
+                                        ),
+                                    model = currentAvatarModel!!,
+                                    controller = voiceAvatarController!!,
+                                    rendererFactory = avatarRendererFactory
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                    clipAvatarContent = false,
                     avatarShape = CircleShape,
                     onToggleActive = {
                         if (viewModel.isWaveActive) {

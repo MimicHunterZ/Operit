@@ -1527,6 +1527,254 @@ private constructor(private val context: Context, private val aiToolHandler: AIT
         }
     }
 
+    private fun findDuplicateExternalToolPkgFiles(
+        containerPackageName: String,
+        preferredFilePath: String
+    ): List<File> {
+        val normalizedPackageName = normalizePackageName(containerPackageName)
+        val preferredCanonicalPath =
+            runCatching { File(preferredFilePath).canonicalPath }
+                .getOrElse { File(preferredFilePath).absolutePath }
+
+        return (externalPackagesDir.listFiles() ?: emptyArray())
+            .asSequence()
+            .filter { candidate ->
+                candidate.isFile && candidate.name.endsWith(TOOLPKG_EXTENSION, ignoreCase = true)
+            }
+            .filterNot { candidate ->
+                val candidateCanonicalPath =
+                    runCatching { candidate.canonicalPath }.getOrElse { candidate.absolutePath }
+                candidateCanonicalPath == preferredCanonicalPath
+            }
+            .filter { candidate ->
+                val loadResult =
+                    loadToolPkgFromExternalFile(candidate) { _, _ -> }
+                        ?: return@filter false
+                loadResult.containerPackage.name == normalizedPackageName
+            }
+            .toList()
+    }
+
+    private fun collectRelatedToolPkgLoadErrors(
+        containerPackageName: String,
+        externalFilePath: String
+    ): Map<String, String> {
+        val normalizedPackageName = normalizePackageName(containerPackageName)
+        val normalizedExternalFilePath = externalFilePath.trim()
+        return getPackageLoadErrors()
+            .filter { (key, value) ->
+                key.equals(normalizedPackageName, ignoreCase = true) ||
+                    value.contains(normalizedPackageName, ignoreCase = true) ||
+                    value.contains(normalizedExternalFilePath, ignoreCase = true)
+            }
+            .toSortedMap(String.CASE_INSENSITIVE_ORDER)
+    }
+
+    /**
+     * Debug-only install path for ToolPkg development.
+     *
+     * The archive is expected to already be pushed into the app's external packages directory.
+     * This method refreshes the package scan, enables the container, resets subpackage states
+     * from manifest defaults when requested, and reactivates any subpackages that were active
+     * before the refresh so tool registrations do not stay stale.
+     */
+    fun installDebugToolPkg(
+        containerPackageName: String,
+        externalFilePath: String,
+        resetSubpackageStatesToManifest: Boolean = true
+    ): String {
+        ensureInitialized()
+
+        val normalizedContainerPackageName = normalizePackageName(containerPackageName)
+        if (normalizedContainerPackageName.isBlank()) {
+            return "Missing toolpkg package name"
+        }
+
+        val normalizedExternalFilePath = externalFilePath.trim()
+        if (normalizedExternalFilePath.isBlank()) {
+            return "Missing toolpkg file path"
+        }
+
+        val targetFile = File(normalizedExternalFilePath)
+        if (!targetFile.exists()) {
+            return "ToolPkg file not found: ${targetFile.absolutePath}"
+        }
+        if (!targetFile.isFile) {
+            return "ToolPkg path is not a file: ${targetFile.absolutePath}"
+        }
+        if (!targetFile.name.endsWith(TOOLPKG_EXTENSION, ignoreCase = true)) {
+            return "ToolPkg debug install only supports .toolpkg files: ${targetFile.absolutePath}"
+        }
+
+        val externalPackagesCanonicalPath =
+            runCatching { externalPackagesDir.canonicalPath }.getOrElse { externalPackagesDir.absolutePath }
+        val targetParentCanonicalPath =
+            runCatching { targetFile.parentFile?.canonicalPath }
+                .getOrElse { targetFile.parentFile?.absolutePath }
+                .orEmpty()
+        if (targetParentCanonicalPath != externalPackagesCanonicalPath) {
+            return "ToolPkg debug install expects file inside external packages dir: $externalPackagesCanonicalPath"
+        }
+
+        val previousContainerRuntime = toolPkgContainers[normalizedContainerPackageName]
+        val previousSubpackageNames =
+            previousContainerRuntime
+                ?.subpackages
+                ?.map(ToolPkgSubpackageRuntime::packageName)
+                .orEmpty()
+        val previouslyActivePackages =
+            previousSubpackageNames
+                .filter { packageName -> activePackageToolNames.containsKey(packageName) }
+                .toSortedSet(String.CASE_INSENSITIVE_ORDER)
+
+        val removedDuplicateArchives = mutableListOf<String>()
+        findDuplicateExternalToolPkgFiles(
+            containerPackageName = normalizedContainerPackageName,
+            preferredFilePath = normalizedExternalFilePath
+        ).forEach { duplicateFile ->
+            if (!duplicateFile.delete()) {
+                return "Failed to remove duplicate external toolpkg file: ${duplicateFile.absolutePath}"
+            }
+            removedDuplicateArchives += duplicateFile.absolutePath
+        }
+
+        getAvailablePackages(forceRefresh = true)
+
+        val runtime = toolPkgContainers[normalizedContainerPackageName]
+        if (runtime == null) {
+            val relatedErrors =
+                collectRelatedToolPkgLoadErrors(
+                    containerPackageName = normalizedContainerPackageName,
+                    externalFilePath = normalizedExternalFilePath
+                )
+            return buildString {
+                append("Failed to reload debug toolpkg: ")
+                append(normalizedContainerPackageName)
+                if (relatedErrors.isNotEmpty()) {
+                    append("\nRelated load errors:")
+                    relatedErrors.forEach { (key, value) ->
+                        append("\n- ")
+                        append(key)
+                        append(": ")
+                        append(value)
+                    }
+                }
+            }
+        }
+
+        if (runtime.sourceType != ToolPkgSourceType.EXTERNAL) {
+            val relatedErrors =
+                collectRelatedToolPkgLoadErrors(
+                    containerPackageName = normalizedContainerPackageName,
+                    externalFilePath = normalizedExternalFilePath
+                )
+            return buildString {
+                append("Failed to install debug toolpkg '")
+                append(normalizedContainerPackageName)
+                append("': a built-in package with the same name is taking precedence")
+                if (relatedErrors.isNotEmpty()) {
+                    append("\nRelated load errors:")
+                    relatedErrors.forEach { (key, value) ->
+                        append("\n- ")
+                        append(key)
+                        append(": ")
+                        append(value)
+                    }
+                }
+            }
+        }
+
+        val runtimeSourceCanonicalPath =
+            runCatching { File(runtime.sourcePath).canonicalPath }.getOrElse { File(runtime.sourcePath).absolutePath }
+        val targetCanonicalPath =
+            runCatching { targetFile.canonicalPath }.getOrElse { targetFile.absolutePath }
+        if (runtimeSourceCanonicalPath != targetCanonicalPath) {
+            return buildString {
+                append("Reloaded toolpkg source does not match pushed archive for '")
+                append(normalizedContainerPackageName)
+                append("'\nExpected: ")
+                append(targetCanonicalPath)
+                append("\nActual: ")
+                append(runtimeSourceCanonicalPath)
+            }
+        }
+
+        if (resetSubpackageStatesToManifest) {
+            val updatedStates = getToolPkgSubpackageStatesInternal().toMutableMap()
+            val currentSubpackageNames =
+                runtime.subpackages
+                    .map(ToolPkgSubpackageRuntime::packageName)
+                    .toSet()
+
+            previousSubpackageNames
+                .filterNot { previousName -> currentSubpackageNames.contains(previousName) }
+                .forEach(updatedStates::remove)
+
+            runtime.subpackages.forEach { subpackage ->
+                updatedStates[subpackage.packageName] = subpackage.enabledByDefault
+            }
+
+            saveToolPkgSubpackageStates(updatedStates)
+        }
+
+        val importMessage = importPackage(normalizedContainerPackageName)
+
+        destroyDefaultToolPkgExecutionEngine(normalizedContainerPackageName)
+
+        (
+            previousSubpackageNames +
+                runtime.subpackages.map(ToolPkgSubpackageRuntime::packageName)
+            )
+            .distinct()
+            .forEach(::unregisterPackageTools)
+
+        val reactivatedPackages = mutableListOf<String>()
+        val reactivationFailures = mutableListOf<String>()
+        previouslyActivePackages.forEach { packageName ->
+            if (!toolPkgSubpackageByPackageName.containsKey(packageName)) {
+                return@forEach
+            }
+            if (!isPackageImported(packageName)) {
+                return@forEach
+            }
+
+            val useMessage = usePackage(packageName)
+            if (useMessage.startsWith("Using package:")) {
+                reactivatedPackages += packageName
+            } else {
+                reactivationFailures += "$packageName -> $useMessage"
+            }
+        }
+
+        val enabledSubpackages =
+            runtime.subpackages
+                .map(ToolPkgSubpackageRuntime::packageName)
+                .filter(::isPackageImported)
+
+        return buildString {
+            append("Successfully installed debug toolpkg: ")
+            append(normalizedContainerPackageName)
+            append("\nSource file: ")
+            append(targetCanonicalPath)
+            append("\n")
+            append(importMessage)
+            append("\nEnabled subpackages: ")
+            append(if (enabledSubpackages.isEmpty()) "(none)" else enabledSubpackages.joinToString(", "))
+            if (removedDuplicateArchives.isNotEmpty()) {
+                append("\nRemoved duplicate archives: ")
+                append(removedDuplicateArchives.joinToString(", "))
+            }
+            if (reactivatedPackages.isNotEmpty()) {
+                append("\nReactivated packages: ")
+                append(reactivatedPackages.joinToString(", "))
+            }
+            if (reactivationFailures.isNotEmpty()) {
+                append("\nReactivation failures: ")
+                append(reactivationFailures.joinToString(" | "))
+            }
+        }
+    }
+
     /**
      * Import a package by name, adding it to the user's imported packages list.
      * For toolpkg containers this may also activate default-enabled subpackages.

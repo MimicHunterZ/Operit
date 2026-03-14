@@ -6,6 +6,7 @@ import com.ai.assistance.operit.core.avatar.common.control.AvatarController
 import com.ai.assistance.operit.core.avatar.common.control.AvatarSettingKeys
 import com.ai.assistance.operit.core.avatar.common.state.AvatarEmotion
 import com.ai.assistance.operit.core.avatar.common.state.AvatarState
+import com.dragonbones.JniBridge
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -31,14 +32,28 @@ class DragonBonesAvatarController(
     private var emotionAnimationMapping: Map<AvatarEmotion, String> = emptyMap()
 
     override fun setEmotion(newEmotion: AvatarEmotion) {
-        val animationName = resolveAnimationForEmotion(newEmotion) ?: return
+        playEmotion(newEmotion, loop = 0)
+    }
 
-        libController.playAnimation(animationName, 0f)
+    override fun playEmotion(emotion: AvatarEmotion, loop: Int) {
+        val animationName = resolveAnimationForEmotion(emotion) ?: return
+
+        libController.playAnimation(animationName, loop.toFloat())
         _state.value = _state.value.copy(
-            emotion = newEmotion,
+            emotion = emotion,
             currentAnimation = animationName,
-            isLooping = true
+            isLooping = loop == 0
         )
+    }
+
+    override fun estimateEmotionDurationMillis(emotion: AvatarEmotion): Long? {
+        val animationName = resolveAnimationForEmotion(emotion) ?: return null
+        val durationSeconds = JniBridge.getAnimationDuration(animationName)
+        if (!durationSeconds.isFinite() || durationSeconds <= 0f) {
+            return null
+        }
+
+        return (durationSeconds * 1000f).toLong().coerceAtLeast(1L)
     }
 
     override fun playAnimation(animationName: String, loop: Int) {

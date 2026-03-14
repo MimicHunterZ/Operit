@@ -344,6 +344,14 @@
         </receiver>
 
         <receiver
+            android:name=".core.tools.packTool.ToolPkgDebugInstallReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.ai.assistance.operit.DEBUG_INSTALL_TOOLPKG" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
             android:name=".integrations.intent.ExternalChatReceiver"
             android:exported="true">
             <intent-filter>

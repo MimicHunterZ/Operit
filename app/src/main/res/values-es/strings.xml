@@ -323,6 +323,9 @@
     <string name="function_model">Modelo de función</string>
     <string name="importing_model">Importando modelo...</string>
     <string name="processing">Procesando...</string>
+    <string name="avatar_config">Configuración del avatar</string>
+    <string name="avatar_voice_call_enable_title">Activar avatar virtual</string>
+    <string name="avatar_voice_call_enable_summary">Al activarlo, la interfaz de llamada de voz usará el avatar virtual y reproducirá emociones según las etiquetas &lt;mood&gt; devueltas.</string>
     <string name="dragon_bones_config">Configuración de DragonBones</string>
     <string name="collapse">Colapsar</string>
     <string name="expand">Expandir</string>

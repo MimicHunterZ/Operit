@@ -29,6 +29,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -79,6 +80,34 @@ fun AvatarConfigSection(
             val currentAvatarConfig = uiState.currentAvatarConfig
             val currentAvatarModel = uiState.currentAvatarModel
             val currentSettings = uiState.config
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(
+                        text = stringResource(R.string.avatar_voice_call_enable_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = stringResource(R.string.avatar_voice_call_enable_summary),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Switch(
+                    checked = uiState.isVoiceCallAvatarEnabled,
+                    onCheckedChange = viewModel::updateVoiceCallAvatarEnabled
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
 
             var availableAnimations by remember(currentAvatarModel?.id) {
                 mutableStateOf(emptyList<String>())

@@ -152,7 +152,7 @@ class GltfSurfaceView @JvmOverloads constructor(
     private var onRenderErrorListener: ((String) -> Unit)? = null
 
     @Volatile
-    private var onAnimationsDiscoveredListener: ((List<String>) -> Unit)? = null
+    private var onAnimationsDiscoveredListener: ((List<String>, Map<String, Long>) -> Unit)? = null
 
     init {
         setupTransparentSurface()
@@ -164,7 +164,7 @@ class GltfSurfaceView @JvmOverloads constructor(
         onRenderErrorListener = listener
     }
 
-    fun setOnAnimationsDiscoveredListener(listener: ((List<String>) -> Unit)?) {
+    fun setOnAnimationsDiscoveredListener(listener: ((List<String>, Map<String, Long>) -> Unit)?) {
         onAnimationsDiscoveredListener = listener
     }
 
@@ -357,7 +357,7 @@ class GltfSurfaceView @JvmOverloads constructor(
             cameraTargetX = CAMERA_TARGET_X
             cameraTargetY = CAMERA_TARGET_Y
             cameraTargetZ = CAMERA_TARGET_Z
-            onAnimationsDiscoveredListener?.invoke(emptyList())
+            onAnimationsDiscoveredListener?.invoke(emptyList(), emptyMap())
             dispatchError("Failed to load glTF model: ${e.message ?: "unknown error"}")
         }
     }
@@ -1085,7 +1085,7 @@ class GltfSurfaceView @JvmOverloads constructor(
             animationNames = emptyList()
             animationNameToIndex = emptyMap()
             animationDurations = emptyMap()
-            onAnimationsDiscoveredListener?.invoke(emptyList())
+            onAnimationsDiscoveredListener?.invoke(emptyList(), emptyMap())
             return
         }
 
@@ -1108,7 +1108,11 @@ class GltfSurfaceView @JvmOverloads constructor(
         animationNames = names
         animationNameToIndex = nameIndexMap
         animationDurations = durationMap
-        onAnimationsDiscoveredListener?.invoke(names)
+        val durationMillisByName =
+            durationMap.entries.associate { (index, durationSeconds) ->
+                names[index] to (durationSeconds * 1000f).toLong().coerceAtLeast(1L)
+            }
+        onAnimationsDiscoveredListener?.invoke(names, durationMillisByName)
     }
 
     private fun applyRequestedAnimationSelection() {

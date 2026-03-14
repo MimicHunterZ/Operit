@@ -42,26 +42,34 @@ class WebPAvatarController(
     private var emotionAnimationMapping: Map<AvatarEmotion, String> = emptyMap()
 
     override fun setEmotion(newEmotion: AvatarEmotion) {
-        val mappedAnimation = emotionAnimationMapping[newEmotion]
-        val mappedModelEmotion = mappedAnimation?.let { animationName ->
-            model.emotionToFileMap.entries.find { it.value == animationName }?.key
-        }
+        playEmotion(newEmotion, loop = 0)
+    }
+
+    override fun playEmotion(emotion: AvatarEmotion, loop: Int) {
+        val mappedAnimation = emotionAnimationMapping[emotion]
+        val mappedModelEmotion = mappedAnimation?.let(::resolveModelEmotion)
 
         val targetEmotion = when {
             mappedModelEmotion != null -> mappedModelEmotion
-            model.availableEmotions.contains(newEmotion) -> newEmotion
+            model.availableEmotions.contains(emotion) -> emotion
             else -> null
         } ?: return
 
-        applyEmotion(displayEmotion = newEmotion, modelEmotion = targetEmotion)
+        applyEmotion(
+            displayEmotion = emotion,
+            modelEmotion = targetEmotion,
+            isLooping = loop == 0
+        )
     }
 
     override fun playAnimation(animationName: String, loop: Int) {
-        val targetEmotion = model.emotionToFileMap.entries
-            .find { it.value == animationName }
-            ?.key ?: return
+        val targetEmotion = resolveModelEmotion(animationName) ?: return
 
-        applyEmotion(displayEmotion = targetEmotion, modelEmotion = targetEmotion)
+        applyEmotion(
+            displayEmotion = targetEmotion,
+            modelEmotion = targetEmotion,
+            isLooping = loop == 0
+        )
     }
 
     override fun lookAt(x: Float, y: Float) {
@@ -89,7 +97,7 @@ class WebPAvatarController(
         _currentModel.value = newModel
 
         // Reset to current emotion with new model
-        setEmotion(_state.value.emotion)
+        playEmotion(_state.value.emotion, if (_state.value.isLooping) 0 else 1)
     }
 
     /**
@@ -98,7 +106,29 @@ class WebPAvatarController(
     val currentAnimationPath: String
         get() = model.animationPath
 
-    private fun applyEmotion(displayEmotion: AvatarEmotion, modelEmotion: AvatarEmotion) {
+    fun onAnimationPlaybackCompleted(animationPath: String) {
+        val currentState = _state.value
+        if (currentState.isLooping || currentState.emotion == AvatarEmotion.IDLE) {
+            return
+        }
+        if (currentState.currentAnimation != animationPath) {
+            return
+        }
+
+        setEmotion(AvatarEmotion.IDLE)
+    }
+
+    private fun resolveModelEmotion(animationName: String): AvatarEmotion? {
+        return model.emotionToFileMap.entries
+            .find { it.value == animationName }
+            ?.key
+    }
+
+    private fun applyEmotion(
+        displayEmotion: AvatarEmotion,
+        modelEmotion: AvatarEmotion,
+        isLooping: Boolean
+    ) {
         if (!model.availableEmotions.contains(modelEmotion)) {
             return
         }
@@ -110,7 +140,8 @@ class WebPAvatarController(
         _state.value = _state.value.copy(
             emotion = displayEmotion,
             currentAnimation = newModel.animationPath,
-            isLooping = newModel.shouldLoop
+            isLooping = isLooping,
+            playbackNonce = _state.value.playbackNonce + 1
         )
     }
 }

@@ -2,8 +2,10 @@ package com.ai.assistance.operit.core.avatar.impl.webp.view
 
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
+import android.graphics.drawable.Animatable2
 import android.graphics.drawable.AnimatedImageDrawable
 import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.os.Build
 import com.ai.assistance.operit.util.AppLogger
 import android.widget.ImageView
@@ -65,7 +67,7 @@ fun WebPRenderer(
     }
 
     // Decode animation when path changes
-    DisposableEffect(animationPath) {
+    DisposableEffect(animationPath, controllerState.isLooping, controllerState.playbackNonce) {
         if (animationPath.isBlank()) {
             drawableState.value = null
             return@DisposableEffect onDispose { }
@@ -73,6 +75,7 @@ fun WebPRenderer(
 
         val assets = context.assets
         AppLogger.d("WebPRenderer", "Decode start: $animationPath")
+        var animationCallback: Animatable2.AnimationCallback? = null
         
         try {
             if (Build.VERSION.SDK_INT >= 28) {
@@ -88,10 +91,19 @@ fun WebPRenderer(
                 drawableState.value = drawable
                 
                 if (drawable is AnimatedImageDrawable) {
-                    drawable.repeatCount = if (model.shouldLoop) {
+                    drawable.repeatCount = if (controllerState.isLooping) {
                         AnimatedImageDrawable.REPEAT_INFINITE
                     } else {
-                        model.repeatCount
+                        0
+                    }
+                    if (!controllerState.isLooping) {
+                        animationCallback =
+                            object : Animatable2.AnimationCallback() {
+                                override fun onAnimationEnd(drawable: Drawable?) {
+                                    webpController.onAnimationPlaybackCompleted(animationPath)
+                                }
+                            }
+                        drawable.registerAnimationCallback(animationCallback)
                     }
                     drawable.start()
                     AppLogger.d("WebPRenderer", "Animated start: $animationPath")
@@ -119,6 +131,7 @@ fun WebPRenderer(
             try {
                 val d = drawableState.value
                 if (Build.VERSION.SDK_INT >= 28 && d is AnimatedImageDrawable) {
+                    animationCallback?.let { d.unregisterAnimationCallback(it) }
                     d.stop()
                 }
             } catch (_: Exception) {}

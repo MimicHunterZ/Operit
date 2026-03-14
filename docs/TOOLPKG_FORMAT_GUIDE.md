@@ -862,6 +862,107 @@ my_toolpkg/
 4. **验证 JSON 格式**：
    使用在线 JSON 验证工具检查 `manifest.json`
 
+### 10.3 使用调试安装脚本快速烧录到手机
+
+普通 `.js` 包可以直接用 `tools/execute_js.bat` / `tools/execute_js.sh` 临时推送后单次执行；但 `toolpkg` 不适合这样调试。
+
+原因是 `toolpkg` 不只是“跑一个函数”，它还涉及：
+
+- 读取 `manifest.json` / `manifest.hjson`
+- 解析 `toolpkg_id`
+- 加载 `main` 脚本里的注册逻辑
+- 同步 UI 模块、消息处理插件、Prompt Hook、Tool Lifecycle Hook 等宿主级注册
+- 刷新 ToolPkg cache 与运行时 hook 映射
+
+因此，`toolpkg` 调试的正确思路不是“一次运行”，而是“快速重新安装”。
+
+项目现在提供了专门的调试安装脚本：
+
+- Windows：`tools/debug_toolpkg.bat`
+- Linux/macOS：`tools/debug_toolpkg.sh`
+- 共享实现：`tools/debug_toolpkg.py`
+
+它们会执行以下流程：
+
+1. 从 ToolPkg 目录或现成 `.toolpkg` 中读取 `manifest`
+2. 解析 `toolpkg_id` 与 `main`
+3. 如果输入是目录，则先临时打包成 `.toolpkg`
+4. 通过 `adb push` 将包推送到手机的 `Android/data/com.ai.assistance.operit/files/packages/`
+5. 发送调试广播，让 App 重新扫描外部 packages 目录
+6. 按 `toolpkg_id` 启用该 ToolPkg 容器
+7. 按 manifest 默认值重新应用 subpackage 启用状态（可选关闭）
+8. 刷新 ToolPkg cache、hook/runtime 映射，并尝试重新激活先前已注册过的 subpackage 工具
+
+这条链路更接近真实安装行为，适合调试：
+
+- `ToolPkg.registerToolboxUiModule(...)`
+- `ToolPkg.registerMessageProcessingPlugin(...)`
+- `ToolPkg.registerXmlRenderPlugin(...)`
+- `ToolPkg.registerInputMenuTogglePlugin(...)`
+- `ToolPkg.registerToolLifecycleHook(...)`
+- Prompt 相关 hook
+
+#### 10.3.1 用法
+
+直接传 ToolPkg 目录：
+
+```bash
+python tools/debug_toolpkg.py examples/windows_control
+```
+
+也可以传 `manifest.json`：
+
+```bash
+python tools/debug_toolpkg.py examples/windows_control/manifest.json
+```
+
+或者传现成 `.toolpkg`：
+
+```bash
+python tools/debug_toolpkg.py /path/to/windows_control.toolpkg
+```
+
+Windows 下可直接使用：
+
+```bat
+tools\debug_toolpkg.bat examples\windows_control
+tools\debug_toolpkg.bat examples\windows_control\manifest.json
+tools\debug_toolpkg.bat D:\tmp\windows_control.toolpkg --device emulator-5554
+```
+
+Linux/macOS 下可直接使用：
+
+```bash
+bash tools/debug_toolpkg.sh examples/windows_control
+bash tools/debug_toolpkg.sh examples/windows_control/manifest.json
+```
+
+#### 10.3.2 常用参数
+
+- `--device <serial>`：指定 adb 设备；不传时，若只连了一台设备则自动选中
+- `--no-reset-subpackage-states`：保留本机已有的 subpackage 开关状态，而不是按 manifest 默认值重置
+- `--log-wait-seconds <n>`：发送广播后等待多少秒再抓取日志；默认读取 `OPERIT_LOG_WAIT_SECONDS`，否则为 `6`
+
+#### 10.3.3 日志查看
+
+脚本默认会抓取这些日志标签：
+
+```bash
+adb logcat -d -s ToolPkgDebugInstallReceiver:* ToolPkg:* PackageManager:*
+```
+
+如果你怀疑是 JS 执行期问题，也可以再看：
+
+```bash
+adb logcat -d -s JsEngine:* ToolPkg:* PackageManager:*
+```
+
+#### 10.3.4 注意事项
+
+- 这个脚本依赖手机上的 Operit 已包含 `ToolPkgDebugInstallReceiver` 调试广播入口；如果手机装的是旧版本 App，广播不会生效。
+- 脚本会根据 `toolpkg_id` 处理同名外部 ToolPkg 的覆盖安装；调试时应保持 `toolpkg_id` 稳定，不要频繁改名。
+- 如果你调试的是 hook 行为，优先使用这套安装脚本，不要试图把 `toolpkg` 当普通 `.js` 包去跑。
+
 ## 11. 示例项目
 
 ### 11.1 Windows Control Bundle

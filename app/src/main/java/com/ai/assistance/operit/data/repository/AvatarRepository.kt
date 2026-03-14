@@ -113,7 +113,8 @@ data class AvatarInstanceSettings(
  * Data class for global avatar settings.
  */
 data class AvatarSettings(
-    val currentAvatarId: String?
+    val currentAvatarId: String? = null,
+    val isVoiceCallAvatarEnabled: Boolean = false
 )
 
 /**
@@ -364,6 +365,9 @@ class AvatarRepository(
 
     private val _currentAvatar = MutableStateFlow<AvatarModel?>(null)
     val currentAvatar: StateFlow<AvatarModel?> = _currentAvatar.asStateFlow()
+
+    private val _settings = MutableStateFlow(AvatarSettings())
+    val settings: StateFlow<AvatarSettings> = _settings.asStateFlow()
     
     private val _instanceSettings = MutableStateFlow<Map<String, AvatarInstanceSettings>>(emptyMap())
     val instanceSettings: StateFlow<Map<String, AvatarInstanceSettings>> = _instanceSettings.asStateFlow()
@@ -447,6 +451,7 @@ class AvatarRepository(
         _instanceSettings.value = loadInstanceSettingsFromPrefs()
 
         val settings = loadSettingsFromPrefs()
+        _settings.value = settings
         updateCurrentAvatar(settings.currentAvatarId)
     }
 
@@ -478,6 +483,15 @@ class AvatarRepository(
         }
     }
 
+    fun updateVoiceCallAvatarEnabled(enabled: Boolean) {
+        val currentSettings = loadSettingsFromPrefs()
+        if (currentSettings.isVoiceCallAvatarEnabled == enabled) {
+            return
+        }
+
+        saveSettingsToPrefs(currentSettings.copy(isVoiceCallAvatarEnabled = enabled))
+    }
+
     private fun updateCurrentAvatar(targetId: String?) {
         val config = _configs.value.find { it.id == targetId }
             ?: _configs.value.firstOrNull()
@@ -494,8 +508,8 @@ class AvatarRepository(
             data = config.data
         )
 
-        if (config.id != loadSettingsFromPrefs().currentAvatarId) {
-            saveSettingsToPrefs(AvatarSettings(currentAvatarId = config.id))
+        if (config.id != _settings.value.currentAvatarId) {
+            saveSettingsToPrefs(_settings.value.copy(currentAvatarId = config.id))
         }
     }
 
@@ -929,15 +943,16 @@ class AvatarRepository(
             try {
                 gson.fromJson(json, AvatarSettings::class.java)
             } catch (e: Exception) {
-                AvatarSettings(null)
+                AvatarSettings()
             }
         } else {
-            AvatarSettings(null)
+            AvatarSettings()
         }
     }
 
     private fun saveSettingsToPrefs(settings: AvatarSettings) {
         val json = gson.toJson(settings)
         prefs.edit { putString(KEY_SETTINGS, json) }
+        _settings.value = settings
     }
-} 
+}

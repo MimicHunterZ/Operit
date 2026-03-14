@@ -26,6 +26,16 @@ interface AvatarController {
     fun setEmotion(newEmotion: AvatarEmotion)
 
     /**
+     * Plays the animation mapped from a high-level emotion.
+     *
+     * @param emotion The target emotion.
+     * @param loop The number of times to loop the mapped animation. Use 0 for infinite looping.
+     */
+    fun playEmotion(emotion: AvatarEmotion, loop: Int = 0) {
+        setEmotion(emotion)
+    }
+
+    /**
      * Directly plays a specific animation by name.
      * This is primarily useful for skeletal animation systems that have a rich set of named animations.
      *
@@ -33,6 +43,12 @@ interface AvatarController {
      * @param loop The number of times to loop the animation. Use 0 for infinite looping.
      */
     fun playAnimation(animationName: String, loop: Int = 1)
+
+    /**
+     * Returns the estimated duration, in milliseconds, of the animation mapped from the given emotion.
+     * Controllers can return null when they cannot determine a precise duration.
+     */
+    fun estimateEmotionDurationMillis(emotion: AvatarEmotion): Long? = null
 
     /**
      * Instructs the avatar to look at a specific point on the screen.

@@ -44,6 +44,10 @@
 - 执行自动分析出的安装/构建命令（会跳过启动命令）
 4) 命令型插件判定：
 - 对于 command 为 npx/uvx/uv 的命令型插件，系统按“已部署”处理，仅做最小目录准备。
+- 配置 Node 类命令型 MCP 时，mcp_config.json 里仍应按上游常见写法填写 `command: "npx"`；不要自行改写成 `pnpm` 或 `npm`。
+- 软件内部启动这类 `npx` MCP 时，会自动把 `npx` 改写为 `pnpm dlx` 执行，并去掉 `-y`/`--yes` 一类确认参数。
+- 因此这类 MCP 的实际运行依赖是 `pnpm`；Linux 终端里必须装有 `pnpm`，不能只装 `npm`。
+- 不要把 command 改成 `npm`；当前已知这样可能触发 `double free` 报错。现阶段约定是：配置时按 `npx` 填，运行时由软件内部转成 `pnpm dlx`。
 5) 系统启动行为（必须理解）：
 - 本地插件：系统会读取 mcp_config.json 中该插件的 command/args/env，使用 cwd=~/mcp_plugins/<shortName> 启动进程；可用性以“工具可调用/服务可响应”为准
 - 远程插件：系统按 endpoint + connectionType（可选 bearerToken/headers）发起连接并校验连通
@@ -82,7 +86,7 @@
 - 检查 args 是否误写 Android 路径
 - 检查 env 中所需 key/token
 - 不要把 server_status.json 的 active 当作唯一依据；优先看工具是否可拉取、可调用
-- 检查终端依赖（node/pnpm/python/uv）与 MCP 服务状态
+- 检查终端依赖（node/pnpm/python/uv）与 MCP 服务状态；其中 Node 类 `npx` MCP 实际依赖 `pnpm`，若缺少 `pnpm` 将无法启动
 
 【Skill：安装与排查】
 0) 市场来源：
@@ -261,6 +265,10 @@
 - Execute auto-generated install/build commands (startup commands are skipped)
 4) Command-based plugin handling:
 - For command-based plugins using npx/uvx/uv, the system treats them as deployed and only performs minimal directory preparation.
+- For Node-style command MCPs, keep the config in mcp_config.json aligned with upstream examples and still write `command: "npx"`; do not rewrite it to `pnpm` or `npm` yourself.
+- When the app starts this kind of `npx` MCP, it internally rewrites `npx` to `pnpm dlx` and strips confirmation flags such as `-y` / `--yes`.
+- That means the real runtime dependency for this kind of MCP is `pnpm`; `pnpm` must exist in the Linux terminal, and having only `npm` is not enough.
+- Do not change the command to `npm`; this is known to trigger `double free` errors. The current convention is: configure it as `npx`, and let the app run it internally as `pnpm dlx`.
 5) System startup behavior (critical):
 - Local plugins: the app reads command/args/env from mcp_config.json and starts the process with cwd=~/mcp_plugins/<shortName>; availability should be judged by real tool call/response
 - Remote plugins: the app connects using endpoint + connectionType (optional bearerToken/headers) and verifies connectivity
@@ -299,7 +307,7 @@
 - Check whether args incorrectly use Android paths
 - Check required key/token in env
 - Do not treat `active` in server_status.json as the single source of truth; prioritize whether tools can be fetched/called successfully
-- Check terminal dependencies (node/pnpm/python/uv) and MCP service status
+- Check terminal dependencies (node/pnpm/python/uv) and MCP service status; Node-style `npx` MCPs actually depend on `pnpm`, so missing `pnpm` will prevent startup
 
 [Skill: install and troubleshooting]
 0) Market source:

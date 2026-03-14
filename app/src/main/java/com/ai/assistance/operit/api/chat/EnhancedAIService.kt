@@ -1748,6 +1748,9 @@ class EnhancedAIService private constructor(private val context: Context) {
             // 先读取全局工具和记忆开关
             val enableTools = apiPreferences.enableToolsFlow.first()
             val enableMemoryQuery = apiPreferences.enableMemoryQueryFlow.first()
+            val toolPromptVisibility = runCatching {
+                apiPreferences.toolPromptVisibilityFlow.first()
+            }.getOrElse { emptyMap() }
 
             // 如果同时关闭了普通工具和记忆相关工具，则完全不提供Tool Call工具
             if (!enableTools && !enableMemoryQuery) {
@@ -1832,6 +1835,12 @@ class EnhancedAIService private constructor(private val context: Context) {
                 selectedTools.addAll(memoryTools)
             }
 
+            if (toolPromptVisibility.isNotEmpty()) {
+                selectedTools.retainAll { tool ->
+                    toolPromptVisibility[tool.name] ?: true
+                }
+            }
+
             if (config.strictToolCall) {
                 selectedTools.add(
                     ToolPrompt(
@@ -1862,7 +1871,7 @@ class EnhancedAIService private constructor(private val context: Context) {
 
             AppLogger.d(
                 TAG,
-                "Tool Call已启用，提供 ${selectedTools.size} 个工具 (enableTools=$enableTools, enableMemoryQuery=$enableMemoryQuery)"
+                "Tool Call已启用，提供 ${selectedTools.size} 个工具 (enableTools=$enableTools, enableMemoryQuery=$enableMemoryQuery, visibleToolOverrides=${toolPromptVisibility.size})"
             )
             selectedTools
         } catch (e: Exception) {

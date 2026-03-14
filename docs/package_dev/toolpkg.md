@@ -453,6 +453,18 @@ ToolPkg.registerInputMenuTogglePlugin({
 
 这是一种**从仓库示例总结出的约定**；它不是 `toolpkg.d.ts` 本身直接声明的函数签名。
 
+## 开发调试安装
+
+`toolpkg.d.ts` 这里描述的是注册 API，本身不负责“如何调试安装到手机”。
+
+如果你在开发 ToolPkg，需要注意：
+
+- 普通 `.js` 包可以用 `tools/execute_js.bat` / `tools/execute_js.sh` 做单次执行调试
+- `toolpkg` 不适合这样调试，因为它涉及 `manifest`、`main` 注册、ToolPkg cache、以及多类 hook/runtime 的重新同步
+- 调试 ToolPkg 时，应使用 `tools/debug_toolpkg.bat` / `tools/debug_toolpkg.sh` / `tools/debug_toolpkg.py`
+
+完整的打包、烧录、启用、刷新 hook/runtime 的工作流说明，见 [TOOLPKG_FORMAT_GUIDE.md](../TOOLPKG_FORMAT_GUIDE.md) 中的“10.3 使用调试安装脚本快速烧录到手机”。
+
 ## 相关文件
 
 - `examples/types/toolpkg.d.ts`

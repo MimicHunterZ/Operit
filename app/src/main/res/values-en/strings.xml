@@ -358,6 +358,8 @@
     <string name="processing">Processing...</string>
     <string name="error_occurred">Error occurred: %1$s</string>
     <string name="avatar_config">Avatar Configuration</string>
+    <string name="avatar_voice_call_enable_title">Enable virtual avatar</string>
+    <string name="avatar_voice_call_enable_summary">When enabled, the voice call UI uses the virtual avatar and plays emotion actions from returned &lt;mood&gt; tags.</string>
     <string name="dragon_bones_config">DragonBones Config</string>
     <string name="collapse">Collapse</string>
     <string name="expand">Expand</string>
