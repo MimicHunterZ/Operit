@@ -1,6 +1,7 @@
 package com.ai.assistance.mmd
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.PixelFormat
@@ -20,14 +21,13 @@ import java.nio.IntBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import kotlin.math.max
-import kotlin.math.min
 
 class MmdGlSurfaceView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : GLSurfaceView(context, attrs) {
 
-    private val renderer = MmdPreviewRenderer()
+    private val renderer = MmdPreviewRenderer(context.applicationContext)
 
     init {
         setEGLContextClientVersion(2)
@@ -103,61 +103,62 @@ class MmdGlSurfaceView @JvmOverloads constructor(
     }
 }
 
-private data class DrawBatch(
-    val firstVertex: Int,
-    val vertexCount: Int,
-    val textureSlot: Int
+private data class LoadedTextureSlot(
+    val textureId: Int,
+    val flags: Int
 )
 
-private class MmdPreviewRenderer : GLSurfaceView.Renderer {
+private class MmdPreviewRenderer(
+    private val appContext: Context
+) : GLSurfaceView.Renderer {
 
     companion object {
         private const val TAG = "MmdGlRenderer"
 
-        private const val STRIDE_FLOATS = 8
+        private const val STRIDE_FLOATS = 10
+        private const val MATERIAL_SEGMENT_STRIDE = 7
+        private const val TEXTURE_FLAG_HAS_ALPHA = 1
+        private const val BUILTIN_ASSET_PREFIX = "@mmd_builtin/"
 
-        private const val VERTEX_SHADER = """
-            uniform mat4 uMvpMatrix;
-            uniform mat4 uModelMatrix;
-            attribute vec3 aPosition;
-            attribute vec3 aNormal;
-            attribute vec2 aTexCoord;
-            varying float vLight;
-            varying vec2 vTexCoord;
-            void main() {
-                vec3 normal = normalize((uModelMatrix * vec4(aNormal, 0.0)).xyz);
-                vec3 keyLightDir = normalize(vec3(0.35, 0.65, 1.0));
-                vec3 fillLightDir = normalize(vec3(-0.45, 0.25, 0.9));
+        private const val MAIN_HANDLE_COUNT = 24
+        private const val EDGE_HANDLE_COUNT = 7
 
-                float key = max(dot(normal, keyLightDir), 0.0);
-                float fill = max(dot(normal, fillLightDir), 0.0);
-                float ambient = 0.38;
+        private object MainHandle {
+            const val PROGRAM = 0
+            const val POSITION = 1
+            const val NORMAL = 2
+            const val TEX_COORD = 3
+            const val ADD_UV1 = 4
+            const val MVP_MATRIX = 5
+            const val MODEL_VIEW_MATRIX = 6
+            const val BASE_TEXTURE = 7
+            const val SPHERE_TEXTURE = 8
+            const val TOON_TEXTURE = 9
+            const val USE_BASE_TEXTURE = 10
+            const val USE_SPHERE_TEXTURE = 11
+            const val USE_TOON_TEXTURE = 12
+            const val SPHERE_MODE = 13
+            const val DIFFUSE_COLOR = 14
+            const val AMBIENT_COLOR = 15
+            const val SPECULAR_COLOR = 16
+            const val SPECULAR_POWER = 17
+            const val TEXTURE_MUL_FACTOR = 18
+            const val TEXTURE_ADD_FACTOR = 19
+            const val SPHERE_MUL_FACTOR = 20
+            const val SPHERE_ADD_FACTOR = 21
+            const val TOON_MUL_FACTOR = 22
+            const val TOON_ADD_FACTOR = 23
+        }
 
-                vLight = min(ambient + key * 0.72 + fill * 0.28, 1.5);
-                vTexCoord = aTexCoord;
-                gl_Position = uMvpMatrix * vec4(aPosition, 1.0);
-            }
-        """
-
-        private const val FRAGMENT_SHADER = """
-            precision mediump float;
-            varying float vLight;
-            varying vec2 vTexCoord;
-            uniform sampler2D uTexture;
-            uniform float uUseTexture;
-            void main() {
-                vec4 texColor = texture2D(uTexture, vec2(vTexCoord.x, 1.0 - vTexCoord.y));
-                vec3 fallbackColor = vec3(0.86, 0.83, 0.9);
-                vec3 baseColor = mix(fallbackColor, texColor.rgb, uUseTexture);
-                float alpha = mix(1.0, texColor.a, uUseTexture);
-
-                vec3 litColor = baseColor * vLight;
-                litColor = mix(litColor, baseColor, 0.18);
-                litColor = pow(max(litColor, vec3(0.0)), vec3(0.9));
-
-                gl_FragColor = vec4(clamp(litColor, 0.0, 1.0), alpha);
-            }
-        """
+        private object EdgeHandle {
+            const val PROGRAM = 0
+            const val POSITION = 1
+            const val NORMAL = 2
+            const val MVP_MATRIX = 3
+            const val EDGE_COLOR = 4
+            const val EDGE_SIZE = 5
+            const val EDGE_SCALE = 6
+        }
     }
 
     private var requestedModelPath: String? = null
@@ -175,10 +176,12 @@ private class MmdPreviewRenderer : GLSurfaceView.Renderer {
     private var activeRotationY: Float = 0f
     private var activeRotationZ: Float = 0f
 
-    private var drawBatchData: IntArray = IntArray(0)
-    private var drawBatchBuffer: IntBuffer? = null
+    private var materialSegmentData: IntArray = IntArray(0)
+    private var materialSegmentBuffer: IntBuffer? = null
     private var textureIdsBySlot: IntArray = IntArray(0)
     private var textureIdsBuffer: IntBuffer? = null
+    private var textureFlagsBySlot: IntArray = IntArray(0)
+    private var textureFlagsBuffer: IntBuffer? = null
 
     private var centerX = 0f
     private var centerY = 0f
@@ -192,20 +195,148 @@ private class MmdPreviewRenderer : GLSurfaceView.Renderer {
     private var nearClip = 0.1f
     private var farClip = 100f
 
-    private var program = 0
-    private var positionHandle = -1
-    private var normalHandle = -1
-    private var texCoordHandle = -1
+    private var mainProgramHandles: IntArray? = null
+    private var edgeProgramHandles: IntArray? = null
     private var lastNativeRenderError: String? = null
-    private var mvpHandle = -1
-    private var modelHandle = -1
-    private var useTextureHandle = -1
-    private var textureSamplerHandle = -1
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
     private var onErrorListener: ((String) -> Unit)? = null
+
+    private val mainVertexShader = """
+        uniform mat4 uMvpMatrix;
+        uniform mat4 uModelViewMatrix;
+        attribute vec3 aPosition;
+        attribute vec3 aNormal;
+        attribute vec2 aTexCoord;
+        attribute vec2 aAddUv1;
+        varying vec3 vViewNormal;
+        varying vec3 vViewPosition;
+        varying vec2 vTexCoord;
+        varying vec2 vAddUv1;
+        void main() {
+            vec4 viewPosition = uModelViewMatrix * vec4(aPosition, 1.0);
+            vViewPosition = viewPosition.xyz;
+            vViewNormal = normalize((uModelViewMatrix * vec4(aNormal, 0.0)).xyz);
+            vTexCoord = aTexCoord;
+            vAddUv1 = aAddUv1;
+            gl_Position = uMvpMatrix * vec4(aPosition, 1.0);
+        }
+    """
+
+    private val mainFragmentShader = """
+        precision mediump float;
+        varying vec3 vViewNormal;
+        varying vec3 vViewPosition;
+        varying vec2 vTexCoord;
+        varying vec2 vAddUv1;
+        uniform sampler2D uBaseTexture;
+        uniform sampler2D uSphereTexture;
+        uniform sampler2D uToonTexture;
+        uniform float uUseBaseTexture;
+        uniform float uUseSphereTexture;
+        uniform float uUseToonTexture;
+        uniform float uSphereMode;
+        uniform vec4 uDiffuseColor;
+        uniform vec3 uAmbientColor;
+        uniform vec3 uSpecularColor;
+        uniform float uSpecularPower;
+        uniform vec4 uTextureMulFactor;
+        uniform vec4 uTextureAddFactor;
+        uniform vec4 uSphereMulFactor;
+        uniform vec4 uSphereAddFactor;
+        uniform vec4 uToonMulFactor;
+        uniform vec4 uToonAddFactor;
+
+        vec2 flipUv(vec2 uv) {
+            return vec2(uv.x, 1.0 - uv.y);
+        }
+
+        vec3 computeTexMulFactor(vec3 texColor, vec4 factor) {
+            vec3 weightedColor = texColor * factor.rgb;
+            return mix(vec3(1.0), weightedColor, factor.a);
+        }
+
+        vec3 computeTexAddFactor(vec3 texColor, vec4 factor) {
+            vec3 adjusted = texColor + (texColor - vec3(1.0)) * factor.a;
+            adjusted = clamp(adjusted, vec3(0.0), vec3(1.0)) + factor.rgb;
+            return clamp(adjusted, vec3(0.0), vec3(1.0));
+        }
+
+        void main() {
+            vec3 normal = normalize(vViewNormal);
+            vec3 viewDir = normalize(-vViewPosition);
+            vec3 keyLightDir = normalize(vec3(0.35, 0.65, 1.0));
+            vec3 fillLightDir = normalize(vec3(-0.45, 0.25, 0.9));
+            float key = dot(normal, keyLightDir);
+            float fill = dot(normal, fillLightDir);
+            float toonLight = clamp(max(key, fill) + 0.5, 0.0, 1.0);
+
+            vec3 color = clamp(uDiffuseColor.rgb + uAmbientColor, vec3(0.0), vec3(1.0));
+            float alpha = uDiffuseColor.a;
+            if (uUseBaseTexture > 0.5) {
+                vec4 baseSample = texture2D(uBaseTexture, flipUv(vTexCoord));
+                vec3 baseColor = computeTexMulFactor(baseSample.rgb, uTextureMulFactor);
+                baseColor = computeTexAddFactor(baseColor, uTextureAddFactor);
+                color *= baseColor;
+                alpha *= baseSample.a;
+            }
+            if (alpha <= 0.0) {
+                discard;
+            }
+
+            vec2 sphereUv = vec2(normal.x * 0.5 + 0.5, 0.5 - normal.y * 0.5);
+            if (uSphereMode > 2.5) {
+                sphereUv = flipUv(vAddUv1);
+            }
+            if (uUseSphereTexture > 0.5) {
+                vec3 sphereColor = texture2D(uSphereTexture, sphereUv).rgb;
+                sphereColor = computeTexMulFactor(sphereColor, uSphereMulFactor);
+                sphereColor = computeTexAddFactor(sphereColor, uSphereAddFactor);
+                if (uSphereMode > 0.5 && uSphereMode < 1.5) {
+                    color *= sphereColor;
+                } else if (uSphereMode >= 1.5) {
+                    color += sphereColor;
+                }
+            }
+
+            if (uUseToonTexture > 0.5) {
+                vec3 toonColor = texture2D(uToonTexture, vec2(0.0, 1.0 - toonLight)).rgb;
+                toonColor = computeTexMulFactor(toonColor, uToonMulFactor);
+                toonColor = computeTexAddFactor(toonColor, uToonAddFactor);
+                color *= toonColor;
+            }
+
+            if (uSpecularPower > 0.0) {
+                vec3 halfVec = normalize(viewDir + keyLightDir);
+                float specular = pow(max(dot(halfVec, normal), 0.0), max(uSpecularPower, 1.0));
+                color += uSpecularColor * specular;
+            }
+
+            gl_FragColor = vec4(clamp(color, 0.0, 1.0), clamp(alpha, 0.0, 1.0));
+        }
+    """
+
+    private val edgeVertexShader = """
+        uniform mat4 uMvpMatrix;
+        uniform float uEdgeSize;
+        uniform float uEdgeScale;
+        attribute vec3 aPosition;
+        attribute vec3 aNormal;
+        void main() {
+            vec3 expandedPosition = aPosition + aNormal * max(uEdgeSize, 0.0) * uEdgeScale;
+            gl_Position = uMvpMatrix * vec4(expandedPosition, 1.0);
+        }
+    """
+
+    private val edgeFragmentShader = """
+        precision mediump float;
+        uniform vec4 uEdgeColor;
+        void main() {
+            gl_FragColor = uEdgeColor;
+        }
+    """
 
     fun setOnErrorListener(listener: ((String) -> Unit)?) {
         onErrorListener = listener
@@ -216,11 +347,7 @@ private class MmdPreviewRenderer : GLSurfaceView.Renderer {
         if (normalizedPath.isEmpty()) return
 
         requestedModelPath = normalizedPath
-        if (
-            normalizedPath == currentModelPath &&
-            vertexBuffer != null &&
-            vertexCount > 0
-        ) {
+        if (normalizedPath == currentModelPath && vertexBuffer != null && vertexCount > 0) {
             return
         }
 
@@ -262,41 +389,21 @@ private class MmdPreviewRenderer : GLSurfaceView.Renderer {
         currentModelPath = null
         activeMotionPath = null
         activeAnimationLooping = requestedAnimationLooping
+        lastNativeRenderError = null
+
         clearMesh()
         clearTextureSet()
+        clearPrograms()
 
         GLES20.glClearColor(0f, 0f, 0f, 0f)
         GLES20.glEnable(GLES20.GL_DEPTH_TEST)
         GLES20.glEnable(GLES20.GL_BLEND)
         GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA)
 
-        program = createProgram(VERTEX_SHADER, FRAGMENT_SHADER)
-        if (program == 0) {
-            dispatchError("Failed to create GL program for MMD renderer.")
-            return
-        }
-
-        positionHandle = GLES20.glGetAttribLocation(program, "aPosition")
-        normalHandle = GLES20.glGetAttribLocation(program, "aNormal")
-        texCoordHandle = GLES20.glGetAttribLocation(program, "aTexCoord")
-        mvpHandle = GLES20.glGetUniformLocation(program, "uMvpMatrix")
-        modelHandle = GLES20.glGetUniformLocation(program, "uModelMatrix")
-        useTextureHandle = GLES20.glGetUniformLocation(program, "uUseTexture")
-        textureSamplerHandle = GLES20.glGetUniformLocation(program, "uTexture")
-
-        if (
-            positionHandle < 0 ||
-            normalHandle < 0 ||
-            texCoordHandle < 0 ||
-            mvpHandle < 0 ||
-            modelHandle < 0 ||
-            useTextureHandle < 0 ||
-            textureSamplerHandle < 0
-        ) {
-            dispatchError(
-                "GL program missing required handles: pos=$positionHandle normal=$normalHandle uv=$texCoordHandle mvp=$mvpHandle model=$modelHandle useTex=$useTextureHandle sampler=$textureSamplerHandle"
-            )
-            program = 0
+        mainProgramHandles = createMainProgramHandles()
+        edgeProgramHandles = createEdgeProgramHandles()
+        if (mainProgramHandles == null || edgeProgramHandles == null) {
+            dispatchError("Failed to create GL programs for MMD renderer.")
             return
         }
 
@@ -313,7 +420,6 @@ private class MmdPreviewRenderer : GLSurfaceView.Renderer {
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES20.glViewport(0, 0, width, height)
-
         val safeHeight = if (height <= 0) 1 else height
         aspectRatio = width.toFloat() / safeHeight.toFloat()
     }
@@ -341,16 +447,11 @@ private class MmdPreviewRenderer : GLSurfaceView.Renderer {
             farClip = farClip,
             vertexBuffer = vertexBuffer,
             vertexCount = vertexCount,
-            drawBatchData = drawBatchBuffer,
+            materialSegments = materialSegmentBuffer,
             textureIdsBySlot = textureIdsBuffer,
-            program = program,
-            positionHandle = positionHandle,
-            normalHandle = normalHandle,
-            texCoordHandle = texCoordHandle,
-            mvpHandle = mvpHandle,
-            modelHandle = modelHandle,
-            useTextureHandle = useTextureHandle,
-            textureSamplerHandle = textureSamplerHandle
+            textureFlagsBySlot = textureFlagsBuffer,
+            mainProgramHandles = mainProgramHandles,
+            edgeProgramHandles = edgeProgramHandles
         )
 
         if (!renderSuccess) {
@@ -410,8 +511,20 @@ private class MmdPreviewRenderer : GLSurfaceView.Renderer {
             return false
         }
 
+        val rawMaterialSegments = MmdNative.nativeBuildPreviewMaterialSegments(modelPath)
+        if (
+            rawMaterialSegments == null ||
+            rawMaterialSegments.isEmpty() ||
+            rawMaterialSegments.size % MATERIAL_SEGMENT_STRIDE != 0
+        ) {
+            dispatchError("Invalid preview material segment data returned by native layer.")
+            clearMesh()
+            clearTextureSet()
+            return false
+        }
+
         val floatBuffer = ByteBuffer
-            .allocateDirect(rawMesh.size * 4)
+            .allocateDirect(rawMesh.size * Float.SIZE_BYTES)
             .order(ByteOrder.nativeOrder())
             .asFloatBuffer()
             .apply {
@@ -454,211 +567,103 @@ private class MmdPreviewRenderer : GLSurfaceView.Renderer {
         nearClip = max(0.01f, radius / 100f)
         farClip = max(120f, cameraDistance + radius * 40f)
 
-        val parsedBatches = parseDrawBatches(
-            batchData = MmdNative.nativeBuildPreviewBatches(modelPath),
-            totalVertices = rawMesh.size / STRIDE_FLOATS
-        )
-
         clearTextureSet()
         val texturePaths = MmdNative.nativeReadPreviewTexturePaths(modelPath).orEmpty()
-        textureIdsBySlot = loadTextureSlots(texturePaths)
-        textureIdsBuffer = ByteBuffer
-            .allocateDirect(textureIdsBySlot.size * Int.SIZE_BYTES)
-            .order(ByteOrder.nativeOrder())
-            .asIntBuffer()
-            .apply {
-                put(textureIdsBySlot)
-                position(0)
-            }
+        val loadedTextureSlots = loadTextureSlots(texturePaths)
+        textureIdsBySlot = IntArray(loadedTextureSlots.size) { loadedTextureSlots[it].textureId }
+        textureFlagsBySlot = IntArray(loadedTextureSlots.size) { loadedTextureSlots[it].flags }
+        textureIdsBuffer = textureIdsBySlot.toDirectIntBuffer()
+        textureFlagsBuffer = textureFlagsBySlot.toDirectIntBuffer()
 
         vertexBuffer = floatBuffer
         vertexCount = rawMesh.size / STRIDE_FLOATS
-        drawBatchData = IntArray(parsedBatches.size * 3)
-        parsedBatches.forEachIndexed { index, batch ->
-            val offset = index * 3
-            drawBatchData[offset] = batch.firstVertex
-            drawBatchData[offset + 1] = batch.vertexCount
-            drawBatchData[offset + 2] = batch.textureSlot
-        }
-        drawBatchBuffer = ByteBuffer
-            .allocateDirect(drawBatchData.size * Int.SIZE_BYTES)
-            .order(ByteOrder.nativeOrder())
-            .asIntBuffer()
-            .apply {
-                put(drawBatchData)
-                position(0)
-            }
+        materialSegmentData = rawMaterialSegments
+        materialSegmentBuffer = materialSegmentData.toDirectIntBuffer()
 
         val loadedTextures = textureIdsBySlot.count { it != 0 }
+        val alphaTextures = textureFlagsBySlot.count { (it and TEXTURE_FLAG_HAS_ALPHA) != 0 }
         Log.i(
             TAG,
-            "Loaded MMD preview assets. vertices=$vertexCount batches=${parsedBatches.size} textures=$loadedTextures/${textureIdsBySlot.size} modelPath=$modelPath"
+            "Loaded MMD preview assets. vertices=$vertexCount materials=${materialSegmentData.size / MATERIAL_SEGMENT_STRIDE} textures=$loadedTextures/${textureIdsBySlot.size} alphaTextures=$alphaTextures modelPath=$modelPath"
         )
         return true
     }
 
-    private fun parseDrawBatches(batchData: IntArray?, totalVertices: Int): List<DrawBatch> {
-        if (totalVertices <= 0) {
-            return emptyList()
-        }
-
-        if (batchData == null || batchData.isEmpty() || batchData.size % 3 != 0) {
-            return listOf(DrawBatch(firstVertex = 0, vertexCount = totalVertices, textureSlot = -1))
-        }
-
-        val batches = mutableListOf<DrawBatch>()
-        var cursor = 0
-        while (cursor + 2 < batchData.size) {
-            val firstVertexRaw = batchData[cursor]
-            val vertexCountRaw = batchData[cursor + 1]
-            val textureSlot = batchData[cursor + 2]
-            cursor += 3
-
-            if (firstVertexRaw < 0 || vertexCountRaw <= 0) {
-                continue
-            }
-
-            if (firstVertexRaw >= totalVertices) {
-                continue
-            }
-
-            val clampedCount = min(vertexCountRaw, totalVertices - firstVertexRaw)
-            if (clampedCount <= 0) {
-                continue
-            }
-
-            batches.add(
-                DrawBatch(
-                    firstVertex = firstVertexRaw,
-                    vertexCount = clampedCount,
-                    textureSlot = textureSlot
-                )
-            )
-        }
-
-        if (batches.isEmpty()) {
-            return listOf(DrawBatch(firstVertex = 0, vertexCount = totalVertices, textureSlot = -1))
-        }
-
-        return batches
-    }
-
-    private fun loadTextureSlots(texturePaths: Array<out String>): IntArray {
+    private fun loadTextureSlots(texturePaths: Array<out String>): Array<LoadedTextureSlot> {
         if (texturePaths.isEmpty()) {
-            return IntArray(0)
+            return emptyArray()
         }
-
-        return IntArray(texturePaths.size) { index ->
-            val originalPath = texturePaths[index]
-            var textureId = loadTextureFromPath(originalPath)
-            if (textureId != 0) {
-                return@IntArray textureId
-            }
-
-            val alternativePath = findAlternativeTexturePath(originalPath)
-            if (!alternativePath.isNullOrBlank() && alternativePath != originalPath) {
-                textureId = loadTextureFromPath(alternativePath)
-            }
-
-            textureId
+        return Array(texturePaths.size) { index ->
+            loadTextureFromPath(texturePaths[index])
         }
     }
 
-    private fun findAlternativeTexturePath(texturePath: String): String? {
-        val originalFile = File(texturePath)
-        val parent = originalFile.parentFile ?: return null
-        if (!parent.exists() || !parent.isDirectory) {
-            return null
+    private fun loadTextureFromPath(texturePath: String?): LoadedTextureSlot {
+        val normalizedPath = texturePath?.trim()?.takeIf { it.isNotEmpty() } ?: return LoadedTextureSlot(0, 0)
+        return if (normalizedPath.startsWith(BUILTIN_ASSET_PREFIX)) {
+            loadTextureFromAsset(normalizedPath.removePrefix(BUILTIN_ASSET_PREFIX))
+        } else {
+            loadTextureFromFile(normalizedPath)
         }
-
-        val baseName = originalFile.nameWithoutExtension
-        val candidateExts = listOf("png", "jpg", "jpeg", "webp", "bmp", "tga")
-
-        for (ext in candidateExts) {
-            val lower = File(parent, "$baseName.$ext")
-            if (lower.exists() && lower.isFile) {
-                return lower.absolutePath
-            }
-
-            val upper = File(parent, "$baseName.${ext.uppercase()}")
-            if (upper.exists() && upper.isFile) {
-                return upper.absolutePath
-            }
-        }
-
-        return null
     }
 
-    private fun loadTextureFromPath(texturePath: String?): Int {
-        val normalizedPath = texturePath?.trim()?.takeIf { it.isNotEmpty() } ?: return 0
-        val textureFile = File(normalizedPath)
+    private fun loadTextureFromAsset(assetPath: String): LoadedTextureSlot {
+        return try {
+            appContext.assets.open(assetPath).use { input ->
+                val bitmap = BitmapFactory.decodeStream(input)
+                if (bitmap == null) {
+                    Log.w(TAG, "Failed to decode builtin texture asset: $assetPath")
+                    LoadedTextureSlot(0, 0)
+                } else {
+                    uploadBitmapTexture(bitmap)
+                }
+            }
+        } catch (error: Throwable) {
+            Log.w(TAG, "Failed to open builtin texture asset: $assetPath", error)
+            LoadedTextureSlot(0, 0)
+        }
+    }
+
+    private fun loadTextureFromFile(texturePath: String): LoadedTextureSlot {
+        val textureFile = File(texturePath)
         if (!textureFile.exists() || !textureFile.isFile) {
-            Log.w(TAG, "Texture file does not exist: $normalizedPath")
-            return 0
+            Log.w(TAG, "Texture file does not exist: $texturePath")
+            return LoadedTextureSlot(0, 0)
         }
 
-        val textureIds = IntArray(1)
-        GLES20.glGenTextures(1, textureIds, 0)
-        val generatedTextureId = textureIds[0]
-        if (generatedTextureId == 0) {
-            Log.w(TAG, "Failed to allocate OpenGL texture id for: $normalizedPath")
-            return 0
-        }
-
-        val uploadSuccess = uploadTexturePixels(generatedTextureId, normalizedPath)
-        if (!uploadSuccess) {
-            GLES20.glDeleteTextures(1, textureIds, 0)
-            return 0
-        }
-
-        return generatedTextureId
-    }
-
-    private fun uploadTexturePixels(textureId: Int, texturePath: String): Boolean {
-        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
-        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
-
-        val bitmap = BitmapFactory.decodeFile(texturePath)
-        if (bitmap != null) {
-            GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
-            bitmap.recycle()
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
-            return true
+        BitmapFactory.decodeFile(texturePath)?.let { bitmap ->
+            return uploadBitmapTexture(bitmap)
         }
 
         val size = MmdNative.nativeDecodeImageSize(texturePath)
         val rgbaBytes = MmdNative.nativeDecodeImageRgba(texturePath)
         if (size == null || size.size < 2 || rgbaBytes == null) {
             Log.w(TAG, "Failed to decode texture bitmap: $texturePath")
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
-            return false
+            return LoadedTextureSlot(0, 0)
         }
 
         val width = size[0]
         val height = size[1]
         if (width <= 0 || height <= 0) {
             Log.w(TAG, "Invalid native decoded image size: ${width}x$height, file=$texturePath")
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
-            return false
+            return LoadedTextureSlot(0, 0)
         }
 
         val expectedSizeLong = width.toLong() * height.toLong() * 4L
         if (expectedSizeLong <= 0L || expectedSizeLong > Int.MAX_VALUE) {
             Log.w(TAG, "Native decoded image size overflow: file=$texturePath")
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
-            return false
+            return LoadedTextureSlot(0, 0)
         }
 
         val expectedSize = expectedSizeLong.toInt()
         if (rgbaBytes.size < expectedSize) {
             Log.w(TAG, "Native decoded image buffer too small: got=${rgbaBytes.size} expected=$expectedSize file=$texturePath")
-            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
-            return false
+            return LoadedTextureSlot(0, 0)
         }
 
+        val textureId = allocateTextureId(texturePath) ?: return LoadedTextureSlot(0, 0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
+        configureTextureParameters()
         GLES20.glPixelStorei(GLES20.GL_UNPACK_ALIGNMENT, 1)
         val rgbaBuffer = ByteBuffer.wrap(rgbaBytes, 0, expectedSize)
         GLES20.glTexImage2D(
@@ -673,14 +678,69 @@ private class MmdPreviewRenderer : GLSurfaceView.Renderer {
             rgbaBuffer
         )
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
-        return true
+        return LoadedTextureSlot(textureId, if (detectAlpha(rgbaBytes, expectedSize)) TEXTURE_FLAG_HAS_ALPHA else 0)
+    }
+
+    private fun uploadBitmapTexture(bitmap: Bitmap): LoadedTextureSlot {
+        val textureId = allocateTextureId("bitmap") ?: run {
+            bitmap.recycle()
+            return LoadedTextureSlot(0, 0)
+        }
+
+        val hasAlpha = bitmap.hasAlpha()
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
+        configureTextureParameters()
+        GLUtils.texImage2D(GLES20.GL_TEXTURE_2D, 0, bitmap, 0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+        bitmap.recycle()
+        return LoadedTextureSlot(textureId, if (hasAlpha) TEXTURE_FLAG_HAS_ALPHA else 0)
+    }
+
+    private fun allocateTextureId(debugLabel: String): Int? {
+        val textureIds = IntArray(1)
+        GLES20.glGenTextures(1, textureIds, 0)
+        val generatedTextureId = textureIds[0]
+        if (generatedTextureId == 0) {
+            Log.w(TAG, "Failed to allocate OpenGL texture id for: $debugLabel")
+            return null
+        }
+        return generatedTextureId
+    }
+
+    private fun configureTextureParameters() {
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+    }
+
+    private fun detectAlpha(rgbaBytes: ByteArray, byteCount: Int): Boolean {
+        var cursor = 3
+        while (cursor < byteCount) {
+            if (rgbaBytes[cursor].toInt() and 0xFF != 0xFF) {
+                return true
+            }
+            cursor += 4
+        }
+        return false
+    }
+
+    private fun IntArray.toDirectIntBuffer(): IntBuffer {
+        return ByteBuffer
+            .allocateDirect(size * Int.SIZE_BYTES)
+            .order(ByteOrder.nativeOrder())
+            .asIntBuffer()
+            .apply {
+                put(this@toDirectIntBuffer)
+                position(0)
+            }
     }
 
     private fun clearMesh() {
         vertexBuffer = null
         vertexCount = 0
-        drawBatchData = IntArray(0)
-        drawBatchBuffer = null
+        materialSegmentData = IntArray(0)
+        materialSegmentBuffer = null
     }
 
     private fun clearTextureSet() {
@@ -692,6 +752,19 @@ private class MmdPreviewRenderer : GLSurfaceView.Renderer {
         }
         textureIdsBySlot = IntArray(0)
         textureIdsBuffer = null
+        textureFlagsBySlot = IntArray(0)
+        textureFlagsBuffer = null
+    }
+
+    private fun clearPrograms() {
+        mainProgramHandles?.getOrNull(MainHandle.PROGRAM)?.takeIf { it != 0 }?.let {
+            GLES20.glDeleteProgram(it)
+        }
+        edgeProgramHandles?.getOrNull(EdgeHandle.PROGRAM)?.takeIf { it != 0 }?.let {
+            GLES20.glDeleteProgram(it)
+        }
+        mainProgramHandles = null
+        edgeProgramHandles = null
     }
 
     private fun dispatchError(message: String) {
@@ -702,15 +775,85 @@ private class MmdPreviewRenderer : GLSurfaceView.Renderer {
         }
     }
 
+    private fun createMainProgramHandles(): IntArray? {
+        val program = createProgram(mainVertexShader, mainFragmentShader)
+        if (program == 0) {
+            return null
+        }
+
+        val handles = IntArray(MAIN_HANDLE_COUNT)
+        handles[MainHandle.PROGRAM] = program
+        handles[MainHandle.POSITION] = GLES20.glGetAttribLocation(program, "aPosition")
+        handles[MainHandle.NORMAL] = GLES20.glGetAttribLocation(program, "aNormal")
+        handles[MainHandle.TEX_COORD] = GLES20.glGetAttribLocation(program, "aTexCoord")
+        handles[MainHandle.ADD_UV1] = GLES20.glGetAttribLocation(program, "aAddUv1")
+        handles[MainHandle.MVP_MATRIX] = GLES20.glGetUniformLocation(program, "uMvpMatrix")
+        handles[MainHandle.MODEL_VIEW_MATRIX] = GLES20.glGetUniformLocation(program, "uModelViewMatrix")
+        handles[MainHandle.BASE_TEXTURE] = GLES20.glGetUniformLocation(program, "uBaseTexture")
+        handles[MainHandle.SPHERE_TEXTURE] = GLES20.glGetUniformLocation(program, "uSphereTexture")
+        handles[MainHandle.TOON_TEXTURE] = GLES20.glGetUniformLocation(program, "uToonTexture")
+        handles[MainHandle.USE_BASE_TEXTURE] = GLES20.glGetUniformLocation(program, "uUseBaseTexture")
+        handles[MainHandle.USE_SPHERE_TEXTURE] = GLES20.glGetUniformLocation(program, "uUseSphereTexture")
+        handles[MainHandle.USE_TOON_TEXTURE] = GLES20.glGetUniformLocation(program, "uUseToonTexture")
+        handles[MainHandle.SPHERE_MODE] = GLES20.glGetUniformLocation(program, "uSphereMode")
+        handles[MainHandle.DIFFUSE_COLOR] = GLES20.glGetUniformLocation(program, "uDiffuseColor")
+        handles[MainHandle.AMBIENT_COLOR] = GLES20.glGetUniformLocation(program, "uAmbientColor")
+        handles[MainHandle.SPECULAR_COLOR] = GLES20.glGetUniformLocation(program, "uSpecularColor")
+        handles[MainHandle.SPECULAR_POWER] = GLES20.glGetUniformLocation(program, "uSpecularPower")
+        handles[MainHandle.TEXTURE_MUL_FACTOR] = GLES20.glGetUniformLocation(program, "uTextureMulFactor")
+        handles[MainHandle.TEXTURE_ADD_FACTOR] = GLES20.glGetUniformLocation(program, "uTextureAddFactor")
+        handles[MainHandle.SPHERE_MUL_FACTOR] = GLES20.glGetUniformLocation(program, "uSphereMulFactor")
+        handles[MainHandle.SPHERE_ADD_FACTOR] = GLES20.glGetUniformLocation(program, "uSphereAddFactor")
+        handles[MainHandle.TOON_MUL_FACTOR] = GLES20.glGetUniformLocation(program, "uToonMulFactor")
+        handles[MainHandle.TOON_ADD_FACTOR] = GLES20.glGetUniformLocation(program, "uToonAddFactor")
+
+        return if (handles.all { it >= 0 || it == program }) {
+            handles
+        } else {
+            Log.e(TAG, "Main GL program missing required handles: ${handles.joinToString()}")
+            GLES20.glDeleteProgram(program)
+            null
+        }
+    }
+
+    private fun createEdgeProgramHandles(): IntArray? {
+        val program = createProgram(edgeVertexShader, edgeFragmentShader)
+        if (program == 0) {
+            return null
+        }
+
+        val handles = IntArray(EDGE_HANDLE_COUNT)
+        handles[EdgeHandle.PROGRAM] = program
+        handles[EdgeHandle.POSITION] = GLES20.glGetAttribLocation(program, "aPosition")
+        handles[EdgeHandle.NORMAL] = GLES20.glGetAttribLocation(program, "aNormal")
+        handles[EdgeHandle.MVP_MATRIX] = GLES20.glGetUniformLocation(program, "uMvpMatrix")
+        handles[EdgeHandle.EDGE_COLOR] = GLES20.glGetUniformLocation(program, "uEdgeColor")
+        handles[EdgeHandle.EDGE_SIZE] = GLES20.glGetUniformLocation(program, "uEdgeSize")
+        handles[EdgeHandle.EDGE_SCALE] = GLES20.glGetUniformLocation(program, "uEdgeScale")
+
+        return if (handles.all { it >= 0 || it == program }) {
+            handles
+        } else {
+            Log.e(TAG, "Edge GL program missing required handles: ${handles.joinToString()}")
+            GLES20.glDeleteProgram(program)
+            null
+        }
+    }
+
     private fun createProgram(vertexCode: String, fragmentCode: String): Int {
         val vertexShader = loadShader(GLES20.GL_VERTEX_SHADER, vertexCode)
         if (vertexShader == 0) return 0
 
         val fragmentShader = loadShader(GLES20.GL_FRAGMENT_SHADER, fragmentCode)
-        if (fragmentShader == 0) return 0
+        if (fragmentShader == 0) {
+            GLES20.glDeleteShader(vertexShader)
+            return 0
+        }
 
         val shaderProgram = GLES20.glCreateProgram()
         if (shaderProgram == 0) {
+            GLES20.glDeleteShader(vertexShader)
+            GLES20.glDeleteShader(fragmentShader)
             return 0
         }
 
@@ -723,6 +866,8 @@ private class MmdPreviewRenderer : GLSurfaceView.Renderer {
         if (linkStatus[0] == 0) {
             Log.e(TAG, "Program link error: ${GLES20.glGetProgramInfoLog(shaderProgram)}")
             GLES20.glDeleteProgram(shaderProgram)
+            GLES20.glDeleteShader(vertexShader)
+            GLES20.glDeleteShader(fragmentShader)
             return 0
         }
 

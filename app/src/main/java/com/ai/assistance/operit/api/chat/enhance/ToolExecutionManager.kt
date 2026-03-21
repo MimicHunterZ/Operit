@@ -1,5 +1,7 @@
 package com.ai.assistance.operit.api.chat.enhance
 
+import android.content.Context
+import com.ai.assistance.operit.R
 import com.ai.assistance.operit.util.AppLogger
 import com.ai.assistance.operit.core.tools.AIToolHandler
 import com.ai.assistance.operit.core.tools.StringResultData
@@ -8,6 +10,7 @@ import com.ai.assistance.operit.data.model.ToolInvocation
 import com.ai.assistance.operit.data.model.ToolResult
 import com.ai.assistance.operit.core.tools.packTool.PackageManager
 import com.ai.assistance.operit.util.stream.StreamCollector
+import com.ai.assistance.operit.data.preferences.CharacterCardToolAccessResolver
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -62,6 +65,61 @@ object ToolExecutionManager {
 
     private fun resolveDisplayToolName(tool: AITool): String {
         return resolveToolTarget(tool).displayName
+    }
+
+    private fun getParameterValue(tool: AITool, name: String): String? {
+        return tool.parameters.firstOrNull { it.name == name }?.value?.trim()
+    }
+
+    private fun isInvocationAllowedForRoleCard(
+        invocation: ToolInvocation,
+        roleCardToolAccess: com.ai.assistance.operit.data.preferences.ResolvedCharacterCardToolAccess
+    ): Boolean {
+        val toolName = invocation.tool.name.trim()
+
+        return when {
+            toolName == "use_package" -> {
+                if (!roleCardToolAccess.isBuiltinToolAllowed("use_package")) {
+                    false
+                } else {
+                    val sourceName = getParameterValue(invocation.tool, "package_name").orEmpty()
+                    sourceName.isBlank() || roleCardToolAccess.isExternalSourceAllowed(sourceName)
+                }
+            }
+
+            toolName == "package_proxy" -> {
+                if (!roleCardToolAccess.isBuiltinToolAllowed("package_proxy")) {
+                    false
+                } else {
+                    val resolvedTarget = resolveToolTarget(invocation.tool).tool.name.trim()
+                    if (resolvedTarget.isBlank() || !resolvedTarget.contains(':')) {
+                        true
+                    } else {
+                        val sourceName = resolvedTarget.substringBefore(':').trim()
+                        sourceName.isBlank() || roleCardToolAccess.isExternalSourceAllowed(sourceName)
+                    }
+                }
+            }
+
+            toolName.contains(':') -> {
+                val sourceName = toolName.substringBefore(':').trim()
+                sourceName.isBlank() || roleCardToolAccess.isExternalSourceAllowed(sourceName)
+            }
+
+            else -> roleCardToolAccess.isBuiltinToolAllowed(toolName)
+        }
+    }
+
+    private fun buildRoleCardDeniedResult(
+        context: Context,
+        invocation: ToolInvocation
+    ): ToolResult {
+        return ToolResult(
+            toolName = resolveDisplayToolName(invocation.tool),
+            success = false,
+            result = StringResultData(""),
+            error = context.getString(R.string.character_card_tool_access_denied_runtime)
+        )
     }
 
     private fun resolveProxyParameters(tool: AITool): List<ToolParameter> {
@@ -272,6 +330,7 @@ object ToolExecutionManager {
      */
     suspend fun executeInvocations(
         invocations: List<ToolInvocation>,
+        context: Context,
         toolHandler: AIToolHandler,
         packageManager: PackageManager,
         collector: StreamCollector<String>,
@@ -285,10 +344,45 @@ object ToolExecutionManager {
             toolHandler.registerDefaultTools()
         }
 
-        // 1. 权限检查
+        val roleCardToolAccess = if (callerCardId.isNullOrBlank()) {
+            null
+        } else {
+            runCatching {
+                CharacterCardToolAccessResolver
+                    .getInstance(context)
+                    .resolve(callerCardId, packageManager)
+            }.onFailure { error ->
+                AppLogger.e(TAG, "角色卡工具权限解析失败: callerCardId=$callerCardId", error)
+            }.getOrNull()
+        }
+
+        // 1. 角色卡工具权限拦截（优先于权限弹窗与包自动激活）
+        val roleCardPermittedInvocations = mutableListOf<ToolInvocation>()
+        val roleCardDeniedResults = mutableListOf<ToolResult>()
+        for (invocation in invocations) {
+            val deniedResult = if (roleCardToolAccess?.customEnabled == true &&
+                !isInvocationAllowedForRoleCard(invocation, roleCardToolAccess)
+            ) {
+                buildRoleCardDeniedResult(context, invocation)
+            } else {
+                null
+            }
+
+            if (deniedResult == null) {
+                roleCardPermittedInvocations.add(invocation)
+            } else {
+                roleCardDeniedResults.add(deniedResult)
+                toolHandler.notifyToolExecutionResult(invocation.tool, deniedResult)
+                val toolResultStatusContent =
+                    ConversationMarkupManager.formatToolResultForMessage(deniedResult)
+                collector.emit(ensureEndsWithNewline(toolResultStatusContent))
+            }
+        }
+
+        // 2. 权限检查
         val permittedInvocations = mutableListOf<ToolInvocation>()
         val permissionDeniedResults = mutableListOf<ToolResult>()
-        for (invocation in invocations) {
+        for (invocation in roleCardPermittedInvocations) {
             toolHandler.notifyToolCallRequested(invocation.tool)
             val (hasPermission, errorResult) = checkToolPermission(toolHandler, invocation)
             if (hasPermission) {
@@ -341,7 +435,7 @@ object ToolExecutionManager {
                 }
             }
 
-        // 2. 按并行/串行对工具进行分组
+        // 3. 按并行/串行对工具进行分组
         val parallelizableToolNames = setOf(
             "list_files", "read_file", "read_file_part", "read_file_full", "file_exists",
             "find_files", "file_info", "grep_code", "calculate", "ffmpeg_info",
@@ -353,7 +447,7 @@ object ToolExecutionManager {
             )
         }
 
-        // 3. 执行工具并收集聚合结果
+        // 4. 执行工具并收集聚合结果
         val executionResults = ConcurrentHashMap<ToolInvocation, ToolResult>()
 
         // 启动并行工具
@@ -373,11 +467,11 @@ object ToolExecutionManager {
         // 等待所有并行任务完成
         parallelJobs.awaitAll()
 
-        // 4. 按原始顺序重新排序结果
+        // 5. 按原始顺序重新排序结果
         val orderedAggregated = injectedInvocations.mapNotNull { executionResults[it] }
 
-        // 5. 组合所有结果并返回
-        permissionDeniedResults + orderedAggregated
+        // 6. 组合所有结果并返回
+        roleCardDeniedResults + permissionDeniedResults + orderedAggregated
     }
 
     /**

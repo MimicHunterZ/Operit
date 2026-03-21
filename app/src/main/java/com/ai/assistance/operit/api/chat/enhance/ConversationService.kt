@@ -22,6 +22,7 @@ import com.ai.assistance.operit.data.preferences.DisplayPreferencesManager
 import com.ai.assistance.operit.data.preferences.WaifuPreferences
 import com.ai.assistance.operit.data.preferences.CharacterCardManager
 import com.ai.assistance.operit.data.preferences.ActivePromptManager
+import com.ai.assistance.operit.data.preferences.CharacterCardToolAccessResolver
 import com.ai.assistance.operit.data.model.PromptFunctionType
 import com.ai.assistance.operit.data.preferences.preferencesManager
 import com.ai.assistance.operit.core.avatar.impl.factory.AvatarModelFactoryImpl
@@ -63,6 +64,7 @@ class ConversationService(
     private val displayPreferencesManager = DisplayPreferencesManager.getInstance(context)
     private val waifuPreferences = WaifuPreferences.getInstance(context)
     private val characterCardManager = CharacterCardManager.getInstance(context)
+    private val characterCardToolAccessResolver = CharacterCardToolAccessResolver.getInstance(context)
     private val activePromptManager = ActivePromptManager.getInstance(context)
     private val userPreferencesManager = preferencesManager
     private val avatarRepository by lazy {
@@ -332,6 +334,7 @@ class ConversationService(
                 val disableUserPreferenceDescription =
                         apiPreferences.disableUserPreferenceDescriptionFlow.first()
                 val disableLatexDescription = apiPreferences.disableLatexDescriptionFlow.first()
+                val disableStatusTags = apiPreferences.disableStatusTagsFlow.first()
                 val toolPromptVisibility = runCatching {
                     apiPreferences.toolPromptVisibilityFlow.first()
                 }.getOrElse { emptyMap() }
@@ -342,6 +345,11 @@ class ConversationService(
 
                 val useEnglish = LocaleUtils.getCurrentLanguage(context).lowercase().startsWith("en")
                 resolvedUseEnglish = useEnglish
+                val roleCardToolAccess = characterCardToolAccessResolver.resolve(
+                    roleCardId = effectiveRoleCardId,
+                    packageManager = packageManager,
+                    globalToolVisibility = toolPromptVisibility
+                )
 
                 // 获取系统提示词，现在传入workspacePath和识图配置状态
                 val systemPrompt = SystemPromptConfig.getSystemPromptWithCustomPrompts(
@@ -364,7 +372,11 @@ class ConversationService(
                     useToolCallApi = useToolCallApi,
                     strictToolCall = strictToolCall,
                     disableLatexDescription = disableLatexDescription,
-                    toolVisibility = toolPromptVisibility,
+                    disableStatusTags = disableStatusTags,
+                    toolVisibility = roleCardToolAccess.effectiveBuiltinToolVisibility,
+                    allowedPackageNames = roleCardToolAccess.allowedPackageNames,
+                    allowedSkillNames = roleCardToolAccess.allowedSkillNames,
+                    allowedMcpServerNames = roleCardToolAccess.allowedMcpServerNames,
                     enableGroupOrchestrationHint = enableGroupOrchestrationHint,
                     groupOrchestrationRoleName = activeCard?.name?.takeIf { it.isNotBlank() }
                         ?: context.getString(R.string.app_name),

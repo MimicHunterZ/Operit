@@ -181,6 +181,7 @@ class ChatViewModel(private val context: Context) : ViewModel() {
         apiConfigDelegate.disableUserPreferenceDescription
     }
     val disableLatexDescription: StateFlow<Boolean> by lazy { apiConfigDelegate.disableLatexDescription }
+    val disableStatusTags: StateFlow<Boolean> by lazy { apiConfigDelegate.disableStatusTags }
 
     val summaryTokenThreshold: StateFlow<Float> by lazy { apiConfigDelegate.summaryTokenThreshold }
     val enableSummary: StateFlow<Boolean> by lazy { apiConfigDelegate.enableSummary }
@@ -641,6 +642,10 @@ class ChatViewModel(private val context: Context) : ViewModel() {
 
     fun toggleDisableLatexDescription() {
         apiConfigDelegate.toggleDisableLatexDescription()
+    }
+
+    fun toggleDisableStatusTags() {
+        apiConfigDelegate.toggleDisableStatusTags()
     }
 
     // 聊天历史相关方法

@@ -134,14 +134,14 @@
 
 【功能模型与模型配置】
 1) 模型配置（Model Config）：
-- 每个模型配置是一套完整连接参数（provider / endpoint / api key / model_name / 各能力开关）。
+- 每个模型配置是一套完整连接参数（provider / endpoint / api key / model_name / custom_headers / 各能力开关）。
 - 可以新增、删除、修改；删除默认配置 `default` 是禁止的。
 2) 功能模型（Function Model）：
 - 每个功能类型（如 CHAT/SUMMARY/TRANSLATION 等）会绑定到一个模型配置。
 - 当一个配置里 `model_name` 写了多个模型（逗号分隔），还要指定 `model_index` 选择第几个。
 3) 关键工具（优先使用）：
 - `list_model_configs`：查看全部模型配置 + 当前功能绑定。
-- `create_model_config`：新增模型配置（可带初始 provider/endpoint/key/model_name）。
+- `create_model_config`：新增模型配置（可带初始 provider/endpoint/key/model_name/custom_headers）。
 - `update_model_config`：修改已有配置（按 config_id）。
 - `delete_model_config`：删除配置（默认配置不可删）。
 - `list_function_model_configs`：仅列出功能 -> 配置绑定关系（轻量）。
@@ -358,14 +358,14 @@
 
 [Function model and model config]
 1) Model config:
-- Each model config is one full connection profile (provider / endpoint / api key / model_name / capability switches).
+- Each model config is one full connection profile (provider / endpoint / api key / model_name / custom_headers / capability switches).
 - Configs can be created, updated, and deleted; deleting the default `default` config is forbidden.
 2) Function model binding:
 - Each function type (for example CHAT/SUMMARY/TRANSLATION) is bound to one model config.
 - If `model_name` contains multiple models (comma-separated), `model_index` selects which one to use.
 3) Key tools (prefer these):
 - `list_model_configs`: list all model configs and current function bindings.
-- `create_model_config`: create a new model config (with optional initial provider/endpoint/key/model_name).
+- `create_model_config`: create a new model config (with optional initial provider/endpoint/key/model_name/custom_headers).
 - `update_model_config`: update an existing config by config_id.
 - `delete_model_config`: delete a config (default cannot be deleted).
 - `list_function_model_configs`: list function -> config bindings only (lightweight).
@@ -1011,6 +1011,15 @@
           }
           type: string
           required: false
+        },
+        {
+          name: "custom_headers"
+          description: {
+            zh: "可选，自定义请求头 JSON 对象字符串"
+            en: "Optional custom request headers JSON object string"
+          }
+          type: string
+          required: false
         }
       ]
     },
@@ -1206,6 +1215,15 @@
           description: {
             zh: "可选，自定义参数 JSON 字符串"
             en: "Optional custom parameters JSON string"
+          }
+          type: string
+          required: false
+        },
+        {
+          name: "custom_headers"
+          description: {
+            zh: "可选，自定义请求头 JSON 对象字符串"
+            en: "Optional custom request headers JSON object string"
           }
           type: string
           required: false
@@ -2589,6 +2607,7 @@ async function create_model_config(params?: {
   repetition_penalty_enabled?: boolean;
   repetition_penalty?: number;
   custom_parameters?: string;
+  custom_headers?: string;
 }) {
   try {
     const options = { ...(params ?? {}) };
@@ -2628,6 +2647,7 @@ async function update_model_config(params?: {
   repetition_penalty_enabled?: boolean;
   repetition_penalty?: number;
   custom_parameters?: string;
+  custom_headers?: string;
   enable_direct_image_processing?: boolean;
   enable_direct_audio_processing?: boolean;
   enable_direct_video_processing?: boolean;

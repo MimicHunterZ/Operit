@@ -7,6 +7,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.ai.assistance.operit.data.backup.OperitBackupDirs
 import com.ai.assistance.operit.data.model.CharacterCard
 import com.ai.assistance.operit.data.model.CharacterCardChatModelBindingMode
+import com.ai.assistance.operit.data.model.CharacterCardToolAccessConfig
 import com.ai.assistance.operit.data.model.PromptTag
 import com.ai.assistance.operit.data.model.TagType
 import com.ai.assistance.operit.data.model.TavernCharacterCard
@@ -27,6 +28,9 @@ import com.google.gson.JsonSyntaxException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.first
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 import java.util.UUID
 import com.ai.assistance.operit.util.AppLogger
@@ -102,6 +106,37 @@ class CharacterCardManager private constructor(private val context: Context) {
     }
 
     internal fun observeActiveCharacterCardId(): Flow<String?> = activeCharacterCardIdFlow
+
+    private val toolAccessConfigJson = Json { ignoreUnknownKeys = true }
+
+    private fun toolAccessConfigKey(id: String) =
+        stringPreferencesKey("character_card_${id}_tool_access_config_json")
+
+    private fun parseToolAccessConfig(raw: String?): CharacterCardToolAccessConfig {
+        if (raw.isNullOrBlank()) {
+            return CharacterCardToolAccessConfig()
+        }
+        return runCatching {
+            toolAccessConfigJson.decodeFromString<CharacterCardToolAccessConfig>(raw).normalized()
+        }.getOrElse {
+            AppLogger.e("CharacterCardManager", "解析角色卡工具白名单失败", it)
+            CharacterCardToolAccessConfig()
+        }
+    }
+
+    private fun writeToolAccessConfig(
+        preferences: MutablePreferences,
+        id: String,
+        config: CharacterCardToolAccessConfig
+    ) {
+        val normalizedConfig = config.normalized()
+        val key = toolAccessConfigKey(id)
+        if (normalizedConfig == CharacterCardToolAccessConfig()) {
+            preferences.remove(key)
+            return
+        }
+        preferences[key] = toolAccessConfigJson.encodeToString(normalizedConfig)
+    }
     
     // 从Preferences中获取角色卡
     private fun getCharacterCardFromPreferences(preferences: Preferences, id: String): CharacterCard {
@@ -117,6 +152,7 @@ class CharacterCardManager private constructor(private val context: Context) {
         val chatModelBindingModeKey = stringPreferencesKey("character_card_${id}_chat_model_binding_mode")
         val chatModelConfigIdKey = stringPreferencesKey("character_card_${id}_chat_model_config_id")
         val chatModelIndexKey = intPreferencesKey("character_card_${id}_chat_model_index")
+        val toolAccessConfigKey = toolAccessConfigKey(id)
         val isDefaultKey = booleanPreferencesKey("character_card_${id}_is_default")
         val createdAtKey = longPreferencesKey("character_card_${id}_created_at")
         val updatedAtKey = longPreferencesKey("character_card_${id}_updated_at")
@@ -135,6 +171,7 @@ class CharacterCardManager private constructor(private val context: Context) {
             chatModelBindingMode = CharacterCardChatModelBindingMode.normalize(preferences[chatModelBindingModeKey]),
             chatModelConfigId = preferences[chatModelConfigIdKey],
             chatModelIndex = (preferences[chatModelIndexKey] ?: 0).coerceAtLeast(0),
+            toolAccessConfig = parseToolAccessConfig(preferences[toolAccessConfigKey]),
             isDefault = (id == DEFAULT_CHARACTER_CARD_ID) || (preferences[isDefaultKey] ?: false),
             createdAt = preferences[createdAtKey] ?: System.currentTimeMillis(),
             updatedAt = preferences[updatedAtKey] ?: System.currentTimeMillis()
@@ -219,6 +256,7 @@ class CharacterCardManager private constructor(private val context: Context) {
                 preferences[chatModelConfigIdKey] = newCard.chatModelConfigId
             }
             preferences[intPreferencesKey("character_card_${id}_chat_model_index")] = newCard.chatModelIndex.coerceAtLeast(0)
+            writeToolAccessConfig(preferences, id, newCard.toolAccessConfig)
             preferences[booleanPreferencesKey("character_card_${id}_is_default")] = newCard.isDefault
             preferences[longPreferencesKey("character_card_${id}_created_at")] = newCard.createdAt
             preferences[longPreferencesKey("character_card_${id}_updated_at")] = newCard.updatedAt
@@ -258,6 +296,7 @@ class CharacterCardManager private constructor(private val context: Context) {
                 preferences[chatModelConfigIdKey] = card.chatModelConfigId
             }
             preferences[intPreferencesKey("character_card_${card.id}_chat_model_index")] = card.chatModelIndex.coerceAtLeast(0)
+            writeToolAccessConfig(preferences, card.id, card.toolAccessConfig)
             
             // 更新修改时间
             preferences[longPreferencesKey("character_card_${card.id}_updated_at")] = System.currentTimeMillis()
@@ -289,6 +328,7 @@ class CharacterCardManager private constructor(private val context: Context) {
                 "character_card_${id}_chat_model_binding_mode",
                 "character_card_${id}_chat_model_config_id",
                 "character_card_${id}_chat_model_index",
+                "character_card_${id}_tool_access_config_json",
                 "character_card_${id}_is_default",
                 "character_card_${id}_created_at",
                 "character_card_${id}_updated_at"
@@ -444,6 +484,7 @@ class CharacterCardManager private constructor(private val context: Context) {
         val chatModelBindingModeKey = stringPreferencesKey("character_card_${id}_chat_model_binding_mode")
         val chatModelConfigIdKey = stringPreferencesKey("character_card_${id}_chat_model_config_id")
         val chatModelIndexKey = intPreferencesKey("character_card_${id}_chat_model_index")
+        val toolAccessConfigKey = toolAccessConfigKey(id)
         val isDefaultKey = booleanPreferencesKey("character_card_${id}_is_default")
         val createdAtKey = longPreferencesKey("character_card_${id}_created_at")
         val updatedAtKey = longPreferencesKey("character_card_${id}_updated_at")
@@ -460,6 +501,7 @@ class CharacterCardManager private constructor(private val context: Context) {
         preferences[chatModelBindingModeKey] = CharacterCardChatModelBindingMode.FOLLOW_GLOBAL
         preferences.remove(chatModelConfigIdKey)
         preferences[chatModelIndexKey] = 0
+        preferences.remove(toolAccessConfigKey)
         preferences[isDefaultKey] = true
         preferences[createdAtKey] = System.currentTimeMillis()
         preferences[updatedAtKey] = System.currentTimeMillis()
@@ -484,6 +526,48 @@ class CharacterCardManager private constructor(private val context: Context) {
         val characterCards: List<CharacterCard> = emptyList(),
         val promptTags: List<PromptTag> = emptyList()
     )
+
+    private data class CharacterCardImportPayload(
+        val id: String = "",
+        val name: String = "",
+        val description: String = "",
+        val characterSetting: String = "",
+        val openingStatement: String = "",
+        val otherContentChat: String = "",
+        val otherContentVoice: String = "",
+        val attachedTagIds: List<String> = emptyList(),
+        val advancedCustomPrompt: String = "",
+        val marks: String = "",
+        val chatModelBindingMode: String = CharacterCardChatModelBindingMode.FOLLOW_GLOBAL,
+        val chatModelConfigId: String? = null,
+        val chatModelIndex: Int = 0,
+        val toolAccessConfig: CharacterCardToolAccessConfig? = null,
+        val isDefault: Boolean = false,
+        val createdAt: Long = System.currentTimeMillis(),
+        val updatedAt: Long = System.currentTimeMillis()
+    ) {
+        fun toCharacterCard(): CharacterCard {
+            return CharacterCard(
+                id = id,
+                name = name,
+                description = description,
+                characterSetting = characterSetting,
+                openingStatement = openingStatement,
+                otherContentChat = otherContentChat,
+                otherContentVoice = otherContentVoice,
+                attachedTagIds = attachedTagIds,
+                advancedCustomPrompt = advancedCustomPrompt,
+                marks = marks,
+                chatModelBindingMode = CharacterCardChatModelBindingMode.normalize(chatModelBindingMode),
+                chatModelConfigId = chatModelConfigId?.takeIf { it.isNotBlank() },
+                chatModelIndex = chatModelIndex.coerceAtLeast(0),
+                toolAccessConfig = toolAccessConfig?.normalized() ?: CharacterCardToolAccessConfig(),
+                isDefault = isDefault,
+                createdAt = createdAt,
+                updatedAt = updatedAt
+            )
+        }
+    }
 
     data class CharacterCardImportResult(
         val new: Int,
@@ -532,7 +616,9 @@ class CharacterCardManager private constructor(private val context: Context) {
             if (root.isJsonObject && root.asJsonObject.has("characterCards")) {
                 val rootObject = root.asJsonObject
                 val cardsArr = rootObject.get("characterCards")
-                val parsedCards = gson.fromJson(cardsArr, Array<CharacterCard>::class.java)?.toList() ?: emptyList()
+                val parsedCards = gson.fromJson(cardsArr, Array<CharacterCardImportPayload>::class.java)
+                    ?.map { it.toCharacterCard() }
+                    ?: emptyList()
                 val parsedTags = if (rootObject.has("promptTags")) {
                     val tagsArr = rootObject.get("promptTags")
                     gson.fromJson(tagsArr, Array<PromptTag>::class.java)?.toList() ?: emptyList()
@@ -541,7 +627,9 @@ class CharacterCardManager private constructor(private val context: Context) {
                 }
                 parsedCards to parsedTags
             } else if (root.isJsonArray) {
-                val parsedCards = gson.fromJson(root, Array<CharacterCard>::class.java)?.toList() ?: emptyList()
+                val parsedCards = gson.fromJson(root, Array<CharacterCardImportPayload>::class.java)
+                    ?.map { it.toCharacterCard() }
+                    ?: emptyList()
                 parsedCards to emptyList()
             } else {
                 emptyList<CharacterCard>() to emptyList<PromptTag>()
@@ -624,6 +712,7 @@ class CharacterCardManager private constructor(private val context: Context) {
                 preferences[chatModelConfigIdKey] = card.chatModelConfigId
             }
             preferences[intPreferencesKey("character_card_${id}_chat_model_index")] = card.chatModelIndex.coerceAtLeast(0)
+            writeToolAccessConfig(preferences, id, card.toolAccessConfig)
             preferences[booleanPreferencesKey("character_card_${id}_is_default")] = card.isDefault
             preferences[longPreferencesKey("character_card_${id}_created_at")] = card.createdAt
             preferences[longPreferencesKey("character_card_${id}_updated_at")] = card.updatedAt
@@ -728,6 +817,7 @@ class CharacterCardManager private constructor(private val context: Context) {
                     chatModelBindingMode = CharacterCardChatModelBindingMode.normalize(operitPayload.chatModelBindingMode),
                     chatModelConfigId = operitPayload.chatModelConfigId?.takeIf { it.isNotBlank() },
                     chatModelIndex = operitPayload.chatModelIndex.coerceAtLeast(0),
+                    toolAccessConfig = operitPayload.toolAccessConfig?.normalized() ?: CharacterCardToolAccessConfig(),
                     isDefault = false,
                     createdAt = System.currentTimeMillis(),
                     updatedAt = System.currentTimeMillis()
@@ -792,7 +882,8 @@ class CharacterCardManager private constructor(private val context: Context) {
                     marks = card.marks,
                     chatModelBindingMode = CharacterCardChatModelBindingMode.normalize(card.chatModelBindingMode),
                     chatModelConfigId = card.chatModelConfigId?.takeIf { it.isNotBlank() },
-                    chatModelIndex = card.chatModelIndex.coerceAtLeast(0)
+                    chatModelIndex = card.chatModelIndex.coerceAtLeast(0),
+                    toolAccessConfig = card.toolAccessConfig.normalized()
                 )
             )
 

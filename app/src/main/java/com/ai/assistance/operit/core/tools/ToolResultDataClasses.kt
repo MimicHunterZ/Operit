@@ -1819,6 +1819,8 @@ data class ModelConfigResultItem(
     val repetitionPenalty: Float,
     val hasCustomParameters: Boolean,
     val customParameters: String,
+    val hasCustomHeaders: Boolean,
+    val customHeaders: String,
     val contextLength: Float,
     val maxContextLength: Float,
     val enableMaxContextMode: Boolean,

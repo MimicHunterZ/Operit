@@ -1,6 +1,7 @@
 package com.ai.assistance.operit.ui.features.settings.components
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -8,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -21,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -32,14 +35,20 @@ import coil.compose.rememberAsyncImagePainter
 import com.ai.assistance.operit.R
 import com.ai.assistance.operit.data.model.CharacterCard
 import com.ai.assistance.operit.data.model.CharacterCardChatModelBindingMode
+import com.ai.assistance.operit.data.model.CharacterCardToolAccessConfig
 import com.ai.assistance.operit.data.model.ModelConfigSummary
 import com.ai.assistance.operit.data.model.PromptTag
 import com.ai.assistance.operit.data.model.getModelByIndex
 import com.ai.assistance.operit.data.model.getModelList
 import com.ai.assistance.operit.data.model.getValidModelIndex
+import com.ai.assistance.operit.core.config.SystemToolPrompts
+import com.ai.assistance.operit.core.tools.AIToolHandler
+import com.ai.assistance.operit.core.tools.packTool.PackageManager
 import com.ai.assistance.operit.data.preferences.ModelConfigManager
 import com.ai.assistance.operit.data.preferences.UserPreferencesManager
+import com.ai.assistance.operit.data.skill.SkillRepository
 import com.ai.assistance.operit.api.chat.EnhancedAIService
+import com.ai.assistance.operit.util.LocaleUtils
 import kotlinx.coroutines.launch
 
 // 角色卡名片对话框
@@ -72,8 +81,12 @@ fun CharacterCardDialog(
     var fixedChatModelIndex by remember(characterCard.id) {
         mutableStateOf(characterCard.chatModelIndex.coerceAtLeast(0))
     }
+    var toolAccessConfig by remember(characterCard.id) {
+        mutableStateOf(characterCard.toolAccessConfig.normalized())
+    }
     var showFixedConfigPickerDialog by remember(characterCard.id) { mutableStateOf(false) }
     var popupExpandedFixedConfigId by remember(characterCard.id) { mutableStateOf<String?>(null) }
+    var showToolAccessDialog by remember(characterCard.id) { mutableStateOf(false) }
     var showAdvanced by remember { mutableStateOf(false) }
     
     // 翻译相关状态
@@ -87,8 +100,26 @@ fun CharacterCardDialog(
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val useEnglish = remember(context) {
+        LocaleUtils.getCurrentLanguage(context).lowercase().startsWith("en")
+    }
+    val toolHandler = remember { AIToolHandler.getInstance(context) }
+    val packageManager = remember { PackageManager.getInstance(context, toolHandler) }
+    val skillRepository = remember { SkillRepository.getInstance(context) }
     val modelConfigManager = remember { ModelConfigManager(context) }
     var configSummaries by remember { mutableStateOf<List<ModelConfigSummary>>(emptyList()) }
+    var builtinToolOptions by remember(characterCard.id) {
+        mutableStateOf<List<CharacterCardToolAccessOption>>(emptyList())
+    }
+    var packageOptions by remember(characterCard.id) {
+        mutableStateOf<List<CharacterCardToolAccessOption>>(emptyList())
+    }
+    var skillOptions by remember(characterCard.id) {
+        mutableStateOf<List<CharacterCardToolAccessOption>>(emptyList())
+    }
+    var mcpOptions by remember(characterCard.id) {
+        mutableStateOf<List<CharacterCardToolAccessOption>>(emptyList())
+    }
     val avatarUri by userPreferencesManager.getAiAvatarForCharacterCardFlow(characterCard.id)
         .collectAsState(initial = null)
 
@@ -117,6 +148,57 @@ fun CharacterCardDialog(
             showFixedConfigPickerDialog = false
             popupExpandedFixedConfigId = null
         }
+    }
+
+    LaunchedEffect(characterCard.id, showToolAccessDialog, useEnglish) {
+        builtinToolOptions = SystemToolPrompts.getManageableToolPrompts(useEnglish).map { tool ->
+            CharacterCardToolAccessOption(
+                key = tool.name,
+                title = tool.name,
+                subtitle = listOf(tool.categoryName, tool.description)
+                    .filter { it.isNotBlank() }
+                    .joinToString(" · ")
+            )
+        }
+        packageOptions = buildCharacterCardPackageToolAccessOptions(context, packageManager, useEnglish)
+        skillOptions = skillRepository.getAiVisibleSkillPackages()
+            .toSortedMap(String.CASE_INSENSITIVE_ORDER)
+            .map { (skillName, skillPackage) ->
+                CharacterCardToolAccessOption(
+                    key = skillName,
+                    title = skillName,
+                    subtitle = skillPackage.description
+                )
+            }
+        mcpOptions = packageManager.getAvailableServerPackages()
+            .toSortedMap(String.CASE_INSENSITIVE_ORDER)
+            .map { (serverName, serverConfig) ->
+                CharacterCardToolAccessOption(
+                    key = serverName,
+                    title = serverName,
+                    subtitle = serverConfig.description
+                )
+            }
+    }
+
+    val normalizedToolAccessConfig = toolAccessConfig.normalized()
+    val toolAccessSummary = if (!normalizedToolAccessConfig.enabled) {
+        stringResource(R.string.character_card_tool_access_follow_global)
+    } else if (
+        normalizedToolAccessConfig.allowedBuiltinTools.isEmpty() &&
+        normalizedToolAccessConfig.allowedPackages.isEmpty() &&
+        normalizedToolAccessConfig.allowedSkills.isEmpty() &&
+        normalizedToolAccessConfig.allowedMcpServers.isEmpty()
+    ) {
+        stringResource(R.string.character_card_tool_access_summary_empty)
+    } else {
+        stringResource(
+            R.string.character_card_tool_access_summary_counts,
+            normalizedToolAccessConfig.allowedBuiltinTools.size,
+            normalizedToolAccessConfig.allowedPackages.size,
+            normalizedToolAccessConfig.allowedSkills.size,
+            normalizedToolAccessConfig.allowedMcpServers.size
+        )
     }
 
     Dialog(
@@ -401,6 +483,23 @@ fun CharacterCardDialog(
                         } else {
                             0
                         }
+                        val chatModelBindingSummary = if (
+                            chatModelBindingMode == CharacterCardChatModelBindingMode.FOLLOW_GLOBAL
+                        ) {
+                            context.getString(R.string.character_card_chat_model_follow_global)
+                        } else {
+                            val selectedModelName = selectedFixedConfig?.let {
+                                getModelByIndex(
+                                    it.modelName,
+                                    effectiveFixedModelIndex
+                                ).ifBlank { context.getString(R.string.not_selected) }
+                            } ?: context.getString(R.string.not_selected)
+                            listOf(
+                                context.getString(R.string.character_card_chat_model_fixed_config),
+                                selectedFixedConfig?.name,
+                                selectedModelName
+                            ).filter { !it.isNullOrBlank() }.joinToString(" · ")
+                        }
 
                         Text(
                             text = stringResource(R.string.character_card_chat_model_binding),
@@ -409,24 +508,48 @@ fun CharacterCardDialog(
                             color = MaterialTheme.colorScheme.primary
                         )
 
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    chatModelBindingMode =
+                                        if (chatModelBindingMode == CharacterCardChatModelBindingMode.FIXED_CONFIG) {
+                                            CharacterCardChatModelBindingMode.FOLLOW_GLOBAL
+                                        } else {
+                                            CharacterCardChatModelBindingMode.FIXED_CONFIG
+                                        }
+                                },
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(
+                                width = 0.8.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                            )
                         ) {
-                            FilterChip(
-                                selected = chatModelBindingMode == CharacterCardChatModelBindingMode.FOLLOW_GLOBAL,
-                                onClick = {
-                                    chatModelBindingMode = CharacterCardChatModelBindingMode.FOLLOW_GLOBAL
-                                },
-                                label = { Text(stringResource(R.string.character_card_chat_model_follow_global), fontSize = 10.sp) }
-                            )
-                            FilterChip(
-                                selected = chatModelBindingMode == CharacterCardChatModelBindingMode.FIXED_CONFIG,
-                                onClick = {
-                                    chatModelBindingMode = CharacterCardChatModelBindingMode.FIXED_CONFIG
-                                },
-                                label = { Text(stringResource(R.string.character_card_chat_model_fixed_config), fontSize = 10.sp) }
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.character_card_chat_model_specify_fixed_config),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = chatModelBindingSummary,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Switch(
+                                    checked = chatModelBindingMode == CharacterCardChatModelBindingMode.FIXED_CONFIG,
+                                    onCheckedChange = null
+                                )
+                            }
                         }
 
                         if (chatModelBindingMode == CharacterCardChatModelBindingMode.FIXED_CONFIG) {
@@ -505,6 +628,94 @@ fun CharacterCardDialog(
                                 }
                             )
                         }
+
+                        Text(
+                            text = stringResource(R.string.character_card_tool_access_title),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    toolAccessConfig = normalizedToolAccessConfig.copy(
+                                        enabled = !normalizedToolAccessConfig.enabled
+                                    )
+                                },
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            border = BorderStroke(
+                                width = 0.8.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.character_card_tool_access_enable),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = toolAccessSummary,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Switch(
+                                    checked = normalizedToolAccessConfig.enabled,
+                                    onCheckedChange = null
+                                )
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showToolAccessDialog = true },
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            border = BorderStroke(
+                                width = 0.8.dp,
+                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
+                            )
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.character_card_tool_access_configure),
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = toolAccessSummary,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
                         // 高级自定义提示词
                         CompactTextFieldWithExpand(
                             value = advancedCustomPrompt,
@@ -564,6 +775,19 @@ fun CharacterCardDialog(
                             } else {
                                 0
                             }
+                            val finalToolAccessConfig = normalizedToolAccessConfig
+                            if (
+                                finalToolAccessConfig.enabled &&
+                                finalToolAccessConfig.hasExternalSelections() &&
+                                !finalToolAccessConfig.allowedBuiltinTools.contains("use_package")
+                            ) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.character_card_tool_access_requires_use_package),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                                return@Button
+                            }
                             onSave(
                                 characterCard.copy(
                                     name = name,
@@ -590,7 +814,8 @@ fun CharacterCardDialog(
                                         normalizedFixedModelIndex
                                     } else {
                                         0
-                                    }
+                                    },
+                                    toolAccessConfig = finalToolAccessConfig
                                 )
                             )
                         },
@@ -603,6 +828,17 @@ fun CharacterCardDialog(
             }
         }
     }
+
+    CharacterCardToolAccessDialog(
+        visible = showToolAccessDialog,
+        config = normalizedToolAccessConfig,
+        builtinOptions = builtinToolOptions,
+        packageOptions = packageOptions,
+        skillOptions = skillOptions,
+        mcpOptions = mcpOptions,
+        onConfirm = { toolAccessConfig = it.normalized() },
+        onDismiss = { showToolAccessDialog = false }
+    )
     
     // 全屏编辑对话框
     if (showFullScreenEdit) {
@@ -624,6 +860,251 @@ fun CharacterCardDialog(
                 showFullScreenEdit = false
             }
         )
+    }
+}
+
+private data class CharacterCardToolAccessOption(
+    val key: String,
+    val title: String,
+    val subtitle: String = ""
+)
+
+private fun buildCharacterCardPackageToolAccessOptions(
+    context: android.content.Context,
+    packageManager: PackageManager,
+    useEnglish: Boolean
+): List<CharacterCardToolAccessOption> {
+    val preferredLanguage = if (useEnglish) "en" else "zh"
+    return packageManager.getImportedPackages()
+        .asSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinct()
+        .filter { packageName ->
+            packageManager.getPackageTools(packageName) != null &&
+                !packageManager.isToolPkgContainer(packageName)
+        }
+        .toList()
+        .sortedWith(String.CASE_INSENSITIVE_ORDER)
+        .mapNotNull { packageName ->
+            val toolPackage = packageManager.getPackageTools(packageName) ?: return@mapNotNull null
+            val description = runCatching {
+                toolPackage.description.resolve(preferredLanguage)
+            }.getOrElse {
+                toolPackage.description.resolve(context)
+            }
+            CharacterCardToolAccessOption(
+                key = packageName,
+                title = packageName,
+                subtitle = description
+            )
+        }
+}
+
+private fun toggleCharacterCardToolAccessSelection(values: List<String>, key: String): List<String> {
+    return if (values.contains(key)) {
+        values.filterNot { it == key }
+    } else {
+        values + key
+    }
+}
+
+@Composable
+private fun CharacterCardToolAccessDialog(
+    visible: Boolean,
+    config: CharacterCardToolAccessConfig,
+    builtinOptions: List<CharacterCardToolAccessOption>,
+    packageOptions: List<CharacterCardToolAccessOption>,
+    skillOptions: List<CharacterCardToolAccessOption>,
+    mcpOptions: List<CharacterCardToolAccessOption>,
+    onConfirm: (CharacterCardToolAccessConfig) -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (!visible) return
+
+    var selectedTabIndex by remember(visible) { mutableStateOf(0) }
+    var localConfig by remember(visible, config) { mutableStateOf(config.normalized()) }
+    val tabTitles = listOf(
+        stringResource(R.string.character_card_tool_access_tab_builtin),
+        stringResource(R.string.character_card_tool_access_tab_package),
+        stringResource(R.string.character_card_tool_access_tab_skill),
+        stringResource(R.string.character_card_tool_access_tab_mcp)
+    )
+    val currentOptions = when (selectedTabIndex) {
+        0 -> builtinOptions
+        1 -> packageOptions
+        2 -> skillOptions
+        else -> mcpOptions
+    }
+    val selectedValues = when (selectedTabIndex) {
+        0 -> localConfig.allowedBuiltinTools
+        1 -> localConfig.allowedPackages
+        2 -> localConfig.allowedSkills
+        else -> localConfig.allowedMcpServers
+    }
+    val emptyMessage = when (selectedTabIndex) {
+        0 -> stringResource(R.string.character_card_tool_access_empty_builtin)
+        1 -> stringResource(R.string.character_card_tool_access_empty_packages)
+        2 -> stringResource(R.string.character_card_tool_access_empty_skills)
+        else -> stringResource(R.string.character_card_tool_access_empty_mcp)
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth(0.94f)
+                .wrapContentHeight(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outlineVariant
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.character_card_tool_access_title),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                ScrollableTabRow(
+                    selectedTabIndex = selectedTabIndex,
+                    edgePadding = 0.dp
+                ) {
+                    tabTitles.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTabIndex == index,
+                            onClick = { selectedTabIndex = index },
+                            text = { Text(title, fontSize = 12.sp) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    if (currentOptions.isEmpty()) {
+                        Text(
+                            text = emptyMessage,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 24.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    } else {
+                        currentOptions.forEachIndexed { index, option ->
+                            val isSelected = selectedValues.contains(option.key)
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .toggleable(
+                                        value = isSelected,
+                                        onValueChange = {
+                                            localConfig = when (selectedTabIndex) {
+                                                0 -> localConfig.copy(
+                                                    allowedBuiltinTools = toggleCharacterCardToolAccessSelection(
+                                                        localConfig.allowedBuiltinTools,
+                                                        option.key
+                                                    )
+                                                )
+                                                1 -> localConfig.copy(
+                                                    allowedPackages = toggleCharacterCardToolAccessSelection(
+                                                        localConfig.allowedPackages,
+                                                        option.key
+                                                    )
+                                                )
+                                                2 -> localConfig.copy(
+                                                    allowedSkills = toggleCharacterCardToolAccessSelection(
+                                                        localConfig.allowedSkills,
+                                                        option.key
+                                                    )
+                                                )
+                                                else -> localConfig.copy(
+                                                    allowedMcpServers = toggleCharacterCardToolAccessSelection(
+                                                        localConfig.allowedMcpServers,
+                                                        option.key
+                                                    )
+                                                )
+                                            }.normalized()
+                                        },
+                                        role = Role.Checkbox
+                                    )
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = option.title,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    if (option.subtitle.isNotBlank()) {
+                                        Text(
+                                            text = option.subtitle,
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                Checkbox(
+                                    checked = isSelected,
+                                    onCheckedChange = null
+                                )
+                            }
+
+                            if (index < currentOptions.lastIndex) {
+                                HorizontalDivider(
+                                    thickness = 0.5.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.cancel))
+                    }
+
+                    Button(
+                        onClick = {
+                            onConfirm(localConfig.normalized())
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(stringResource(R.string.save))
+                    }
+                }
+            }
+        }
     }
 }
 

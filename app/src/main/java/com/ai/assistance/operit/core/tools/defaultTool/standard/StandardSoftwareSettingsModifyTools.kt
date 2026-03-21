@@ -31,7 +31,6 @@ import com.ai.assistance.operit.data.model.ToolResult
 import com.ai.assistance.operit.data.model.getModelByIndex
 import com.ai.assistance.operit.data.model.getModelList
 import com.ai.assistance.operit.data.model.getValidModelIndex
-import com.ai.assistance.operit.data.preferences.ApiPreferences
 import com.ai.assistance.operit.data.preferences.FunctionalConfigManager
 import com.ai.assistance.operit.data.preferences.FunctionConfigMapping
 import com.ai.assistance.operit.data.preferences.ModelConfigManager
@@ -1020,13 +1019,11 @@ class StandardSoftwareSettingsModifyTools(private val context: Context) {
                         error = "Model config not found: $configId"
                     )
 
-            val customHeadersJson = ApiPreferences.getInstance(context).getCustomHeaders()
             val report =
                 ModelConfigConnectionTester.run(
                     context = context,
                     modelConfigManager = modelConfigManager,
                     config = config,
-                    customHeadersJson = customHeadersJson,
                     requestedModelIndex = requestedModelIndex
                 )
 
@@ -1295,6 +1292,15 @@ class StandardSoftwareSettingsModifyTools(private val context: Context) {
                 hasCustomParameters = json != "[]"
             )
         }
+        applyString("custom_headers") { config, value ->
+            val json = value.ifBlank { "{}" }
+            try {
+                JSONObject(json)
+            } catch (e: Exception) {
+                throw IllegalArgumentException("Invalid JSON object parameter: custom_headers")
+            }
+            config.copy(customHeaders = json)
+        }
 
         applyInt("mnn_forward_type") { config, value -> config.copy(mnnForwardType = value) }
         applyInt("mnn_thread_count") { config, value -> config.copy(mnnThreadCount = value.coerceAtLeast(1)) }
@@ -1353,6 +1359,8 @@ class StandardSoftwareSettingsModifyTools(private val context: Context) {
             repetitionPenalty = config.repetitionPenalty,
             hasCustomParameters = config.hasCustomParameters,
             customParameters = config.customParameters,
+            hasCustomHeaders = config.customHeaders.trim().let { it.isNotEmpty() && it != "{}" },
+            customHeaders = config.customHeaders,
             contextLength = config.contextLength,
             maxContextLength = config.maxContextLength,
             enableMaxContextMode = config.enableMaxContextMode,

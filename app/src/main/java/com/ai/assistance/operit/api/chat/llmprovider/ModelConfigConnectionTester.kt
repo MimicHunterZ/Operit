@@ -47,7 +47,6 @@ object ModelConfigConnectionTester {
         context: Context,
         modelConfigManager: ModelConfigManager,
         config: ModelConfigData,
-        customHeadersJson: String,
         requestedModelIndex: Int = 0,
         onActiveServiceChanged: (AIService?) -> Unit = {}
     ): ModelConnectionTestReport {
@@ -60,7 +59,6 @@ object ModelConfigConnectionTester {
         val service =
             AIServiceFactory.createService(
                 config = configForTest,
-                customHeadersJson = customHeadersJson,
                 modelConfigManager = modelConfigManager,
                 context = context
             )

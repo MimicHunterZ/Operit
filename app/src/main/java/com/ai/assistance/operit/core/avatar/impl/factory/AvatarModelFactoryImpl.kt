@@ -4,6 +4,7 @@ import com.ai.assistance.operit.core.avatar.common.factory.AvatarModelFactory
 import com.ai.assistance.operit.core.avatar.common.model.AvatarModel
 import com.ai.assistance.operit.core.avatar.common.model.AvatarType
 import com.ai.assistance.operit.core.avatar.common.state.AvatarEmotion
+import com.ai.assistance.operit.core.avatar.impl.fbx.model.FbxAvatarModel
 import com.ai.assistance.operit.core.avatar.impl.dragonbones.model.DragonBonesAvatarModel
 import com.ai.assistance.operit.core.avatar.impl.gltf.model.GltfAvatarModel
 import com.ai.assistance.operit.core.avatar.impl.mmd.model.MmdAvatarModel
@@ -26,6 +27,7 @@ class AvatarModelFactoryImpl : AvatarModelFactory {
             AvatarType.MP4 -> createMp4Model(id, name, data)
             AvatarType.MMD -> createMmdModel(id, name, data)
             AvatarType.GLTF -> createGltfModel(id, name, data)
+            AvatarType.FBX -> createFbxModel(id, name, data)
         }
     }
 
@@ -92,6 +94,7 @@ class AvatarModelFactoryImpl : AvatarModelFactory {
                 )
                 createGltfModel("default_gltf", baseName, defaultData)
             }
+            AvatarType.FBX -> null
         }
     }
 
@@ -101,7 +104,8 @@ class AvatarModelFactoryImpl : AvatarModelFactory {
             AvatarType.WEBP,
             AvatarType.MP4,
             AvatarType.MMD,
-            AvatarType.GLTF -> {
+            AvatarType.GLTF,
+            AvatarType.FBX -> {
                 val requiredKeys = getRequiredDataKeys(type)
                 requiredKeys.all { key -> data.containsKey(key) && data[key] != null }
             }
@@ -109,7 +113,14 @@ class AvatarModelFactoryImpl : AvatarModelFactory {
     }
 
     override val supportedTypes: List<AvatarType>
-        get() = listOf(AvatarType.DRAGONBONES, AvatarType.WEBP, AvatarType.MP4, AvatarType.MMD, AvatarType.GLTF)
+        get() = listOf(
+            AvatarType.DRAGONBONES,
+            AvatarType.WEBP,
+            AvatarType.MP4,
+            AvatarType.MMD,
+            AvatarType.GLTF,
+            AvatarType.FBX
+        )
 
     override fun getRequiredDataKeys(type: AvatarType): List<String> {
         return when (type) {
@@ -123,6 +134,7 @@ class AvatarModelFactoryImpl : AvatarModelFactory {
             AvatarType.MP4 -> listOf("basePath")
             AvatarType.MMD -> listOf("basePath", "modelFile")
             AvatarType.GLTF -> listOf("basePath", "modelFile")
+            AvatarType.FBX -> listOf("basePath", "modelFile")
         }
     }
 
@@ -249,6 +261,30 @@ class AvatarModelFactoryImpl : AvatarModelFactory {
                 .orEmpty()
 
             GltfAvatarModel(
+                id = id,
+                name = name,
+                basePath = basePath,
+                modelFile = modelFile,
+                defaultAnimation = defaultAnimation,
+                declaredAnimationNames = animationNames
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun createFbxModel(id: String, name: String, data: Map<String, Any>): AvatarModel? {
+        return try {
+            val basePath = data["basePath"] as? String ?: return null
+            val modelFile = data["modelFile"] as? String ?: return null
+            val defaultAnimation = data["defaultAnimation"] as? String
+            val animationNames = (data["animationNames"] as? List<*>)
+                ?.mapNotNull { it as? String }
+                ?.map { it.trim() }
+                ?.filter { it.isNotBlank() }
+                .orEmpty()
+
+            FbxAvatarModel(
                 id = id,
                 name = name,
                 basePath = basePath,

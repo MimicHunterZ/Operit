@@ -184,6 +184,10 @@ cd Operit
 ```bash
 git submodule update --init --recursive
 ```  
+如果你只想单独初始化 FBX 运行时依赖，也可以执行：  
+```bash
+git submodule update --init fbx/third_party/ufbx
+```  
 2. **下载并放置依赖库 (关键步骤！):**  
 `README.md` 中提到，项目依赖一些需要手动下载的库。请从 [这个 Google Drive 链接](https://drive.google.com/drive/folders/1g-Q_i7cf6Ua4KX9ZM6V282EEZvTVVfF7?usp=sharing) 下载所有文件，并将它们解压或放置到项目根目录下对应的 `libs` 或有 `.keep` 文件的文件夹中。  **警告：** 如果跳过此步骤，编译将因缺少依赖而失败。当前需要下载并解压这四个压缩包：`models.zip`、`subpack.zip`、`jniLibs.zip`、`libs.zip`。  
 ```bash

@@ -88,6 +88,9 @@ data class ModelConfigData(
         // 自定义参数JSON字符串
         val customParameters: String = "[]",
 
+        // 自定义请求头JSON字符串
+        val customHeaders: String = "{}",
+
         // 上下文/总结配置
         val contextLength: Float = ModelConfigDefaults.DEFAULT_CONTEXT_LENGTH,
         val maxContextLength: Float = ModelConfigDefaults.DEFAULT_MAX_CONTEXT_LENGTH,

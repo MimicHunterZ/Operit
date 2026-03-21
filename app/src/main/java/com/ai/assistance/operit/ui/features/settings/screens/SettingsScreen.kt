@@ -34,7 +34,6 @@ import android.content.Intent
 import android.net.Uri
 import com.ai.assistance.operit.R
 import com.ai.assistance.operit.data.model.FunctionType
-import com.ai.assistance.operit.data.preferences.ApiPreferences
 import com.ai.assistance.operit.data.preferences.GitHubAuthPreferences
 import com.ai.assistance.operit.data.preferences.UserPreferencesManager
 import com.ai.assistance.operit.data.repository.ChatHistoryManager
@@ -59,7 +58,7 @@ fun SettingsScreen(
         navigateToChatBackupSettings: () -> Unit,
         navigateToLanguageSettings: () -> Unit,
         navigateToSpeechServicesSettings: () -> Unit,
-        navigateToCustomHeadersSettings: () -> Unit,
+        navigateToExternalHttpChatSettings: () -> Unit,
         navigateToPersonaCardGeneration: () -> Unit,
         navigateToWaifuModeSettings: () -> Unit,
         navigateToTokenUsageStatistics: () -> Unit,
@@ -67,7 +66,6 @@ fun SettingsScreen(
         navigateToLayoutAdjustmentSettings: () -> Unit
 ) {
         val context = LocalContext.current
-        val apiPreferences = remember { ApiPreferences.getInstance(context) }
         val userPreferences = remember { UserPreferencesManager.getInstance(context) }
         val githubAuth = remember { GitHubAuthPreferences.getInstance(context) }
         val scope = rememberCoroutineScope()
@@ -94,18 +92,10 @@ fun SettingsScreen(
 
         val hasBackgroundImage = userPreferences.useBackgroundImage.collectAsState(initial = false).value
         
-        var showSaveSuccessMessage by remember { mutableStateOf(false) }
-
         val cardContainerColor = if (hasBackgroundImage) {
                 MaterialTheme.colorScheme.surface
         } else {
                 MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-        }
-
-        val componentBackgroundColor = if (hasBackgroundImage) {
-                MaterialTheme.colorScheme.surface
-        } else {
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
         }
 
         Column(
@@ -218,12 +208,6 @@ fun SettingsScreen(
                                 onClick = navigateToSpeechServicesSettings
                         )
                         
-                        CompactSettingsItem(
-                                title = stringResource(id = R.string.settings_custom_headers),
-                                subtitle = stringResource(id = R.string.settings_custom_headers_subtitle),
-                                icon = Icons.Default.AddModerator,
-                                onClick = navigateToCustomHeadersSettings
-                        )
                 }
 
                 // ======= 提示词配置 =======
@@ -281,6 +265,13 @@ fun SettingsScreen(
                                 subtitle = stringResource(id = R.string.settings_tool_permissions_subtitle),
                                 icon = Icons.Default.AdminPanelSettings,
                                 onClick = navigateToToolPermissions
+                        )
+
+                        CompactSettingsItem(
+                                title = stringResource(id = R.string.settings_external_http_chat),
+                                subtitle = stringResource(id = R.string.settings_external_http_chat_subtitle),
+                                icon = Icons.Default.SettingsEthernet,
+                                onClick = navigateToExternalHttpChatSettings
                         )
                         
                         CompactSettingsItem(

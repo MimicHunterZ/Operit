@@ -312,6 +312,12 @@
             android:foregroundServiceType="dataSync|specialUse" />
 
         <service
+            android:name=".integrations.http.ExternalChatHttpService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|specialUse" />
+
+        <service
             android:name=".core.tools.system.ScreenCaptureService"
             android:enabled="true"
             android:exported="false"

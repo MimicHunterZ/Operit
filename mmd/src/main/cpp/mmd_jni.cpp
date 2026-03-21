@@ -17,6 +17,8 @@
 
 #include <GLES2/gl2.h>
 
+#include "mmd_preview_support.h"
+
 #if defined(OPERIT_HAS_SABA) && OPERIT_HAS_SABA
 #include "Saba/Model/MMD/PMDFile.h"
 #include "Saba/Model/MMD/PMDModel.h"
@@ -32,6 +34,11 @@
 #define STB_IMAGE_IMPLEMENTATION
 #endif
 #include "stb_image.h"
+
+#ifndef TINYDDSLOADER_IMPLEMENTATION
+#define TINYDDSLOADER_IMPLEMENTATION
+#endif
+#include "tinyddsloader.h"
 #endif
 
 #define TAG "MmdNative"
@@ -215,6 +222,7 @@ struct AnimatedRuntimeCache {
     std::shared_ptr<saba::MMDModel> model;
     std::unique_ptr<saba::VMDAnimation> animation;
     std::vector<uint32_t> previewVertexIndices;
+    std::vector<float> previewAddUv1Values;
     std::vector<float> animatedVertices;
     int32_t maxMotionFrame = 0;
 };
@@ -809,8 +817,8 @@ bool loadAnimatedRuntimeCache(
         return false;
     }
 
-    PreviewRenderData previewData;
-    if (!getPreviewRenderDataCached(modelPath, &previewData, outError)) {
+    operit::mmdpreview::PreviewSceneData previewData;
+    if (!operit::mmdpreview::GetPreviewSceneDataCached(modelPath, &previewData, outError)) {
         return false;
     }
 
@@ -860,7 +868,8 @@ bool loadAnimatedRuntimeCache(
     outCache->model = std::move(model);
     outCache->animation = std::move(animation);
     outCache->previewVertexIndices = std::move(previewData.vertexIndices);
-    outCache->animatedVertices.resize(outCache->previewVertexIndices.size() * kPreviewVertexStride);
+    outCache->previewAddUv1Values = std::move(previewData.addUv1Values);
+    outCache->animatedVertices.resize(outCache->previewVertexIndices.size() * operit::mmdpreview::kPreviewVertexStride);
     outCache->maxMotionFrame = static_cast<int32_t>(outCache->animation->GetMaxKeyTime());
 
     LOGI(
@@ -936,86 +945,14 @@ bool sampleAnimatedPreviewVerticesLocked(
     model->EndAnimation();
     model->Update();
 
-    const auto* positions = model->GetUpdatePositions();
-    const auto* normals = model->GetUpdateNormals();
-    const auto* uvs = model->GetUpdateUVs();
-    const size_t modelVertexCount = model->GetVertexCount();
-
-    if (positions == nullptr || normals == nullptr || uvs == nullptr || modelVertexCount == 0) {
-        if (outError != nullptr) {
-            *outError = "animated model has no renderable vertices.";
-        }
-        return false;
-    }
-
     auto& animatedVertices = gAnimatedRuntimeCache.animatedVertices;
-    const size_t expectedFloatCount = previewVertexIndices.size() * kPreviewVertexStride;
-    if (animatedVertices.size() != expectedFloatCount) {
-        animatedVertices.resize(expectedFloatCount);
-    }
-
-    size_t invalidVertexCount = 0;
-    for (size_t index = 0; index < previewVertexIndices.size(); ++index) {
-        const uint32_t sourceIndex = previewVertexIndices[index];
-        if (sourceIndex >= modelVertexCount) {
-            if (outError != nullptr) {
-                *outError = "animated preview source index out of range.";
-            }
-            return false;
-        }
-
-        const auto& position = positions[sourceIndex];
-        const auto& normal = normals[sourceIndex];
-        const auto& uv = uvs[sourceIndex];
-        const size_t base = index * kPreviewVertexStride;
-
-        const bool validPosition =
-            std::isfinite(position.x) &&
-            std::isfinite(position.y) &&
-            std::isfinite(position.z) &&
-            std::fabs(position.x) < 100000.0f &&
-            std::fabs(position.y) < 100000.0f &&
-            std::fabs(position.z) < 100000.0f;
-        const bool validNormal =
-            std::isfinite(normal.x) &&
-            std::isfinite(normal.y) &&
-            std::isfinite(normal.z) &&
-            std::fabs(normal.x) < 1000.0f &&
-            std::fabs(normal.y) < 1000.0f &&
-            std::fabs(normal.z) < 1000.0f;
-        const bool validUv =
-            std::isfinite(uv.x) &&
-            std::isfinite(uv.y) &&
-            std::fabs(uv.x) < 1000.0f &&
-            std::fabs(uv.y) < 1000.0f;
-
-        if (!(validPosition && validNormal && validUv)) {
-            invalidVertexCount += 1;
-            continue;
-        }
-
-        animatedVertices[base] = position.x;
-        animatedVertices[base + 1] = position.y;
-        animatedVertices[base + 2] = position.z;
-        animatedVertices[base + 3] = normal.x;
-        animatedVertices[base + 4] = normal.y;
-        animatedVertices[base + 5] = normal.z;
-        animatedVertices[base + 6] = uv.x;
-        animatedVertices[base + 7] = uv.y;
-    }
-
-    if (invalidVertexCount >= previewVertexIndices.size()) {
-        if (outError != nullptr) {
-            *outError = "animated preview produced only invalid vertices.";
-        }
+    if (!operit::mmdpreview::CopyCurrentAnimatedVertices(
+            *model,
+            previewVertexIndices,
+            gAnimatedRuntimeCache.previewAddUv1Values,
+            &animatedVertices,
+            outError)) {
         return false;
-    }
-
-    if (invalidVertexCount > 0) {
-        LOGE(
-            "sampleAnimatedPreviewVerticesLocked filtered %zu invalid vertices for stability.",
-            invalidVertexCount
-        );
     }
 
     *outVertexData = animatedVertices.data();
@@ -1198,6 +1135,218 @@ bool buildAnimatedPreviewMeshAuto(
     );
 }
 
+glm::u8vec4 decodeRgb565(uint16_t value) {
+    const uint8_t r = static_cast<uint8_t>(((value >> 11) & 0x1F) * 255 / 31);
+    const uint8_t g = static_cast<uint8_t>(((value >> 5) & 0x3F) * 255 / 63);
+    const uint8_t b = static_cast<uint8_t>((value & 0x1F) * 255 / 31);
+    return glm::u8vec4(r, g, b, 255);
+}
+
+void writeRgbaPixel(std::vector<uint8_t>* pixels, uint32_t width, uint32_t height, uint32_t x, uint32_t y, const glm::u8vec4& color) {
+    if (pixels == nullptr || x >= width || y >= height) {
+        return;
+    }
+
+    const size_t base = (static_cast<size_t>(y) * width + x) * 4;
+    (*pixels)[base] = color.r;
+    (*pixels)[base + 1] = color.g;
+    (*pixels)[base + 2] = color.b;
+    (*pixels)[base + 3] = color.a;
+}
+
+glm::u8vec4 interpolateColor(const glm::u8vec4& lhs, const glm::u8vec4& rhs, int lhsWeight, int rhsWeight, int divisor, uint8_t alpha = 255) {
+    return glm::u8vec4(
+        static_cast<uint8_t>((lhs.r * lhsWeight + rhs.r * rhsWeight) / divisor),
+        static_cast<uint8_t>((lhs.g * lhsWeight + rhs.g * rhsWeight) / divisor),
+        static_cast<uint8_t>((lhs.b * lhsWeight + rhs.b * rhsWeight) / divisor),
+        alpha
+    );
+}
+
+void decompressBc1Block(
+    const tinyddsloader::DDSFile::BC1Block& block,
+    uint32_t blockX,
+    uint32_t blockY,
+    uint32_t width,
+    uint32_t height,
+    std::vector<uint8_t>* pixels
+) {
+    glm::u8vec4 colors[4];
+    colors[0] = decodeRgb565(block.m_color0);
+    colors[1] = decodeRgb565(block.m_color1);
+    if (block.m_color0 > block.m_color1) {
+        colors[2] = interpolateColor(colors[0], colors[1], 2, 1, 3);
+        colors[3] = interpolateColor(colors[0], colors[1], 1, 2, 3);
+    } else {
+        colors[2] = interpolateColor(colors[0], colors[1], 1, 1, 2);
+        colors[3] = glm::u8vec4(0, 0, 0, 0);
+    }
+
+    const uint8_t rows[4] = { block.m_row0, block.m_row1, block.m_row2, block.m_row3 };
+    for (uint32_t row = 0; row < 4; ++row) {
+        for (uint32_t column = 0; column < 4; ++column) {
+            const uint8_t colorIndex = (rows[row] >> (column * 2)) & 0x03;
+            writeRgbaPixel(pixels, width, height, blockX + column, blockY + row, colors[colorIndex]);
+        }
+    }
+}
+
+void decompressBc2Block(
+    const tinyddsloader::DDSFile::BC2Block& block,
+    uint32_t blockX,
+    uint32_t blockY,
+    uint32_t width,
+    uint32_t height,
+    std::vector<uint8_t>* pixels
+) {
+    tinyddsloader::DDSFile::BC1Block colorBlock { block.m_color0, block.m_color1, block.m_row0, block.m_row1, block.m_row2, block.m_row3 };
+    decompressBc1Block(colorBlock, blockX, blockY, width, height, pixels);
+
+    const uint16_t alphaRows[4] = { block.m_alphaRow0, block.m_alphaRow1, block.m_alphaRow2, block.m_alphaRow3 };
+    for (uint32_t row = 0; row < 4; ++row) {
+        for (uint32_t column = 0; column < 4; ++column) {
+            const uint8_t alpha4 = static_cast<uint8_t>((alphaRows[row] >> (column * 4)) & 0x0F);
+            const uint8_t alpha = static_cast<uint8_t>(alpha4 * 17);
+            const size_t base = (static_cast<size_t>(blockY + row) * width + (blockX + column)) * 4;
+            if (blockX + column < width && blockY + row < height) {
+                (*pixels)[base + 3] = alpha;
+            }
+        }
+    }
+}
+
+void decompressBc3Block(
+    const tinyddsloader::DDSFile::BC3Block& block,
+    uint32_t blockX,
+    uint32_t blockY,
+    uint32_t width,
+    uint32_t height,
+    std::vector<uint8_t>* pixels
+) {
+    tinyddsloader::DDSFile::BC1Block colorBlock { block.m_color0, block.m_color1, block.m_row0, block.m_row1, block.m_row2, block.m_row3 };
+    decompressBc1Block(colorBlock, blockX, blockY, width, height, pixels);
+
+    uint8_t alphaPalette[8] = {};
+    alphaPalette[0] = block.m_alpha0;
+    alphaPalette[1] = block.m_alpha1;
+    if (block.m_alpha0 > block.m_alpha1) {
+        alphaPalette[2] = static_cast<uint8_t>((6 * block.m_alpha0 + 1 * block.m_alpha1) / 7);
+        alphaPalette[3] = static_cast<uint8_t>((5 * block.m_alpha0 + 2 * block.m_alpha1) / 7);
+        alphaPalette[4] = static_cast<uint8_t>((4 * block.m_alpha0 + 3 * block.m_alpha1) / 7);
+        alphaPalette[5] = static_cast<uint8_t>((3 * block.m_alpha0 + 4 * block.m_alpha1) / 7);
+        alphaPalette[6] = static_cast<uint8_t>((2 * block.m_alpha0 + 5 * block.m_alpha1) / 7);
+        alphaPalette[7] = static_cast<uint8_t>((1 * block.m_alpha0 + 6 * block.m_alpha1) / 7);
+    } else {
+        alphaPalette[2] = static_cast<uint8_t>((4 * block.m_alpha0 + 1 * block.m_alpha1) / 5);
+        alphaPalette[3] = static_cast<uint8_t>((3 * block.m_alpha0 + 2 * block.m_alpha1) / 5);
+        alphaPalette[4] = static_cast<uint8_t>((2 * block.m_alpha0 + 3 * block.m_alpha1) / 5);
+        alphaPalette[5] = static_cast<uint8_t>((1 * block.m_alpha0 + 4 * block.m_alpha1) / 5);
+        alphaPalette[6] = 0;
+        alphaPalette[7] = 255;
+    }
+
+    uint64_t alphaBits =
+        static_cast<uint64_t>(block.m_alphaR0) |
+        (static_cast<uint64_t>(block.m_alphaR1) << 8) |
+        (static_cast<uint64_t>(block.m_alphaR2) << 16) |
+        (static_cast<uint64_t>(block.m_alphaR3) << 24) |
+        (static_cast<uint64_t>(block.m_alphaR4) << 32) |
+        (static_cast<uint64_t>(block.m_alphaR5) << 40);
+    for (uint32_t row = 0; row < 4; ++row) {
+        for (uint32_t column = 0; column < 4; ++column) {
+            const uint8_t alphaIndex = static_cast<uint8_t>(alphaBits & 0x07);
+            alphaBits >>= 3;
+            if (blockX + column < width && blockY + row < height) {
+                const size_t base = (static_cast<size_t>(blockY + row) * width + (blockX + column)) * 4;
+                (*pixels)[base + 3] = alphaPalette[alphaIndex];
+            }
+        }
+    }
+}
+
+bool decodeDdsToRgba(const std::string& imagePath, int* outWidth, int* outHeight, std::vector<uint8_t>* outPixels, std::string* outError) {
+    tinyddsloader::DDSFile ddsFile;
+    if (ddsFile.Load(imagePath.c_str()) != tinyddsloader::Result::Success) {
+        if (outError != nullptr) {
+            *outError = "failed to parse DDS image: " + imagePath;
+        }
+        return false;
+    }
+
+    const auto* imageData = ddsFile.GetImageData(0, 0);
+    if (imageData == nullptr || imageData->m_mem == nullptr || imageData->m_width == 0 || imageData->m_height == 0) {
+        if (outError != nullptr) {
+            *outError = "DDS image has no valid surface: " + imagePath;
+        }
+        return false;
+    }
+
+    const auto format = ddsFile.GetFormat();
+    const uint32_t width = imageData->m_width;
+    const uint32_t height = imageData->m_height;
+    std::vector<uint8_t> rgbaPixels(static_cast<size_t>(width) * static_cast<size_t>(height) * 4, 0);
+
+    if (format == tinyddsloader::DDSFile::DXGIFormat::R8G8B8A8_UNorm) {
+        const auto* source = static_cast<const uint8_t*>(imageData->m_mem);
+        for (uint32_t row = 0; row < height; ++row) {
+            const auto* rowSource = source + static_cast<size_t>(row) * imageData->m_memPitch;
+            std::copy(rowSource, rowSource + static_cast<size_t>(width) * 4, rgbaPixels.begin() + static_cast<size_t>(row) * width * 4);
+        }
+    } else if (format == tinyddsloader::DDSFile::DXGIFormat::B8G8R8A8_UNorm ||
+               format == tinyddsloader::DDSFile::DXGIFormat::B8G8R8X8_UNorm) {
+        const auto* source = static_cast<const uint8_t*>(imageData->m_mem);
+        for (uint32_t row = 0; row < height; ++row) {
+            const auto* rowSource = source + static_cast<size_t>(row) * imageData->m_memPitch;
+            for (uint32_t column = 0; column < width; ++column) {
+                const size_t sourceBase = static_cast<size_t>(column) * 4;
+                const size_t destBase = (static_cast<size_t>(row) * width + column) * 4;
+                rgbaPixels[destBase] = rowSource[sourceBase + 2];
+                rgbaPixels[destBase + 1] = rowSource[sourceBase + 1];
+                rgbaPixels[destBase + 2] = rowSource[sourceBase];
+                rgbaPixels[destBase + 3] = format == tinyddsloader::DDSFile::DXGIFormat::B8G8R8X8_UNorm ? 255 : rowSource[sourceBase + 3];
+            }
+        }
+    } else if (format == tinyddsloader::DDSFile::DXGIFormat::BC1_UNorm ||
+               format == tinyddsloader::DDSFile::DXGIFormat::BC2_UNorm ||
+               format == tinyddsloader::DDSFile::DXGIFormat::BC3_UNorm) {
+        const uint32_t blockWidth = (width + 3) / 4;
+        const uint32_t blockHeight = (height + 3) / 4;
+        const auto* blockBytes = static_cast<const uint8_t*>(imageData->m_mem);
+        const size_t blockSize =
+            format == tinyddsloader::DDSFile::DXGIFormat::BC1_UNorm ? sizeof(tinyddsloader::DDSFile::BC1Block) :
+            format == tinyddsloader::DDSFile::DXGIFormat::BC2_UNorm ? sizeof(tinyddsloader::DDSFile::BC2Block) :
+            sizeof(tinyddsloader::DDSFile::BC3Block);
+        for (uint32_t blockY = 0; blockY < blockHeight; ++blockY) {
+            for (uint32_t blockX = 0; blockX < blockWidth; ++blockX) {
+                const size_t offset = (static_cast<size_t>(blockY) * blockWidth + blockX) * blockSize;
+                if (format == tinyddsloader::DDSFile::DXGIFormat::BC1_UNorm) {
+                    decompressBc1Block(*reinterpret_cast<const tinyddsloader::DDSFile::BC1Block*>(blockBytes + offset), blockX * 4, blockY * 4, width, height, &rgbaPixels);
+                } else if (format == tinyddsloader::DDSFile::DXGIFormat::BC2_UNorm) {
+                    decompressBc2Block(*reinterpret_cast<const tinyddsloader::DDSFile::BC2Block*>(blockBytes + offset), blockX * 4, blockY * 4, width, height, &rgbaPixels);
+                } else {
+                    decompressBc3Block(*reinterpret_cast<const tinyddsloader::DDSFile::BC3Block*>(blockBytes + offset), blockX * 4, blockY * 4, width, height, &rgbaPixels);
+                }
+            }
+        }
+    } else {
+        if (outError != nullptr) {
+            *outError = "unsupported DDS texture format: " + imagePath;
+        }
+        return false;
+    }
+
+    if (outWidth != nullptr) {
+        *outWidth = static_cast<int>(width);
+    }
+    if (outHeight != nullptr) {
+        *outHeight = static_cast<int>(height);
+    }
+    if (outPixels != nullptr) {
+        *outPixels = std::move(rgbaPixels);
+    }
+    return true;
+}
+
 bool decodeImageRgbaCached(
     const std::string& imagePath,
     int* outWidth,
@@ -1234,34 +1383,42 @@ bool decodeImageRgbaCached(
     int width = 0;
     int height = 0;
     int channels = 0;
-    stbi_uc* decodedPixels = stbi_load(imagePath.c_str(), &width, &height, &channels, 4);
-    if (decodedPixels == nullptr) {
-        if (outError != nullptr) {
-            const char* reason = stbi_failure_reason();
-            *outError = "failed to decode image: " + imagePath + (reason != nullptr ? (" (" + std::string(reason) + ")") : "");
-        }
-        return false;
-    }
+    std::vector<uint8_t> rgbaPixels;
 
-    if (width <= 0 || height <= 0) {
+    if (getFileExtension(imagePath) == "dds") {
+        if (!decodeDdsToRgba(imagePath, &width, &height, &rgbaPixels, outError)) {
+            return false;
+        }
+    } else {
+        stbi_uc* decodedPixels = stbi_load(imagePath.c_str(), &width, &height, &channels, 4);
+        if (decodedPixels == nullptr) {
+            if (outError != nullptr) {
+                const char* reason = stbi_failure_reason();
+                *outError = "failed to decode image: " + imagePath + (reason != nullptr ? (" (" + std::string(reason) + ")") : "");
+            }
+            return false;
+        }
+
+        if (width <= 0 || height <= 0) {
+            stbi_image_free(decodedPixels);
+            if (outError != nullptr) {
+                *outError = "decoded image size is invalid: " + imagePath;
+            }
+            return false;
+        }
+
+        const size_t totalSize = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
+        if (totalSize == 0) {
+            stbi_image_free(decodedPixels);
+            if (outError != nullptr) {
+                *outError = "decoded image pixel count is zero: " + imagePath;
+            }
+            return false;
+        }
+
+        rgbaPixels.assign(decodedPixels, decodedPixels + totalSize);
         stbi_image_free(decodedPixels);
-        if (outError != nullptr) {
-            *outError = "decoded image size is invalid: " + imagePath;
-        }
-        return false;
     }
-
-    const size_t totalSize = static_cast<size_t>(width) * static_cast<size_t>(height) * 4;
-    if (totalSize == 0) {
-        stbi_image_free(decodedPixels);
-        if (outError != nullptr) {
-            *outError = "decoded image pixel count is zero: " + imagePath;
-        }
-        return false;
-    }
-
-    std::vector<uint8_t> rgbaPixels(decodedPixels, decodedPixels + totalSize);
-    stbi_image_free(decodedPixels);
 
     if (outWidth != nullptr) {
         *outWidth = width;
@@ -1663,16 +1820,11 @@ Java_com_ai_assistance_mmd_MmdNative_nativeRenderPreviewFrame(
     jfloat farClip,
     jobject vertexBuffer,
     jint vertexCount,
-    jobject drawBatchData,
+    jobject materialSegments,
     jobject textureIdsBySlot,
-    jint program,
-    jint positionHandle,
-    jint normalHandle,
-    jint texCoordHandle,
-    jint mvpHandle,
-    jint modelHandle,
-    jint useTextureHandle,
-    jint textureSamplerHandle
+    jobject textureFlagsBySlot,
+    jintArray mainProgramHandles,
+    jintArray edgeProgramHandles
 ) {
 #if defined(OPERIT_HAS_SABA) && OPERIT_HAS_SABA
     const std::string modelPath = jstringToString(env, pathModel);
@@ -1680,19 +1832,7 @@ Java_com_ai_assistance_mmd_MmdNative_nativeRenderPreviewFrame(
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    if (program <= 0 ||
-        positionHandle < 0 ||
-        normalHandle < 0 ||
-        texCoordHandle < 0 ||
-        mvpHandle < 0 ||
-        modelHandle < 0 ||
-        useTextureHandle < 0 ||
-        textureSamplerHandle < 0) {
-        clearLastError();
-        return JNI_TRUE;
-    }
-
-    if (modelPath.empty() || vertexBuffer == nullptr || vertexCount <= 0) {
+    if (modelPath.empty() || vertexBuffer == nullptr || vertexCount <= 0 || materialSegments == nullptr) {
         clearLastError();
         return JNI_TRUE;
     }
@@ -1703,13 +1843,16 @@ Java_com_ai_assistance_mmd_MmdNative_nativeRenderPreviewFrame(
         return JNI_FALSE;
     }
 
-    const size_t expectedFloatCount = static_cast<size_t>(vertexCount) * kPreviewVertexStride;
+    const size_t expectedFloatCount = static_cast<size_t>(vertexCount) * operit::mmdpreview::kPreviewVertexStride;
     const float* drawVertexData = baseVertexData;
     std::unique_lock<std::mutex> animatedRuntimeLock;
+    std::unique_lock<std::mutex> previewSceneLock;
+    const saba::MMDMaterial* currentMaterials = nullptr;
+    size_t currentMaterialCount = 0;
+    std::string parseError;
 
     if (!motionPath.empty()) {
         float sampledFrame = 0.0f;
-        std::string parseError;
         if (!resolveAutoAnimationSampledFrame(
                 modelPath,
                 motionPath,
@@ -1743,6 +1886,9 @@ Java_com_ai_assistance_mmd_MmdNative_nativeRenderPreviewFrame(
             setLastError("animated preview mesh size mismatches current vertex buffer size.");
             return JNI_FALSE;
         }
+
+        currentMaterials = gAnimatedRuntimeCache.model->GetMaterials();
+        currentMaterialCount = gAnimatedRuntimeCache.model->GetMaterialCount();
     }
 
     const float safeAspect = aspectRatio > 0.0f ? aspectRatio : 1.0f;
@@ -1762,117 +1908,36 @@ Java_com_ai_assistance_mmd_MmdNative_nativeRenderPreviewFrame(
         glm::vec3(0.0f, 1.0f, 0.0f)
     );
     const glm::mat4 projectionMat = glm::perspective(glm::radians(45.0f), safeAspect, safeNear, safeFar);
-    const glm::mat4 mvpMat = projectionMat * viewMat * modelMat;
-
-    const auto* batchValues = static_cast<const jint*>(
-        drawBatchData != nullptr ? env->GetDirectBufferAddress(drawBatchData) : nullptr
-    );
-    const auto* textureValues = static_cast<const jint*>(
-        textureIdsBySlot != nullptr ? env->GetDirectBufferAddress(textureIdsBySlot) : nullptr
-    );
-
-    jsize batchValueCount = 0;
-    jsize textureValueCount = 0;
-
-    if (drawBatchData != nullptr) {
-        const jlong batchCapacity = env->GetDirectBufferCapacity(drawBatchData);
-        if (batchValues == nullptr || batchCapacity <= 0) {
-            setLastError("failed to access draw batch direct buffer for native preview rendering.");
+    if (currentMaterials == nullptr || currentMaterialCount == 0) {
+        const auto* previewScene = operit::mmdpreview::LockPreviewSceneData(modelPath, &previewSceneLock, &parseError);
+        if (previewScene == nullptr) {
+            setLastError(parseError);
             return JNI_FALSE;
         }
-        batchValueCount = static_cast<jsize>(batchCapacity);
+        currentMaterials = previewScene->staticMaterials.data();
+        currentMaterialCount = previewScene->staticMaterials.size();
     }
 
-    if (textureIdsBySlot != nullptr) {
-        const jlong textureCapacity = env->GetDirectBufferCapacity(textureIdsBySlot);
-        if (textureValues == nullptr || textureCapacity < 0) {
-            setLastError("failed to access texture id direct buffer for native preview rendering.");
-            return JNI_FALSE;
-        }
-        textureValueCount = static_cast<jsize>(textureCapacity);
+    if (!operit::mmdpreview::RenderPreviewScene(
+            env,
+            materialSegments,
+            textureIdsBySlot,
+            textureFlagsBySlot,
+            mainProgramHandles,
+            edgeProgramHandles,
+            drawVertexData,
+            vertexCount,
+            modelMat,
+            viewMat,
+            projectionMat,
+            currentMaterials,
+            currentMaterialCount,
+            fitScale,
+            cameraDistance,
+            &parseError)) {
+        setLastError(parseError);
+        return JNI_FALSE;
     }
-
-    glUseProgram(static_cast<GLuint>(program));
-    glUniformMatrix4fv(mvpHandle, 1, GL_FALSE, glm::value_ptr(mvpMat));
-    glUniformMatrix4fv(modelHandle, 1, GL_FALSE, glm::value_ptr(modelMat));
-
-    const GLsizei strideBytes = static_cast<GLsizei>(kPreviewVertexStride * sizeof(float));
-    glVertexAttribPointer(
-        positionHandle,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        strideBytes,
-        reinterpret_cast<const GLvoid*>(drawVertexData)
-    );
-    glEnableVertexAttribArray(positionHandle);
-
-    glVertexAttribPointer(
-        normalHandle,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        strideBytes,
-        reinterpret_cast<const GLvoid*>(drawVertexData + 3)
-    );
-    glEnableVertexAttribArray(normalHandle);
-
-    glVertexAttribPointer(
-        texCoordHandle,
-        2,
-        GL_FLOAT,
-        GL_FALSE,
-        strideBytes,
-        reinterpret_cast<const GLvoid*>(drawVertexData + 6)
-    );
-    glEnableVertexAttribArray(texCoordHandle);
-
-    glActiveTexture(GL_TEXTURE0);
-    glUniform1i(textureSamplerHandle, 0);
-
-    GLuint boundTexture = static_cast<GLuint>(-1);
-    float lastUseTexture = -1.0f;
-
-    if (batchValues != nullptr && batchValueCount >= 3) {
-        for (jsize cursor = 0; cursor + 2 < batchValueCount; cursor += 3) {
-            const GLint firstVertex = batchValues[cursor];
-            const GLsizei drawVertexCount = static_cast<GLsizei>(batchValues[cursor + 1]);
-            const jint textureSlot = batchValues[cursor + 2];
-
-            if (firstVertex < 0 || drawVertexCount <= 0) {
-                continue;
-            }
-
-            GLuint textureId = 0;
-            if (textureValues != nullptr && textureSlot >= 0 && textureSlot < textureValueCount) {
-                textureId = static_cast<GLuint>(textureValues[textureSlot]);
-            }
-
-            const float useTexture = textureId != 0 ? 1.0f : 0.0f;
-            if (useTexture != lastUseTexture) {
-                glUniform1f(useTextureHandle, useTexture);
-                lastUseTexture = useTexture;
-            }
-
-            if (useTexture > 0.5f && textureId != boundTexture) {
-                glBindTexture(GL_TEXTURE_2D, textureId);
-                boundTexture = textureId;
-            }
-
-            glDrawArrays(GL_TRIANGLES, firstVertex, drawVertexCount);
-        }
-    } else {
-        glUniform1f(useTextureHandle, 0.0f);
-        glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(vertexCount));
-    }
-
-    if (boundTexture != static_cast<GLuint>(-1)) {
-        glBindTexture(GL_TEXTURE_2D, 0);
-    }
-
-    glDisableVertexAttribArray(positionHandle);
-    glDisableVertexAttribArray(normalHandle);
-    glDisableVertexAttribArray(texCoordHandle);
 
     clearLastError();
     return JNI_TRUE;
@@ -1897,16 +1962,11 @@ Java_com_ai_assistance_mmd_MmdNative_nativeRenderPreviewFrame(
     (void) farClip;
     (void) vertexBuffer;
     (void) vertexCount;
-    (void) drawBatchData;
+    (void) materialSegments;
     (void) textureIdsBySlot;
-    (void) program;
-    (void) positionHandle;
-    (void) normalHandle;
-    (void) texCoordHandle;
-    (void) mvpHandle;
-    (void) modelHandle;
-    (void) useTextureHandle;
-    (void) textureSamplerHandle;
+    (void) textureFlagsBySlot;
+    (void) mainProgramHandles;
+    (void) edgeProgramHandles;
     return JNI_FALSE;
 #endif
 }
@@ -1920,9 +1980,9 @@ Java_com_ai_assistance_mmd_MmdNative_nativeBuildPreviewMesh(JNIEnv* env, jclass,
         return nullptr;
     }
 
-    PreviewRenderData previewData;
+    operit::mmdpreview::PreviewSceneData previewData;
     std::string parseError;
-    if (!getPreviewRenderDataCached(modelPath, &previewData, &parseError)) {
+    if (!operit::mmdpreview::GetPreviewSceneDataCached(modelPath, &previewData, &parseError)) {
         setLastError(parseError);
         return nullptr;
     }
@@ -1944,7 +2004,7 @@ Java_com_ai_assistance_mmd_MmdNative_nativeBuildPreviewMesh(JNIEnv* env, jclass,
 }
 
 extern "C" JNIEXPORT jintArray JNICALL
-Java_com_ai_assistance_mmd_MmdNative_nativeBuildPreviewBatches(JNIEnv* env, jclass, jstring pathModel) {
+Java_com_ai_assistance_mmd_MmdNative_nativeBuildPreviewMaterialSegments(JNIEnv* env, jclass, jstring pathModel) {
 #if defined(OPERIT_HAS_SABA) && OPERIT_HAS_SABA
     const std::string modelPath = jstringToString(env, pathModel);
     if (modelPath.empty()) {
@@ -1952,52 +2012,21 @@ Java_com_ai_assistance_mmd_MmdNative_nativeBuildPreviewBatches(JNIEnv* env, jcla
         return nullptr;
     }
 
-    PreviewRenderData previewData;
+    operit::mmdpreview::PreviewSceneData previewData;
     std::string parseError;
-    if (!getPreviewRenderDataCached(modelPath, &previewData, &parseError)) {
+    if (!operit::mmdpreview::GetPreviewSceneDataCached(modelPath, &previewData, &parseError)) {
         setLastError(parseError);
         return nullptr;
     }
 
-    jintArray result = buildIntArray(env, previewData.batches);
+    jintArray result = buildIntArray(env, previewData.materialSegments);
     if (result == nullptr) {
-        setLastError("failed to allocate JNI int array for preview batches.");
+        setLastError("failed to allocate JNI int array for preview material segments.");
         return nullptr;
     }
 
     clearLastError();
     return result;
-#else
-    setLastError(kUnavailableReason);
-    (void) env;
-    (void) pathModel;
-    return nullptr;
-#endif
-}
-
-extern "C" JNIEXPORT jstring JNICALL
-Java_com_ai_assistance_mmd_MmdNative_nativeReadPreviewTexturePath(JNIEnv* env, jclass, jstring pathModel) {
-#if defined(OPERIT_HAS_SABA) && OPERIT_HAS_SABA
-    const std::string modelPath = jstringToString(env, pathModel);
-    if (modelPath.empty()) {
-        setLastError("model path is empty.");
-        return nullptr;
-    }
-
-    PreviewRenderData previewData;
-    std::string parseError;
-    if (!getPreviewRenderDataCached(modelPath, &previewData, &parseError)) {
-        setLastError(parseError);
-        return nullptr;
-    }
-
-    if (previewData.texturePaths.empty()) {
-        clearLastError();
-        return nullptr;
-    }
-
-    clearLastError();
-    return stringToJString(env, previewData.texturePaths.front());
 #else
     setLastError(kUnavailableReason);
     (void) env;
@@ -2015,9 +2044,9 @@ Java_com_ai_assistance_mmd_MmdNative_nativeReadPreviewTexturePaths(JNIEnv* env, 
         return nullptr;
     }
 
-    PreviewRenderData previewData;
+    operit::mmdpreview::PreviewSceneData previewData;
     std::string parseError;
-    if (!getPreviewRenderDataCached(modelPath, &previewData, &parseError)) {
+    if (!operit::mmdpreview::GetPreviewSceneDataCached(modelPath, &previewData, &parseError)) {
         setLastError(parseError);
         return nullptr;
     }

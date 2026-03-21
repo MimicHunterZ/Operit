@@ -123,6 +123,8 @@ fun ClassicChatSettingsBar(
     onToggleDisableUserPreferenceDescription: () -> Unit,
     disableLatexDescription: Boolean,
     onToggleDisableLatexDescription: () -> Unit,
+    disableStatusTags: Boolean,
+    onToggleDisableStatusTags: () -> Unit,
     onManualMemoryUpdate: () -> Unit,
     onManualSummarizeConversation: () -> Unit,
     characterCardBoundChatModelConfigId: String? = null,
@@ -356,6 +358,14 @@ fun ClassicChatSettingsBar(
                         modifier = Modifier.size(20.dp)
                     )
                 }
+                AnimatedVisibility(visible = disableStatusTags) {
+                    Icon(
+                        imageVector = Icons.Outlined.Block,
+                        contentDescription = stringResource(R.string.disable_status_tags),
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
  
                 AnimatedVisibility(visible = enableMaxContextMode) {
                     Icon(
@@ -485,6 +495,8 @@ fun ClassicChatSettingsBar(
                                         onToggleDisableUserPreferenceDescription,
                                 disableLatexDescription = disableLatexDescription,
                                 onToggleDisableLatexDescription = onToggleDisableLatexDescription,
+                                disableStatusTags = disableStatusTags,
+                                onToggleDisableStatusTags = onToggleDisableStatusTags,
                                 expanded = showDisableSettingsDropdown,
                                 onExpandedChange = { showDisableSettingsDropdown = it },
                                 onInfoClick = {
@@ -510,6 +522,11 @@ fun ClassicChatSettingsBar(
                                 onDisableLatexDescriptionInfoClick = {
                                     infoPopupContent =
                                         context.getString(R.string.disable_latex_description) to context.getString(R.string.disable_latex_description_desc)
+                                    showMenu = false
+                                },
+                                onDisableStatusTagsInfoClick = {
+                                    infoPopupContent =
+                                        context.getString(R.string.disable_status_tags) to context.getString(R.string.disable_status_tags_desc)
                                     showMenu = false
                                 },
                                 onManageToolsClick = {
@@ -998,6 +1015,8 @@ private fun DisableSettingsGroupItem(
     onToggleDisableUserPreferenceDescription: () -> Unit,
     disableLatexDescription: Boolean,
     onToggleDisableLatexDescription: () -> Unit,
+    disableStatusTags: Boolean,
+    onToggleDisableStatusTags: () -> Unit,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onInfoClick: () -> Unit,
@@ -1005,17 +1024,19 @@ private fun DisableSettingsGroupItem(
     onDisableToolsInfoClick: () -> Unit,
     onDisableUserPreferenceDescriptionInfoClick: () -> Unit,
     onDisableLatexDescriptionInfoClick: () -> Unit,
+    onDisableStatusTagsInfoClick: () -> Unit,
     onManageToolsClick: () -> Unit
 ) {
-    val disabledCount =
+    val disabledStates =
             listOf(
                             disableStreamOutput,
                             !enableTools,
                             disableUserPreferenceDescription,
-                            disableLatexDescription
+                            disableLatexDescription,
+                            disableStatusTags
                     )
-                    .count { it }
-    val summaryText = "$disabledCount/4"
+    val disabledCount = disabledStates.count { it }
+    val summaryText = "$disabledCount/${disabledStates.size}"
     val expandStateDesc = if (expanded) stringResource(R.string.expanded) else stringResource(R.string.collapsed)
     val accessibilityDesc = "${stringResource(R.string.disable_settings_group)}: $summaryText, $expandStateDesc"
 
@@ -1128,6 +1149,17 @@ private fun DisableSettingsGroupItem(
                     isChecked = disableLatexDescription,
                     onToggle = onToggleDisableLatexDescription,
                     onInfoClick = onDisableLatexDescriptionInfoClick
+                )
+
+                SettingItem(
+                    title = stringResource(R.string.disable_status_tags),
+                        icon = Icons.Outlined.Block,
+                        iconTint =
+                                if (disableStatusTags) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    isChecked = disableStatusTags,
+                    onToggle = onToggleDisableStatusTags,
+                    onInfoClick = onDisableStatusTagsInfoClick
                 )
 
                 Box(

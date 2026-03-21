@@ -120,6 +120,9 @@ class ApiConfigDelegate(
             MutableStateFlow(ApiPreferences.DEFAULT_DISABLE_LATEX_DESCRIPTION)
     val disableLatexDescription: StateFlow<Boolean> = _disableLatexDescription.asStateFlow()
 
+    private val _disableStatusTags = MutableStateFlow(ApiPreferences.DEFAULT_DISABLE_STATUS_TAGS)
+    val disableStatusTags: StateFlow<Boolean> = _disableStatusTags.asStateFlow()
+
     // 为了兼容现有代码，添加API密钥状态流
     private val _apiKey = MutableStateFlow("")
     val apiKey: StateFlow<String> = _apiKey.asStateFlow()
@@ -291,6 +294,13 @@ class ApiConfigDelegate(
                 _disableLatexDescription.value = disabled
             }
         }
+
+        // Collect disable status tags setting
+        coroutineScope.launch {
+            apiPreferences.disableStatusTagsFlow.collect { disabled ->
+                _disableStatusTags.value = disabled
+            }
+        }
     }
 
     /**
@@ -448,6 +458,15 @@ class ApiConfigDelegate(
             val newValue = !_disableLatexDescription.value
             apiPreferences.saveDisableLatexDescription(newValue)
             _disableLatexDescription.value = newValue
+        }
+    }
+
+    /** 切换禁用状态标签 */
+    fun toggleDisableStatusTags() {
+        coroutineScope.launch {
+            val newValue = !_disableStatusTags.value
+            apiPreferences.saveDisableStatusTags(newValue)
+            _disableStatusTags.value = newValue
         }
     }
 

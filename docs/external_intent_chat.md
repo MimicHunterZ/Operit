@@ -2,6 +2,12 @@
 
 本文档描述一个**独立于工作流系统**的外部交互接口：外部应用通过发送广播 Intent（`com.ai.assistance.operit.EXTERNAL_CHAT`）向 Operit 发起一次“发送消息给 AI”的请求，并通过另一个广播接收执行结果。
 
+如果你希望通过局域网 HTTP 调用，而不是广播 Intent，请查看：
+
+- `docs/external_http_chat.md`
+
+HTTP 接口与本文的 Intent 接口语义一致，仅入口不同。
+
 该接口的实现位于：
 
 - `app/src/main/java/com/ai/assistance/operit/integrations/intent/ExternalChatReceiver.kt`

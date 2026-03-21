@@ -1064,6 +1064,8 @@ export interface ModelConfigResultItem {
     repetitionPenalty: number;
     hasCustomParameters: boolean;
     customParameters: string;
+    hasCustomHeaders: boolean;
+    customHeaders: string;
     contextLength: number;
     maxContextLength: number;
     enableMaxContextMode: boolean;

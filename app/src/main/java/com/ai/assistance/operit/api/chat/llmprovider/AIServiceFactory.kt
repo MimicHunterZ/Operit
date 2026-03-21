@@ -59,19 +59,17 @@ object AIServiceFactory {
      * 创建AI服务实例
      *
      * @param config 模型配置数据
-     * @param customHeadersJson 自定义请求头的JSON字符串
      * @param modelConfigManager 模型配置管理器，用于多API Key模式
      * @param context Android上下文，用于MNN等需要访问本地资源的提供商
      * @return 对应的AIService实现
      */
     fun createService(
         config: ModelConfigData,
-        customHeadersJson: String,
         modelConfigManager: ModelConfigManager,
         context: Context
     ): AIService {
         val httpClient = SharedHttpClient.instance
-        val customHeaders = parseCustomHeaders(customHeadersJson)
+        val customHeaders = parseCustomHeaders(config.customHeaders)
 
         // 根据配置决定使用单个API Key还是多API Key轮询
         val apiKeyProvider = if (config.useMultipleApiKeys) {

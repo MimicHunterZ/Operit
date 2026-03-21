@@ -122,6 +122,7 @@ fun ChatScreenContent(
         cursorUserBubbleLiquidGlass: Boolean = false,
         historyListState: LazyListState,
         onSwitchCharacter: (CharacterSelectorTarget) -> Unit,
+        onOpenCharacterSettings: () -> Unit,
         chatAreaHorizontalPadding: Float = 16f, // 聊天区域水平内边距
         bubbleUserImageStyle: BubbleImageStyleConfig? = null,
         bubbleAiImageStyle: BubbleImageStyleConfig? = null,
@@ -695,7 +696,8 @@ fun ChatScreenContent(
         CharacterSelectorPanel(
             isVisible = showCharacterSelector,
             onDismiss = { showCharacterSelector = false },
-            onSelectCharacter = onSwitchCharacter
+            onSelectCharacter = onSwitchCharacter,
+            onOpenCharacterSettings = onOpenCharacterSettings
         )
 
         // 遮罩层 - 独立的淡入淡出效果，覆盖整个屏幕

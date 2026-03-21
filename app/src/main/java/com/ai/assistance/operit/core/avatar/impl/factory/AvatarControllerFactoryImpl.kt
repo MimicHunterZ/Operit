@@ -7,6 +7,8 @@ import com.ai.assistance.operit.core.avatar.common.model.AvatarModel
 import com.ai.assistance.operit.core.avatar.common.model.AvatarType
 import com.ai.assistance.operit.core.avatar.common.model.ISkeletalAvatarModel
 import com.ai.assistance.operit.core.avatar.impl.dragonbones.control.rememberDragonBonesAvatarController
+import com.ai.assistance.operit.core.avatar.impl.fbx.control.rememberFbxAvatarController
+import com.ai.assistance.operit.core.avatar.impl.fbx.model.FbxAvatarModel
 import com.ai.assistance.operit.core.avatar.impl.gltf.control.rememberGltfAvatarController
 import com.ai.assistance.operit.core.avatar.impl.gltf.model.GltfAvatarModel
 import com.ai.assistance.operit.core.avatar.impl.mmd.control.rememberMmdAvatarController
@@ -61,6 +63,14 @@ class AvatarControllerFactoryImpl : AvatarControllerFactory {
                     null
                 }
             }
+            AvatarType.FBX -> {
+                val fbxModel = model as? FbxAvatarModel
+                if (fbxModel != null) {
+                    rememberFbxAvatarController(fbxModel)
+                } else {
+                    null
+                }
+            }
         }
     }
 
@@ -71,6 +81,7 @@ class AvatarControllerFactoryImpl : AvatarControllerFactory {
             AvatarType.MP4 -> model is Mp4AvatarModel
             AvatarType.MMD -> model is MmdAvatarModel
             AvatarType.GLTF -> model is GltfAvatarModel
+            AvatarType.FBX -> model is FbxAvatarModel
         }
     }
 
@@ -80,6 +91,7 @@ class AvatarControllerFactoryImpl : AvatarControllerFactory {
             AvatarType.WEBP.name,
             AvatarType.MP4.name,
             AvatarType.MMD.name,
-            AvatarType.GLTF.name
+            AvatarType.GLTF.name,
+            AvatarType.FBX.name
         )
 }

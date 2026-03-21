@@ -35,3 +35,4 @@ zhipu_search.js
 linux_ssh
 deepsearching
 apktool
+remote_operit

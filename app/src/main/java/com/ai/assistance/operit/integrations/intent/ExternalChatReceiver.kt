@@ -3,10 +3,9 @@ package com.ai.assistance.operit.integrations.intent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import com.ai.assistance.operit.core.tools.defaultTool.standard.StandardChatManagerTool
-import com.ai.assistance.operit.core.tools.MessageSendResultData
-import com.ai.assistance.operit.data.model.AITool
-import com.ai.assistance.operit.data.model.ToolParameter
+import com.ai.assistance.operit.integrations.externalchat.ExternalChatRequest
+import com.ai.assistance.operit.integrations.externalchat.ExternalChatRequestExecutor
+import com.ai.assistance.operit.integrations.externalchat.ExternalChatResult
 import com.ai.assistance.operit.util.AppLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,98 +45,29 @@ class ExternalChatReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val requestId = intent.getStringExtra(EXTRA_REQUEST_ID)
-                val message = intent.getStringExtra(EXTRA_MESSAGE)
-                val group = intent.getStringExtra(EXTRA_GROUP)
-                val createNewChat = intent.getBooleanExtra(EXTRA_CREATE_NEW_CHAT, false)
-                val chatId = intent.getStringExtra(EXTRA_CHAT_ID)
-                val createIfNone = intent.getBooleanExtra(EXTRA_CREATE_IF_NONE, true)
-
-                val showFloating = intent.getBooleanExtra(EXTRA_SHOW_FLOATING, false)
-                val autoExitAfterMs = intent.getLongExtra(EXTRA_AUTO_EXIT_AFTER_MS, -1L)
-                val stopAfter = intent.getBooleanExtra(EXTRA_STOP_AFTER, false)
-
                 val replyAction = intent.getStringExtra(EXTRA_REPLY_ACTION)?.takeIf { it.isNotBlank() }
                     ?: ACTION_EXTERNAL_CHAT_RESULT
                 val replyPackage = intent.getStringExtra(EXTRA_REPLY_PACKAGE)?.takeIf { it.isNotBlank() }
-
-                if (message.isNullOrBlank()) {
-                    sendResultBroadcast(
-                        context = context,
-                        action = replyAction,
-                        packageName = replyPackage,
-                        requestId = requestId,
-                        success = false,
-                        chatId = null,
-                        aiResponse = null,
-                        error = "Missing extra: $EXTRA_MESSAGE"
+                val result = ExternalChatRequestExecutor(context.applicationContext).execute(
+                    ExternalChatRequest(
+                        requestId = intent.getStringExtra(EXTRA_REQUEST_ID),
+                        message = intent.getStringExtra(EXTRA_MESSAGE),
+                        group = intent.getStringExtra(EXTRA_GROUP),
+                        createNewChat = intent.getBooleanExtra(EXTRA_CREATE_NEW_CHAT, false),
+                        chatId = intent.getStringExtra(EXTRA_CHAT_ID),
+                        createIfNone = intent.getBooleanExtra(EXTRA_CREATE_IF_NONE, true),
+                        showFloating = intent.getBooleanExtra(EXTRA_SHOW_FLOATING, false),
+                        autoExitAfterMs = intent.getLongExtra(EXTRA_AUTO_EXIT_AFTER_MS, -1L),
+                        stopAfter = intent.getBooleanExtra(EXTRA_STOP_AFTER, false)
                     )
-                    return@launch
-                }
-
-                val chatTool = StandardChatManagerTool(context.applicationContext)
-
-                if (showFloating) {
-                    val params = mutableListOf<ToolParameter>()
-                    if (autoExitAfterMs > 0) {
-                        params += ToolParameter(name = "timeout_ms", value = autoExitAfterMs.toString())
-                    }
-                    chatTool.startChatService(AITool(name = "start_chat_service", parameters = params))
-                }
-
-                if (!createNewChat && chatId.isNullOrBlank() && !createIfNone) {
-                    val listResult = chatTool.listChats(AITool(name = "list_chats"))
-                    val current = (listResult.result as? com.ai.assistance.operit.core.tools.ChatListResultData)?.currentChatId
-                    if (current.isNullOrBlank()) {
-                        sendResultBroadcast(
-                            context = context,
-                            action = replyAction,
-                            packageName = replyPackage,
-                            requestId = requestId,
-                            success = false,
-                            chatId = null,
-                            aiResponse = null,
-                            error = "No current chat and create_if_none=false"
-                        )
-                        return@launch
-                    }
-                }
-
-                if (createNewChat) {
-                    val params = mutableListOf<ToolParameter>()
-                    if (!group.isNullOrBlank()) {
-                        params += ToolParameter(name = "group", value = group)
-                    }
-                    chatTool.createNewChat(AITool(name = "create_new_chat", parameters = params))
-                }
-
-                val sendParams = mutableListOf(
-                    ToolParameter(name = "message", value = message)
                 )
-                if (!createNewChat && !chatId.isNullOrBlank()) {
-                    sendParams += ToolParameter(name = "chat_id", value = chatId)
-                }
-
-                val sendResult = chatTool.sendMessageToAI(AITool(name = "send_message_to_ai", parameters = sendParams))
-                val resultData = sendResult.result
-
-                val resultChatId = (resultData as? MessageSendResultData)?.chatId
-                val aiResponse = (resultData as? MessageSendResultData)?.aiResponse
 
                 sendResultBroadcast(
                     context = context,
                     action = replyAction,
                     packageName = replyPackage,
-                    requestId = requestId,
-                    success = sendResult.success,
-                    chatId = resultChatId,
-                    aiResponse = aiResponse,
-                    error = sendResult.error
+                    result = result
                 )
-
-                if (stopAfter) {
-                    chatTool.stopChatService(AITool(name = "stop_chat_service"))
-                }
             } catch (e: Exception) {
                 AppLogger.e(TAG, "Failed to handle external chat", e)
                 val replyAction = intent.getStringExtra(EXTRA_REPLY_ACTION)?.takeIf { it.isNotBlank() }
@@ -147,11 +77,11 @@ class ExternalChatReceiver : BroadcastReceiver() {
                     context = context,
                     action = replyAction,
                     packageName = replyPackage,
-                    requestId = intent.getStringExtra(EXTRA_REQUEST_ID),
-                    success = false,
-                    chatId = null,
-                    aiResponse = null,
-                    error = e.message ?: "Unknown error"
+                    result = ExternalChatResult(
+                        requestId = intent.getStringExtra(EXTRA_REQUEST_ID),
+                        success = false,
+                        error = e.message ?: "Unknown error"
+                    )
                 )
             } finally {
                 pending.finish()
@@ -163,28 +93,24 @@ class ExternalChatReceiver : BroadcastReceiver() {
         context: Context,
         action: String,
         packageName: String?,
-        requestId: String?,
-        success: Boolean,
-        chatId: String?,
-        aiResponse: String?,
-        error: String?
+        result: ExternalChatResult
     ) {
         val out = Intent(action)
         if (!packageName.isNullOrBlank()) {
             out.`package` = packageName
         }
-        if (!requestId.isNullOrBlank()) {
-            out.putExtra(EXTRA_REQUEST_ID, requestId)
+        if (!result.requestId.isNullOrBlank()) {
+            out.putExtra(EXTRA_REQUEST_ID, result.requestId)
         }
-        out.putExtra(EXTRA_RESULT_SUCCESS, success)
-        if (!chatId.isNullOrBlank()) {
-            out.putExtra(EXTRA_RESULT_CHAT_ID, chatId)
+        out.putExtra(EXTRA_RESULT_SUCCESS, result.success)
+        if (!result.chatId.isNullOrBlank()) {
+            out.putExtra(EXTRA_RESULT_CHAT_ID, result.chatId)
         }
-        if (!aiResponse.isNullOrBlank()) {
-            out.putExtra(EXTRA_RESULT_AI_RESPONSE, aiResponse)
+        if (!result.aiResponse.isNullOrBlank()) {
+            out.putExtra(EXTRA_RESULT_AI_RESPONSE, result.aiResponse)
         }
-        if (!error.isNullOrBlank()) {
-            out.putExtra(EXTRA_RESULT_ERROR, error)
+        if (!result.error.isNullOrBlank()) {
+            out.putExtra(EXTRA_RESULT_ERROR, result.error)
         }
         context.sendBroadcast(out)
     }

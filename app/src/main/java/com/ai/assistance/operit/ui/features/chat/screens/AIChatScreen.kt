@@ -289,6 +289,7 @@ val actualViewModel: ChatViewModel = viewModel ?: viewModel { ChatViewModel(cont
     val disableUserPreferenceDescription by
             actualViewModel.disableUserPreferenceDescription.collectAsState()
     val disableLatexDescription by actualViewModel.disableLatexDescription.collectAsState()
+    val disableStatusTags by actualViewModel.disableStatusTags.collectAsState()
     val summaryTokenThreshold by actualViewModel.summaryTokenThreshold.collectAsState()
     val isAutoReadEnabled by actualViewModel.isAutoReadEnabled.collectAsState()
     val showChatHistorySelector by actualViewModel.showChatHistorySelector.collectAsState()
@@ -856,6 +857,7 @@ val actualViewModel: ChatViewModel = viewModel ?: viewModel { ChatViewModel(cont
                                 cursorUserBubbleLiquidGlass = cursorUserBubbleLiquidGlass,
                                 historyListState = historyListState,
                                 onSwitchCharacter = onSwitchCharacter,
+                                onOpenCharacterSettings = onNavigateToModelPrompts,
                                 chatAreaHorizontalPadding = chatAreaHorizontalPadding,
                                 bubbleUserImageStyle = bubbleUserImageStyle,
                                 bubbleAiImageStyle = bubbleAiImageStyle,
@@ -936,6 +938,10 @@ val actualViewModel: ChatViewModel = viewModel ?: viewModel { ChatViewModel(cont
                                     onToggleDisableLatexDescription = {
                                         actualViewModel.toggleDisableLatexDescription()
                                     },
+                                    disableStatusTags = disableStatusTags,
+                                    onToggleDisableStatusTags = {
+                                        actualViewModel.toggleDisableStatusTags()
+                                    },
                                     onManualMemoryUpdate = {
                                         actualViewModel.manuallyUpdateMemory()
                                     },
@@ -980,6 +986,7 @@ val actualViewModel: ChatViewModel = viewModel ?: viewModel { ChatViewModel(cont
                                 disableUserPreferenceDescription =
                                         disableUserPreferenceDescription,
                                 disableLatexDescription = disableLatexDescription,
+                                disableStatusTags = disableStatusTags,
                                 onNavigateToUserPreferences = onNavigateToUserPreferences,
                                 onNavigateToPackageManager = onNavigateToPackageManager,
                                 toolPromptVisibility = toolPromptVisibility,
@@ -1294,6 +1301,7 @@ private fun ChatInputBottomBar(
     disableStreamOutput: Boolean,
     disableUserPreferenceDescription: Boolean,
     disableLatexDescription: Boolean,
+    disableStatusTags: Boolean,
     onNavigateToUserPreferences: () -> Unit,
     onNavigateToPackageManager: () -> Unit,
     toolPromptVisibility: Map<String, Boolean>,
@@ -1477,6 +1485,8 @@ private fun ChatInputBottomBar(
                     actualViewModel::toggleDisableUserPreferenceDescription,
                 disableLatexDescription = disableLatexDescription,
                 onToggleDisableLatexDescription = actualViewModel::toggleDisableLatexDescription,
+                disableStatusTags = disableStatusTags,
+                onToggleDisableStatusTags = actualViewModel::toggleDisableStatusTags,
                 onNavigateToUserPreferences = onNavigateToUserPreferences,
                 onNavigateToPackageManager = onNavigateToPackageManager,
                 toolPromptVisibility = toolPromptVisibility,

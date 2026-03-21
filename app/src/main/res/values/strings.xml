@@ -367,8 +367,8 @@
     <string name="how_to_import">如何制作和导入模型?</string>
     <string name="how_to_import_tap_to_expand">如何制作和导入模型?（点击展开）</string>
     <string name="how_to_import_tap_to_collapse">如何制作和导入模型?（点击收起）</string>
-    <string name="avatar_config_supported_formats">支持：DragonBones（.json + _tex.json + _tex.png）、WebP（.webp）、MP4（.mp4）、MMD（.pmx/.pmd + 可选 .vmd）、glTF（.glb/.gltf）。</string>
-    <string name="avatar_config_import_methods">直接文件导入支持 .glb/.gltf/.mp4；DragonBones、WebP、MP4、MMD 或多文件 glTF 资源请导入 .zip。</string>
+    <string name="avatar_config_supported_formats">支持：DragonBones（.json + _tex.json + _tex.png）、WebP（.webp）、MP4（.mp4）、MMD（.pmx/.pmd + 可选 .vmd）、glTF（.glb/.gltf）、FBX（.fbx）。</string>
+    <string name="avatar_config_import_methods">直接文件导入支持 .glb/.gltf/.mp4/.fbx；DragonBones、WebP、MP4、MMD、多文件 glTF，或带外置贴图/资源的 FBX 请导入 .zip。</string>
     <string name="avatar_mood_trigger_mapping_title">Mood 触发映射</string>
     <string name="avatar_mood_trigger_mapping_desc">桌宠和语音头像返回的 &lt;mood&gt; 会优先匹配这里的 trigger。只有绑定了动画的自定义类型才会拼接进提示词。</string>
     <string name="avatar_no_model_actions">当前虚拟形象没有可用动作</string>
@@ -421,13 +421,17 @@
     <string name="avatar_gltf_camera_yaw">glTF 相机偏航（%1$s）</string>
     <string name="avatar_gltf_camera_distance">glTF 相机距离（%1$s）</string>
     <string name="avatar_gltf_orbit_pivot_height">glTF 环绕中心高度（%1$s）</string>
+    <string name="avatar_fbx_camera_pitch">FBX 相机俯仰（%1$s）</string>
+    <string name="avatar_fbx_camera_yaw">FBX 相机偏航（%1$s）</string>
+    <string name="avatar_fbx_camera_distance">FBX 相机距离（%1$s）</string>
+    <string name="avatar_fbx_orbit_pivot_height">FBX 环绕中心高度（%1$s）</string>
     <string name="avatar_supported_formats_title">支持格式</string>
-    <string name="avatar_supported_formats_desc">- DragonBones：骨骼 .json + *_tex.json + *_tex.png\n- WebP：一个或多个 .webp 文件\n- MP4：一个或多个 .mp4 文件\n- MMD：.pmx 或 .pmd 模型，可选 .vmd 动作\n- glTF：.glb 或 .gltf（如有引用还需 .bin/贴图等资源）</string>
+    <string name="avatar_supported_formats_desc">- DragonBones：骨骼 .json + *_tex.json + *_tex.png\n- WebP：一个或多个 .webp 文件\n- MP4：一个或多个 .mp4 文件\n- MMD：.pmx 或 .pmd 模型，可选 .vmd 动作\n- glTF：.glb 或 .gltf（如有引用还需 .bin/贴图等资源）\n- FBX：.fbx（直传仅限自包含资源）</string>
     <string name="avatar_import_methods_title">导入方式</string>
-    <string name="avatar_import_methods_desc">- 直接选文件：.glb / .gltf / .mp4\n- ZIP 导入：DragonBones、WebP、MP4、MMD 或多文件 glTF 包</string>
+    <string name="avatar_import_methods_desc">- 直接选文件：.glb / .gltf / .mp4 / .fbx\n- ZIP 导入：DragonBones、WebP、MP4、MMD、多文件 glTF，或带外置贴图/资源的 FBX 包</string>
     <string name="import_structure_guide_tap_to_expand">导入结构指南（点击展开）</string>
     <string name="import_structure_guide_tap_to_collapse">导入结构指南（点击收起）</string>
-    <string name="import_structure_guide_content">这是“导入包”的目录结构（ZIP 或选中文件内部），不是应用内部存储。\n\nDragonBones（.zip）\n  my_dragonbones.zip\n    any_folder_name/\n      hero_ske.json\n      hero_tex.json\n      hero_tex.png\n  要求：ske/tex json/png 文件名前缀一致。\n\nWebP（.zip）\n  my_webp.zip\n    any_folder_name/\n      idle.webp\n      talking.webp\n      happy.webp\n  要求：至少包含一个 .webp 文件。\n\nMP4\n  方式 A（直接文件）:\n    avatar.mp4\n  方式 B（.zip）:\n    my_mp4.zip\n      any_folder_name/\n        idle.mp4\n        talking.mp4\n        happy.mp4\n  要求：至少包含一个 .mp4 文件。\n\nMMD（.zip）\n  my_mmd.zip\n    any_folder_name/\n      character.pmx（或 .pmd）\n      motions/idle.vmd（可选）\n      textures/...\n  要求：保持 PMX/PMD 引用的相对路径不变。\n\nglTF\n  方式 A（直接文件）:\n    avatar.glb\n  方式 B（多文件 glTF 使用 .zip）:\n    my_gltf.zip\n      any_folder_name/\n        avatar.gltf\n        avatar.bin\n        textures/...\n  要求：保持 .gltf 引用的相对路径不变。</string>
+    <string name="import_structure_guide_content">这是“导入包”的目录结构（ZIP 或选中文件内部），不是应用内部存储。\n\nDragonBones（.zip）\n  my_dragonbones.zip\n    any_folder_name/\n      hero_ske.json\n      hero_tex.json\n      hero_tex.png\n  要求：ske/tex json/png 文件名前缀一致。\n\nWebP（.zip）\n  my_webp.zip\n    any_folder_name/\n      idle.webp\n      talking.webp\n      happy.webp\n  要求：至少包含一个 .webp 文件。\n\nMP4\n  方式 A（直接文件）:\n    avatar.mp4\n  方式 B（.zip）:\n    my_mp4.zip\n      any_folder_name/\n        idle.mp4\n        talking.mp4\n        happy.mp4\n  要求：至少包含一个 .mp4 文件。\n\nMMD（.zip）\n  my_mmd.zip\n    any_folder_name/\n      character.pmx（或 .pmd）\n      motions/idle.vmd（可选）\n      textures/...\n  要求：保持 PMX/PMD 引用的相对路径不变。\n\nglTF\n  方式 A（直接文件）:\n    avatar.glb\n  方式 B（多文件 glTF 使用 .zip）:\n    my_gltf.zip\n      any_folder_name/\n        avatar.gltf\n        avatar.bin\n        textures/...\n  要求：保持 .gltf 引用的相对路径不变。\n\nFBX\n  方式 A（直接文件，仅限自包含资源）:\n    avatar.fbx\n  方式 B（外置贴图/资源请使用 .zip）:\n    my_fbx.zip\n      any_folder_name/\n        avatar.fbx\n        textures/...\n  要求：直接上传 .fbx 仅支持内嵌资源；若模型引用外置贴图或其他资源，请保持相对路径并放进 ZIP。</string>
     <string name="enter">进入</string>
     <string name="about_avatar_formats">本应用支持多种虚拟形象格式，包括DragonBones。以下是制作和导入模型的说明。</string>
     <string name="dragon_bones_config">DragonBones配置</string>
@@ -1532,6 +1536,8 @@
     <string name="disable_user_preference_description_desc">禁用后，系统提示词中不再附加“User preference description”段落</string>
     <string name="disable_latex_description">禁用 LaTeX 描述</string>
     <string name="disable_latex_description_desc">禁用后，系统提示词中不再包含 LaTeX 公式格式说明</string>
+    <string name="disable_status_tags">禁用状态标签</string>
+    <string name="disable_status_tags_desc">禁用后，系统提示词中不再附加要求以“任务完成 / 等待响应”状态标签结束回复的规则</string>
     <string name="reply_message">回复</string>
     <string name="stop_reading">停止朗读</string>
     <string name="edit_and_resend">编辑并重发</string>
@@ -3133,6 +3139,8 @@
     <string name="settings_speech_services_subtitle">TTS/STT服务设置</string>
     <string name="settings_custom_headers">自定义请求头</string>
     <string name="settings_custom_headers_subtitle">API请求头字段配置</string>
+    <string name="headers_configured_count">已配置 %1$d 条</string>
+    <string name="screen_title_external_http_chat_settings">外部 HTTP 调用</string>
     <string name="settings_system_prompts_subtitle">系统和模型提示词</string>
     <string name="settings_functional_prompts_subtitle">功能专用提示词模板</string>
     <string name="settings_context_length">上下文长度</string>
@@ -3185,6 +3193,8 @@
     
     <string name="settings_data_permissions">数据和权限</string>
     <string name="settings_tool_permissions_subtitle">工具权限和安全设置</string>
+    <string name="settings_external_http_chat">外部 HTTP 调用</string>
+    <string name="settings_external_http_chat_subtitle">局域网聊天接口、端口和 Bearer Token</string>
     <string name="settings_data_backup_subtitle">聊天记录备份管理</string>
     <string name="settings_token_usage_stats">Token使用统计</string>
     <string name="settings_function_label">功能</string>
@@ -3700,7 +3710,6 @@
     <string name="screen_title_user_preferences_settings">用户偏好设置</string>
     <string name="screen_title_model_config">模型与参数配置</string>
     <string name="screen_title_speech_services_settings">语音服务设置</string>
-    <string name="screen_title_custom_headers_settings">自定义请求头</string>
     <string name="screen_title_persona_card_generation">人设卡生成</string>
     <string name="screen_title_waifu_mode_settings">Waifu模式设置</string>
     <string name="screen_title_tag_market">标签市场</string>
@@ -3875,6 +3884,23 @@
     <string name="character_card_chat_model_binding">对话模型绑定</string>
     <string name="character_card_chat_model_follow_global">跟随全局</string>
     <string name="character_card_chat_model_fixed_config">固定配置</string>
+    <string name="character_card_chat_model_specify_fixed_config">指定固定配置</string>
+    <string name="character_card_tool_access_title">自定义允许使用的工具</string>
+    <string name="character_card_tool_access_enable">启用角色卡级工具白名单</string>
+    <string name="character_card_tool_access_follow_global">当前跟随全局配置</string>
+    <string name="character_card_tool_access_configure">配置允许项</string>
+    <string name="character_card_tool_access_summary_empty">当前未允许任何内建工具或外部来源</string>
+    <string name="character_card_tool_access_summary_counts">内建工具 %1$d · 包 %2$d · Skill %3$d · MCP %4$d</string>
+    <string name="character_card_tool_access_tab_builtin">内建工具</string>
+    <string name="character_card_tool_access_tab_package">包</string>
+    <string name="character_card_tool_access_tab_skill">Skill</string>
+    <string name="character_card_tool_access_tab_mcp">MCP</string>
+    <string name="character_card_tool_access_empty_builtin">当前没有可配置的内建工具</string>
+    <string name="character_card_tool_access_empty_packages">当前没有全局可用的包</string>
+    <string name="character_card_tool_access_empty_skills">当前没有对 AI 可见的 Skill</string>
+    <string name="character_card_tool_access_empty_mcp">当前没有已启用的 MCP 服务器</string>
+    <string name="character_card_tool_access_requires_use_package">当前已允许包 / Skill / MCP，但未允许 use_package，请先在内建工具中开启 use_package</string>
+    <string name="character_card_tool_access_denied_runtime">该角色卡不允许使用此工具/来源</string>
     <string name="character_card_custom_prompt">自定义提示词</string>
     <string name="character_card_custom_prompt_placeholder">高级自定义提示词...</string>
     <string name="character_card_marks">备注</string>
@@ -4222,6 +4248,41 @@
     <string name="settings_context_title">上下文设置</string>
     <string name="settings_summary_title">总结设置</string>
     <string name="settings_context_summary_subtitle">管理上下文长度、总结和截断设置</string>
+    <string name="external_http_chat_enable">启用外部 HTTP 服务</string>
+    <string name="external_http_chat_enable_desc">开启后会启动局域网 HTTP 聊天接口，供同网络设备调用</string>
+    <string name="external_http_chat_port">监听端口</string>
+    <string name="external_http_chat_port_desc">默认 8094。保存后会在启用状态下自动重启服务</string>
+    <string name="external_http_chat_save_port">保存端口</string>
+    <string name="external_http_chat_port_saved">端口已保存</string>
+    <string name="external_http_chat_invalid_port">端口无效，请输入 1-65535</string>
+    <string name="external_http_chat_token">Bearer Token</string>
+    <string name="external_http_chat_token_desc">首次启用时自动生成。客户端需要在 Authorization 头中携带 Bearer Token</string>
+    <string name="external_http_chat_token_not_generated">尚未生成，请先启用服务</string>
+    <string name="external_http_chat_copy_token">复制 Token</string>
+    <string name="external_http_chat_reset_token">重置 Token</string>
+    <string name="external_http_chat_token_copied">Token 已复制</string>
+    <string name="external_http_chat_token_reset">Token 已重置并复制</string>
+    <string name="external_http_chat_status">当前状态</string>
+    <string name="external_http_chat_status_running">服务运行中，端口 %1$d</string>
+    <string name="external_http_chat_status_stopped">服务未运行</string>
+    <string name="external_http_chat_status_error">服务异常：%1$s</string>
+    <string name="external_http_chat_access_urls">局域网访问地址</string>
+    <string name="external_http_chat_no_lan_ip">暂未检测到可用的局域网 IPv4 地址，请确认设备已联网</string>
+    <string name="external_http_chat_sync_example">同步调用示例</string>
+    <string name="external_http_chat_async_example">异步回调示例</string>
+    <string name="external_http_chat_health_example">健康检查示例</string>
+    <string name="external_http_chat_intent_title">Intent 调用说明</string>
+    <string name="external_http_chat_intent_desc">广播入口仍然保留，适合本机 App 集成、Tasker 或 adb 调试</string>
+    <string name="external_http_chat_intent_overview">HTTP 与 Intent 参数语义一致，仅入口不同。\n\n请求 Action：%1$s\n默认回传 Action：%2$s\n\n常用 extras：message、request_id、group、create_new_chat、chat_id、create_if_none、show_floating、auto_exit_after_ms、stop_after、reply_action、reply_package\n\n处理完成后会通过广播回传 success、chat_id、ai_response、error；如果只希望回传给指定 App，请设置 reply_package。</string>
+    <string name="external_http_chat_copy_example">复制示例</string>
+    <string name="external_http_chat_example_copied">示例命令已复制</string>
+    <string name="external_http_chat_service_enabled">服务已启用</string>
+    <string name="external_http_chat_service_disabled">服务已停用</string>
+    <string name="external_http_chat_restart_service">重启服务</string>
+    <string name="external_http_chat_notification_channel_name">外部 HTTP 调用</string>
+    <string name="external_http_chat_notification_channel_desc">局域网 External HTTP Chat API 后台服务</string>
+    <string name="external_http_chat_notification_title">外部 HTTP 调用已开启</string>
+    <string name="external_http_chat_notification_text">正在监听端口 %1$d</string>
 
     <!-- Custom Emoji Management -->
     <string name="manage_custom_emoji">管理自定义表情</string>
@@ -5476,9 +5537,7 @@
 
     <!-- Custom Headers Screen -->
     <string name="headers_load_preset">加载预设</string>
-    <string name="headers_saved">请求头已保存</string>
     <string name="headers_add_header">添加请求头</string>
-    <string name="headers_save_headers">保存请求头</string>
     <string name="headers_delete_header">删除请求头</string>
     <string name="headers_key_label">键</string>
     <string name="headers_value_label">值</string>

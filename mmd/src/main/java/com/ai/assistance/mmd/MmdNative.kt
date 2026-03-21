@@ -53,23 +53,16 @@ object MmdNative {
         farClip: Float,
         vertexBuffer: FloatBuffer?,
         vertexCount: Int,
-        drawBatchData: IntBuffer?,
+        materialSegments: IntBuffer?,
         textureIdsBySlot: IntBuffer?,
-        program: Int,
-        positionHandle: Int,
-        normalHandle: Int,
-        texCoordHandle: Int,
-        mvpHandle: Int,
-        modelHandle: Int,
-        useTextureHandle: Int,
-        textureSamplerHandle: Int
+        textureFlagsBySlot: IntBuffer?,
+        mainProgramHandles: IntArray?,
+        edgeProgramHandles: IntArray?
     ): Boolean
 
     @JvmStatic external fun nativeBuildPreviewMesh(pathModel: String): FloatArray?
 
-    @JvmStatic external fun nativeBuildPreviewBatches(pathModel: String): IntArray?
-
-    @JvmStatic external fun nativeReadPreviewTexturePath(pathModel: String): String?
+    @JvmStatic external fun nativeBuildPreviewMaterialSegments(pathModel: String): IntArray?
 
     @JvmStatic external fun nativeReadPreviewTexturePaths(pathModel: String): Array<String>?
 

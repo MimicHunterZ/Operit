@@ -8,6 +8,8 @@ import com.ai.assistance.operit.core.avatar.common.model.AvatarModel
 import com.ai.assistance.operit.core.avatar.common.model.AvatarType
 import com.ai.assistance.operit.core.avatar.common.model.ISkeletalAvatarModel
 import com.ai.assistance.operit.core.avatar.impl.dragonbones.view.DragonBonesRenderer
+import com.ai.assistance.operit.core.avatar.impl.fbx.model.FbxAvatarModel
+import com.ai.assistance.operit.core.avatar.impl.fbx.view.FbxRenderer
 import com.ai.assistance.operit.core.avatar.impl.gltf.model.GltfAvatarModel
 import com.ai.assistance.operit.core.avatar.impl.gltf.view.GltfRenderer
 import com.ai.assistance.operit.core.avatar.impl.mmd.model.MmdAvatarModel
@@ -89,6 +91,21 @@ class AvatarRendererFactoryImpl : AvatarRendererFactory {
                         GltfRenderer(
                             modifier = modifier,
                             model = gltfModel,
+                            controller = controller,
+                            onError = { }
+                        )
+                    }
+                } else {
+                    null
+                }
+            }
+            AvatarType.FBX -> {
+                val fbxModel = model as? FbxAvatarModel
+                if (fbxModel != null) {
+                    { modifier, controller ->
+                        FbxRenderer(
+                            modifier = modifier,
+                            model = fbxModel,
                             controller = controller,
                             onError = { }
                         )

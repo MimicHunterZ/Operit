@@ -965,6 +965,7 @@
     <string name="settings_speech_services_subtitle">Configuración de servicios TTS/STT</string>
     <string name="settings_custom_headers">Encabezados Personalizados</string>
     <string name="settings_custom_headers_subtitle">Configuración de campos de encabezado de solicitud API</string>
+    <string name="headers_configured_count">%1$d configurados</string>
     <string name="settings_system_prompts_subtitle">Prompts del sistema y modelo</string>
     <string name="settings_functional_prompts_subtitle">Plantillas de prompts funcionales</string>
     <string name="settings_context_length">Longitud del Contexto</string>

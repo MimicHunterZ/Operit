@@ -42,6 +42,7 @@ import com.ai.assistance.operit.ui.features.packages.screens.SkillPublishScreen
 import com.ai.assistance.operit.ui.features.settings.screens.ChatBackupSettingsScreen
 import com.ai.assistance.operit.ui.features.settings.screens.ChatHistorySettingsScreen
 import com.ai.assistance.operit.ui.features.settings.screens.ContextSummarySettingsScreen
+import com.ai.assistance.operit.ui.features.settings.screens.ExternalHttpChatSettingsScreen
 import com.ai.assistance.operit.ui.features.settings.screens.FunctionalConfigScreen
 import com.ai.assistance.operit.ui.features.settings.screens.GlobalDisplaySettingsScreen
 import com.ai.assistance.operit.ui.features.settings.screens.GitHubAccountScreen
@@ -56,7 +57,6 @@ import com.ai.assistance.operit.ui.features.settings.screens.ThemeSettingsScreen
 import com.ai.assistance.operit.ui.features.settings.screens.ToolPermissionSettingsScreen
 import com.ai.assistance.operit.ui.features.settings.screens.UserPreferencesGuideScreen
 import com.ai.assistance.operit.ui.features.settings.screens.UserPreferencesSettingsScreen
-import com.ai.assistance.operit.ui.features.settings.screens.CustomHeadersSettingsScreen
 import com.ai.assistance.operit.ui.features.settings.screens.MnnModelDownloadScreen
 import com.ai.assistance.operit.ui.features.settings.screens.TokenUsageStatisticsScreen
 import com.ai.assistance.operit.ui.features.token.TokenConfigWebViewScreen
@@ -457,7 +457,7 @@ sealed class Screen(
                     navigateToChatBackupSettings = { navigateTo(ChatBackupSettings) },
                     navigateToLanguageSettings = { navigateTo(LanguageSettings) },
                     navigateToSpeechServicesSettings = { navigateTo(SpeechServicesSettings) },
-                    navigateToCustomHeadersSettings = { navigateTo(CustomHeadersSettings) },
+                    navigateToExternalHttpChatSettings = { navigateTo(ExternalHttpChatSettings) },
                     navigateToPersonaCardGeneration = { navigateTo(PersonaCardGeneration) },
                     navigateToWaifuModeSettings = { navigateTo(WaifuModeSettings) },
                     navigateToTokenUsageStatistics = { navigateTo(TokenUsageStatistics) },
@@ -741,9 +741,8 @@ sealed class Screen(
         }
     }
     
-    // 添加自定义请求头设置屏幕
-    data object CustomHeadersSettings :
-        Screen(parentScreen = Settings, navItem = NavItem.Settings, titleRes = R.string.screen_title_custom_headers_settings) {
+    data object ExternalHttpChatSettings :
+        Screen(parentScreen = Settings, navItem = NavItem.Settings, titleRes = R.string.screen_title_external_http_chat_settings) {
         @Composable
         override fun Content(
             navController: NavController,
@@ -755,7 +754,7 @@ sealed class Screen(
             onError: (String) -> Unit,
             onGestureConsumed: (Boolean) -> Unit
         ) {
-            CustomHeadersSettingsScreen(onBackPressed = onGoBack)
+            ExternalHttpChatSettingsScreen(onBackPressed = onGoBack)
         }
     }
     
@@ -860,27 +859,27 @@ sealed class Screen(
 
     data object ModelPromptsSettings :
             Screen(parentScreen = Settings, navItem = NavItem.Settings, titleRes = R.string.screen_title_model_prompts_settings) {
-                @Composable
-                override fun Content(
-                    navController: NavController,
-                    navigateTo: ScreenNavigationHandler,
-                    updateNavItem: NavItemChangeHandler,
-                    onGoBack: () -> Unit,
-                    hasBackgroundImage: Boolean,
-                    onLoading: (Boolean) -> Unit,
-                    onError: (String) -> Unit,
-                    onGestureConsumed: (Boolean) -> Unit
-                    ) {
-                        ModelPromptsSettingsScreen(
-                            onBackPressed = onGoBack,
-                            onNavigateToMarket = { navigateTo(TagMarket) },
-                            onNavigateToPersonaGeneration = { navigateTo(PersonaCardGeneration) },
-                            onNavigateToChatManagement = { navigateTo(ChatHistorySettings) }
-                        )
-                        }
-                    }
-                    
-                    data object FunctionalConfig :
+        @Composable
+        override fun Content(
+                navController: NavController,
+                navigateTo: ScreenNavigationHandler,
+                updateNavItem: NavItemChangeHandler,
+                onGoBack: () -> Unit,
+                hasBackgroundImage: Boolean,
+                onLoading: (Boolean) -> Unit,
+                onError: (String) -> Unit,
+                onGestureConsumed: (Boolean) -> Unit
+        ) {
+            ModelPromptsSettingsScreen(
+                onBackPressed = onGoBack,
+                onNavigateToMarket = { navigateTo(TagMarket) },
+                onNavigateToPersonaGeneration = { navigateTo(PersonaCardGeneration) },
+                onNavigateToChatManagement = { navigateTo(ChatHistorySettings) }
+            )
+        }
+    }
+
+    data object FunctionalConfig :
             Screen(parentScreen = Settings, navItem = NavItem.Settings, titleRes = R.string.screen_title_functional_config) {
         @Composable
         override fun Content(

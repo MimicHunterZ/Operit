@@ -15,6 +15,7 @@ add_library(
     MmdWrapper
     SHARED
     src/main/cpp/mmd_jni.cpp
+    src/main/cpp/mmd_preview_support.cpp
 )
 
 if (DEFINED OPERIT_SABA_DIR)
@@ -25,6 +26,7 @@ if (DEFINED OPERIT_SABA_DIR)
         "${OPERIT_SABA_DIR}/external/glm/include"
         "${OPERIT_SABA_DIR}/external/spdlog/include"
         "${OPERIT_SABA_DIR}/external/stb/include"
+        "${OPERIT_SABA_DIR}/external/tinyddsloader/include"
     )
 
     target_sources(MmdWrapper PRIVATE

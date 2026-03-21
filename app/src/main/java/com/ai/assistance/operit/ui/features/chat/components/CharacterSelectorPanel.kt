@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Check
@@ -77,7 +78,8 @@ private fun applyCharacterSelectorSort(
 fun CharacterSelectorPanel(
     isVisible: Boolean,
     onDismiss: () -> Unit,
-    onSelectCharacter: (CharacterSelectorTarget) -> Unit
+    onSelectCharacter: (CharacterSelectorTarget) -> Unit,
+    onOpenCharacterSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val characterCardManager = remember { CharacterCardManager.getInstance(context) }
@@ -226,6 +228,20 @@ fun CharacterSelectorPanel(
                                         }
                                     )
                                 }
+                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+                            IconButton(
+                                onClick = {
+                                    onOpenCharacterSettings()
+                                    onDismiss()
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = context.getString(R.string.edit_character_card),
+                                    modifier = Modifier.size(18.dp)
+                                )
                             }
                         }
                         

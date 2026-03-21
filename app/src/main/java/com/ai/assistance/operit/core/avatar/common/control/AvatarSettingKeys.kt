@@ -15,4 +15,9 @@ object AvatarSettingKeys {
     const val GLTF_CAMERA_YAW = "gltf.cameraYaw"
     const val GLTF_CAMERA_DISTANCE_SCALE = "gltf.cameraDistanceScale"
     const val GLTF_CAMERA_TARGET_HEIGHT = "gltf.cameraTargetHeight"
+
+    const val FBX_CAMERA_PITCH = "fbx.cameraPitch"
+    const val FBX_CAMERA_YAW = "fbx.cameraYaw"
+    const val FBX_CAMERA_DISTANCE_SCALE = "fbx.cameraDistanceScale"
+    const val FBX_CAMERA_TARGET_HEIGHT = "fbx.cameraTargetHeight"
 }

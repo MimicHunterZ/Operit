@@ -25,3 +25,6 @@
 [submodule "quickjs/thirdparty/quickjs"]
 	path = quickjs/thirdparty/quickjs
 	url = https://github.com/bellard/quickjs.git
+[submodule "fbx/third_party/ufbx"]
+	path = fbx/third_party/ufbx
+	url = https://github.com/ufbx/ufbx.git

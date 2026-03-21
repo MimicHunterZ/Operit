@@ -1947,6 +1947,12 @@ object SystemToolPromptsInternal {
                                         type = "string",
                                         description = "optional, custom parameters JSON array string",
                                         required = false
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "custom_headers",
+                                        type = "string",
+                                        description = "optional, custom request headers JSON object string",
+                                        required = false
                                     )
                                 )
                         ),
@@ -2121,6 +2127,12 @@ object SystemToolPromptsInternal {
                                         name = "custom_parameters",
                                         type = "string",
                                         description = "optional, custom parameters JSON array string",
+                                        required = false
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "custom_headers",
+                                        type = "string",
+                                        description = "optional, custom request headers JSON object string",
                                         required = false
                                     ),
                                     ToolParameterSchema(
@@ -4522,6 +4534,12 @@ object SystemToolPromptsInternal {
                                         type = "string",
                                         description = "可选，自定义参数 JSON 数组字符串",
                                         required = false
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "custom_headers",
+                                        type = "string",
+                                        description = "可选，自定义请求头 JSON 对象字符串",
+                                        required = false
                                     )
                                 )
                         ),
@@ -4696,6 +4714,12 @@ object SystemToolPromptsInternal {
                                         name = "custom_parameters",
                                         type = "string",
                                         description = "可选，自定义参数 JSON 数组字符串",
+                                        required = false
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "custom_headers",
+                                        type = "string",
+                                        description = "可选，自定义请求头 JSON 对象字符串",
                                         required = false
                                     ),
                                     ToolParameterSchema(

@@ -13,7 +13,6 @@ import com.ai.assistance.operit.data.model.getModelByIndex
 import com.ai.assistance.operit.data.model.getValidModelIndex
 import com.ai.assistance.operit.data.preferences.FunctionalConfigManager
 import com.ai.assistance.operit.data.preferences.ModelConfigManager
-import com.ai.assistance.operit.data.preferences.ApiPreferences
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -215,10 +214,6 @@ class MultiServiceManager(private val context: Context) {
 
     /** 根据配置创建AIService实例 */
     private suspend fun createServiceFromConfig(config: ModelConfigData, modelIndex: Int): AIService {
-        // 从ApiPreferences中异步获取自定义请求头
-        val apiPreferences = ApiPreferences.getInstance(context)
-        val customHeadersJson = apiPreferences.getCustomHeaders()
-
         // 使用公共函数计算有效索引
         val actualIndex = getValidModelIndex(config.modelName, modelIndex)
         
@@ -238,7 +233,6 @@ class MultiServiceManager(private val context: Context) {
 
         val rawService = AIServiceFactory.createService(
             config = configWithSelectedModel,
-            customHeadersJson = customHeadersJson,
             modelConfigManager = modelConfigManager,
             context = context
         )

@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import com.ai.assistance.operit.ui.components.CustomScaffold
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -30,15 +31,20 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.PopupProperties
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import com.ai.assistance.operit.R
+import com.ai.assistance.operit.api.chat.EnhancedAIService
 import com.ai.assistance.operit.api.chat.llmprovider.AIService
 import com.ai.assistance.operit.api.chat.llmprovider.ModelConfigConnectionTester
 import com.ai.assistance.operit.api.chat.llmprovider.ModelConnectionTestType
 import com.ai.assistance.operit.data.model.FunctionType
 import com.ai.assistance.operit.data.model.ModelConfigData
-import com.ai.assistance.operit.data.preferences.ApiPreferences
 import com.ai.assistance.operit.data.preferences.FunctionalConfigManager
 import com.ai.assistance.operit.data.preferences.ModelConfigManager
+import com.ai.assistance.operit.ui.features.settings.DebouncedModelConfigAutoSaveEffect
+import com.ai.assistance.operit.ui.features.settings.RegisterModelConfigSaveAction
+import com.ai.assistance.operit.ui.features.settings.rememberModelConfigSaveCoordinator
 import com.ai.assistance.operit.ui.features.settings.sections.AdvancedSettingsSection
 import com.ai.assistance.operit.ui.features.settings.sections.ModelApiSettingsSection
 import com.ai.assistance.operit.ui.features.settings.sections.ModelParametersSection
@@ -49,12 +55,85 @@ import com.ai.assistance.operit.ui.features.settings.sections.SettingsTextField
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+
+private data class HeaderPreset(val nameResId: Int, val headers: Map<String, String>)
+
+private val headerPresets =
+    listOf(
+        HeaderPreset(
+            nameResId = R.string.headers_preset_android_browser,
+            headers =
+                mapOf(
+                    "User-Agent" to
+                        "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
+                )
+        ),
+        HeaderPreset(
+            nameResId = R.string.headers_preset_desktop_browser_win,
+            headers =
+                mapOf(
+                    "User-Agent" to
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
+                )
+        ),
+        HeaderPreset(
+            nameResId = R.string.headers_preset_lang_zh,
+            headers = mapOf("Accept-Language" to "zh-CN,zh;q=0.9")
+        ),
+        HeaderPreset(
+            nameResId = R.string.headers_preset_lang_en,
+            headers = mapOf("Accept-Language" to "en-US,en;q=0.9")
+        ),
+        HeaderPreset(
+            nameResId = R.string.headers_preset_cmcc_gateway,
+            headers = mapOf("X-Forwarded-For" to "211.136.1.10", "Via" to "CMNET")
+        ),
+        HeaderPreset(
+            nameResId = R.string.headers_preset_us_la,
+            headers =
+                mapOf(
+                    "Accept-Language" to "en-US,en;q=0.9",
+                    "X-Forwarded-For" to "38.107.226.5"
+                )
+        )
+    )
+
+private fun parseHeaderEntries(headersJson: String): List<Pair<String, String>> {
+    return runCatching {
+        if (headersJson.isBlank() || headersJson == "{}") {
+            emptyList()
+        } else {
+            val jsonObject = JSONObject(headersJson)
+            buildList {
+                for (key in jsonObject.keys()) {
+                    add(key to jsonObject.getString(key))
+                }
+            }
+        }
+    }.getOrElse { emptyList() }
+}
+
+private fun serializeHeaderEntries(headers: List<Pair<String, String>>): String {
+    return JSONObject().apply {
+        headers.forEach { (key, value) ->
+            val normalizedKey = key.trim()
+            if (normalizedKey.isNotEmpty()) {
+                put(normalizedKey, value)
+            }
+        }
+    }.toString()
+}
 
 @SuppressLint("LocalContextGetResourceValueCall")
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -64,11 +143,12 @@ fun ModelConfigScreen(
     navigateToMnnModelDownload: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val configManager = remember { ModelConfigManager(context) }
     val functionalConfigManager = remember { FunctionalConfigManager(context) }
-    val apiPreferences = remember { ApiPreferences.getInstance(context) }
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val saveCoordinator = rememberModelConfigSaveCoordinator()
 
     // 配置状态
     val configList = configManager.configListFlow.collectAsState(initial = listOf("default")).value
@@ -93,9 +173,6 @@ fun ModelConfigScreen(
     var testResults by remember { mutableStateOf<List<ConnectionTestItem>?>(null) }
     var connectionTestJob by remember { mutableStateOf<Job?>(null) }
     var activeConnectionTestService by remember { mutableStateOf<AIService?>(null) }
-
-    // 保存API设置的函数引用
-    var saveApiSettings: (() -> Unit)? by remember { mutableStateOf(null) }
 
     // 初始化配置，并默认定位到“对话功能模型”所使用的配置
     LaunchedEffect(Unit) {
@@ -133,6 +210,21 @@ fun ModelConfigScreen(
         scope.launch {
             kotlinx.coroutines.delay(3000)
             showSaveSuccessMessage = false
+        }
+    }
+
+    DisposableEffect(lifecycleOwner, saveCoordinator) {
+        val observer =
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_STOP) {
+                    saveCoordinator.flushAllInBackground(showSuccess = false)
+                }
+            }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
 
@@ -303,20 +395,19 @@ fun ModelConfigScreen(
                                     connectionTestJob = scope.launch {
                                         try {
                                             isTestingConnection = true
-                                            saveApiSettings?.invoke()
-                                            kotlinx.coroutines.delay(300)
-
                                             val results = mutableListOf<ConnectionTestItem>()
                                             try {
-                                                selectedConfig.value?.let { config ->
-                                                    val customHeadersJson =
-                                                        apiPreferences.getCustomHeaders()
+                                                saveCoordinator.flushAll(showSuccess = false)
+
+                                                val latestConfig =
+                                                    configManager.getModelConfig(selectedConfigId)
+
+                                                latestConfig?.let { config ->
                                                     val report =
                                                         ModelConfigConnectionTester.run(
                                                             context = context,
                                                             modelConfigManager = configManager,
                                                             config = config,
-                                                            customHeadersJson = customHeadersJson,
                                                             onActiveServiceChanged = {
                                                                 activeConnectionTestService = it
                                                             }
@@ -548,8 +639,8 @@ fun ModelConfigScreen(
                     ModelApiSettingsSection(
                         config = config,
                         configManager = configManager,
+                        saveCoordinator = saveCoordinator,
                         showNotification = { message -> showNotification(message) },
-                        onSaveRequested = { saveFunction -> saveApiSettings = saveFunction },
                         navigateToMnnModelDownload = navigateToMnnModelDownload
                     )
                 }
@@ -567,6 +658,15 @@ fun ModelConfigScreen(
                     ModelParametersSection(
                         config = config,
                         configManager = configManager,
+                        showNotification = { message -> showNotification(message) }
+                    )
+                }
+
+                item {
+                    CustomHeadersSettingsSection(
+                        config = config,
+                        configManager = configManager,
+                        saveCoordinator = saveCoordinator,
                         showNotification = { message -> showNotification(message) }
                     )
                 }
@@ -752,6 +852,210 @@ fun ModelConfigScreen(
                 },
                 shape = RoundedCornerShape(12.dp)
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CustomHeadersSettingsSection(
+    config: ModelConfigData,
+    configManager: ModelConfigManager,
+    saveCoordinator: com.ai.assistance.operit.ui.features.settings.ModelConfigSaveCoordinator,
+    showNotification: (String) -> Unit
+) {
+    val latestConfig by rememberUpdatedState(config)
+    var headers by remember(config.id) { mutableStateOf(parseHeaderEntries(config.customHeaders)) }
+    var headersExpanded by rememberSaveable(config.id) { mutableStateOf(false) }
+    var showHeaderPresetsMenu by remember { mutableStateOf(false) }
+    val saveFailedText = stringResource(R.string.save_failed)
+    val saveMutex = remember(config.id) { Mutex() }
+
+    LaunchedEffect(config.id, config.customHeaders) {
+        headers = parseHeaderEntries(config.customHeaders)
+    }
+
+    suspend fun persistHeaders(serializedHeaders: String) {
+        saveMutex.withLock {
+            withContext(Dispatchers.IO) {
+                configManager.updateCustomHeaders(latestConfig.id, serializedHeaders)
+                EnhancedAIService.refreshAllServices(configManager.appContext)
+            }
+        }
+    }
+
+    RegisterModelConfigSaveAction(
+        coordinator = saveCoordinator,
+        key = "headers:${config.id}",
+        action = { _ ->
+            persistHeaders(serializeHeaderEntries(headers))
+        }
+    )
+
+    DebouncedModelConfigAutoSaveEffect(
+        effectKey = config.id,
+        valueProvider = { serializeHeaderEntries(headers) },
+        persist = { serializedHeaders -> persistHeaders(serializedHeaders) },
+        onError = { e ->
+            showNotification(e.message ?: saveFailedText)
+        }
+    )
+
+    val configuredHeadersCount = headers.count { it.first.trim().isNotEmpty() }
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { headersExpanded = !headersExpanded },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.List,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.settings_custom_headers),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = stringResource(R.string.settings_custom_headers_subtitle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (configuredHeadersCount > 0) {
+                    Text(
+                        text =
+                            stringResource(
+                                R.string.headers_configured_count,
+                                configuredHeadersCount
+                            ),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+                Icon(
+                    imageVector =
+                        if (headersExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            AnimatedVisibility(
+                visible = headersExpanded,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(onClick = { showHeaderPresetsMenu = true }) {
+                                Icon(
+                                    imageVector = Icons.Default.List,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.headers_load_preset))
+                            }
+
+                            OutlinedButton(onClick = { headers = headers + ("" to "") }) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(stringResource(R.string.headers_add_header))
+                            }
+                        }
+
+                        DropdownMenu(
+                            expanded = showHeaderPresetsMenu,
+                            onDismissRequest = { showHeaderPresetsMenu = false }
+                        ) {
+                            headerPresets.forEach { preset ->
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(preset.nameResId)) },
+                                    onClick = {
+                                        val mergedHeaders =
+                                            headers.associate { it.first to it.second }.toMutableMap()
+                                        mergedHeaders.putAll(preset.headers)
+                                        headers = mergedHeaders.toList()
+                                        showHeaderPresetsMenu = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    headers.forEachIndexed { index, header ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = header.first,
+                                onValueChange = { newValue ->
+                                    headers =
+                                        headers.toMutableList().also {
+                                            it[index] = newValue to header.second
+                                        }
+                                },
+                                modifier = Modifier.weight(1f),
+                                label = { Text(stringResource(R.string.headers_key_label)) },
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = header.second,
+                                onValueChange = { newValue ->
+                                    headers =
+                                        headers.toMutableList().also {
+                                            it[index] = header.first to newValue
+                                        }
+                                },
+                                modifier = Modifier.weight(1f),
+                                label = { Text(stringResource(R.string.headers_value_label)) },
+                                singleLine = true
+                            )
+                            IconButton(
+                                onClick = {
+                                    headers = headers.toMutableList().apply { removeAt(index) }
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription =
+                                        stringResource(R.string.headers_delete_header)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -152,6 +152,9 @@ fun AssistantConfigScreen() {
                     arrayOf(
                         "application/zip",
                         "application/x-zip-compressed",
+                        "model/vnd.autodesk.fbx",
+                        "model/fbx",
+                        "application/fbx",
                         "model/gltf-binary",
                         "model/gltf+json",
                         "video/mp4",

@@ -10,6 +10,7 @@ import com.ai.assistance.operit.data.preferences.ApiPreferences
 import com.ai.assistance.operit.plugins.lifecycle.AppLifecycleEvent
 import com.ai.assistance.operit.plugins.lifecycle.AppLifecycleHookParams
 import com.ai.assistance.operit.plugins.lifecycle.AppLifecycleHookPluginRegistry
+import com.ai.assistance.operit.integrations.http.ExternalChatHttpAutoStarter
 import com.ai.assistance.operit.ui.common.displays.VirtualDisplayOverlay
 import com.ai.assistance.operit.core.tools.agent.ShowerController
 import kotlinx.coroutines.CoroutineScope
@@ -126,6 +127,10 @@ object ActivityLifecycleManager : Application.ActivityLifecycleCallbacks {
         )
         if (!isAppInForeground && startedActivityCount > 0) {
             isAppInForeground = true
+            ExternalChatHttpAutoStarter.ensureRunningIfEnabled(
+                context = appContext,
+                reason = "application_foreground"
+            )
             AppLifecycleHookPluginRegistry.dispatchAsync(
                 event = AppLifecycleEvent.APPLICATION_FOREGROUND,
                 params = AppLifecycleHookParams(context = appContext)

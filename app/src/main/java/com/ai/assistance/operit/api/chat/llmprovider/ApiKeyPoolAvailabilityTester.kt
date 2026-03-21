@@ -50,7 +50,6 @@ class ApiKeyPoolAvailabilityTester(
 
     fun startOrResume(
         context: Context,
-        customHeadersJson: String,
         baseConfig: ModelConfigData,
         useMultipleApiKeys: Boolean,
         apiKeyPool: List<ApiKeyInfo>,
@@ -106,7 +105,6 @@ class ApiKeyPoolAvailabilityTester(
                                 if (
                                     testSingleKey(
                                         context = context,
-                                        customHeadersJson = customHeadersJson,
                                         baseConfig = baseConfig,
                                         apiKey = keyInfo.key
                                     )
@@ -160,7 +158,6 @@ class ApiKeyPoolAvailabilityTester(
 
     private suspend fun testSingleKey(
         context: Context,
-        customHeadersJson: String,
         baseConfig: ModelConfigData,
         apiKey: String
     ): Boolean {
@@ -175,7 +172,6 @@ class ApiKeyPoolAvailabilityTester(
 
             val service = AIServiceFactory.createService(
                 config = configForTest,
-                customHeadersJson = customHeadersJson,
                 modelConfigManager = configManager,
                 context = context
             )

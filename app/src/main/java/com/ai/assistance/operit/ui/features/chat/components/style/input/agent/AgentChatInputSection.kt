@@ -198,6 +198,8 @@ fun AgentChatInputSection(
     onToggleDisableUserPreferenceDescription: () -> Unit = {},
     disableLatexDescription: Boolean = false,
     onToggleDisableLatexDescription: () -> Unit = {},
+    disableStatusTags: Boolean = false,
+    onToggleDisableStatusTags: () -> Unit = {},
     onNavigateToUserPreferences: () -> Unit = {},
     onNavigateToPackageManager: () -> Unit = {},
     toolPromptVisibility: Map<String, Boolean> = emptyMap(),
@@ -1306,6 +1308,8 @@ fun AgentChatInputSection(
                 onToggleDisableUserPreferenceDescription = onToggleDisableUserPreferenceDescription,
                 disableLatexDescription = disableLatexDescription,
                 onToggleDisableLatexDescription = onToggleDisableLatexDescription,
+                disableStatusTags = disableStatusTags,
+                onToggleDisableStatusTags = onToggleDisableStatusTags,
                 toolPromptVisibility = toolPromptVisibility,
                 onSaveToolPromptVisibilityMap = onSaveToolPromptVisibilityMap,
                 onNavigateToPackageManager = onNavigateToPackageManager,
@@ -2034,6 +2038,8 @@ private fun AgentExtraSettingsPopup(
     onToggleDisableUserPreferenceDescription: () -> Unit,
     disableLatexDescription: Boolean,
     onToggleDisableLatexDescription: () -> Unit,
+    disableStatusTags: Boolean,
+    onToggleDisableStatusTags: () -> Unit,
     toolPromptVisibility: Map<String, Boolean>,
     onSaveToolPromptVisibilityMap: (Map<String, Boolean>) -> Unit,
     onNavigateToPackageManager: () -> Unit,
@@ -2209,6 +2215,8 @@ private fun AgentExtraSettingsPopup(
                         onToggleDisableUserPreferenceDescription = onToggleDisableUserPreferenceDescription,
                         disableLatexDescription = disableLatexDescription,
                         onToggleDisableLatexDescription = onToggleDisableLatexDescription,
+                        disableStatusTags = disableStatusTags,
+                        onToggleDisableStatusTags = onToggleDisableStatusTags,
                         expanded = showDisableSettingsDropdown,
                         onExpandedChange = { showDisableSettingsDropdown = it },
                         onManageTools = { showToolPromptManagerDialog = true },
@@ -2236,6 +2244,11 @@ private fun AgentExtraSettingsPopup(
                             infoPopupContent =
                                 context.getString(R.string.disable_latex_description) to
                                     context.getString(R.string.disable_latex_description_desc)
+                        },
+                        onDisableStatusTagsInfoClick = {
+                            infoPopupContent =
+                                context.getString(R.string.disable_status_tags) to
+                                    context.getString(R.string.disable_status_tags_desc)
                         },
                     )
                 }
@@ -2393,6 +2406,8 @@ private fun AgentDisableSettingsGroupItem(
     onToggleDisableUserPreferenceDescription: () -> Unit,
     disableLatexDescription: Boolean,
     onToggleDisableLatexDescription: () -> Unit,
+    disableStatusTags: Boolean,
+    onToggleDisableStatusTags: () -> Unit,
     expanded: Boolean,
     onExpandedChange: (Boolean) -> Unit,
     onManageTools: () -> Unit,
@@ -2401,15 +2416,18 @@ private fun AgentDisableSettingsGroupItem(
     onDisableToolsInfoClick: () -> Unit,
     onDisableUserPreferenceDescriptionInfoClick: () -> Unit,
     onDisableLatexDescriptionInfoClick: () -> Unit,
+    onDisableStatusTagsInfoClick: () -> Unit,
 ) {
-    val disabledCount =
+    val disabledStates =
         listOf(
             disableStreamOutput,
             !enableTools,
             disableUserPreferenceDescription,
             disableLatexDescription,
-        ).count { it }
-    val summaryText = "$disabledCount/4"
+            disableStatusTags,
+        )
+    val disabledCount = disabledStates.count { it }
+    val summaryText = "$disabledCount/${disabledStates.size}"
 
     Row(
         modifier =
@@ -2491,6 +2509,13 @@ private fun AgentDisableSettingsGroupItem(
                 isChecked = disableLatexDescription,
                 onToggle = onToggleDisableLatexDescription,
                 onInfoClick = onDisableLatexDescriptionInfoClick,
+            )
+            AgentSimpleToggleSettingItem(
+                title = stringResource(R.string.disable_status_tags),
+                icon = Icons.Outlined.Block,
+                isChecked = disableStatusTags,
+                onToggle = onToggleDisableStatusTags,
+                onInfoClick = onDisableStatusTagsInfoClick,
             )
 
             Box(

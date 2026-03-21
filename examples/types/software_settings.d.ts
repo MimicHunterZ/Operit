@@ -67,6 +67,7 @@ export namespace SoftwareSettings {
         enable_summary_by_message_count?: boolean;
         summary_message_count_threshold?: number;
         custom_parameters?: string;
+        custom_headers?: string;
         enable_direct_image_processing?: boolean;
         enable_direct_audio_processing?: boolean;
         enable_direct_video_processing?: boolean;

@@ -41,10 +41,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import com.ai.assistance.operit.R
 import com.ai.assistance.operit.api.chat.llmprovider.EndpointCompleter
 import com.ai.assistance.operit.api.chat.EnhancedAIService
@@ -56,22 +53,18 @@ import com.ai.assistance.operit.data.model.ModelConfigData
 import com.ai.assistance.operit.data.model.ModelOption
 import com.ai.assistance.operit.data.preferences.ApiPreferences
 import com.ai.assistance.operit.data.preferences.ModelConfigManager
+import com.ai.assistance.operit.ui.features.settings.DebouncedModelConfigAutoSaveEffect
+import com.ai.assistance.operit.ui.features.settings.ModelConfigSaveCoordinator
+import com.ai.assistance.operit.ui.features.settings.RegisterModelConfigSaveAction
 import com.ai.assistance.operit.util.LocationUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.debounce
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 val TAG = "ModelApiSettings"
-
-private val modelApiSettingsSaveScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
 private val modelApiSettingsSaveMutex = Mutex()
 
@@ -80,12 +73,11 @@ private val modelApiSettingsSaveMutex = Mutex()
 fun ModelApiSettingsSection(
         config: ModelConfigData,
         configManager: ModelConfigManager,
+        saveCoordinator: ModelConfigSaveCoordinator,
         showNotification: (String) -> Unit,
-        onSaveRequested: (() -> Unit) -> Unit = {},
         navigateToMnnModelDownload: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
     val scope = rememberCoroutineScope()
 
     // 区域告警可见性
@@ -187,8 +179,8 @@ fun ModelApiSettingsSection(
         }
     }
 
-    fun flushSettings(showSuccess: Boolean) {
-        val state = ApiAutoSaveState(
+    fun buildAutoSaveState(): ApiAutoSaveState {
+        return ApiAutoSaveState(
             apiEndpoint = apiEndpointInput,
             apiKey = apiKeyInput,
             modelName = modelNameInput,
@@ -204,87 +196,44 @@ fun ModelApiSettingsSection(
             enableToolCall = enableToolCallInput,
             strictToolCall = strictToolCallInput,
         )
-
-        modelApiSettingsSaveScope.launch {
-            try {
-                AppLogger.d(
-                    TAG,
-                    "保存API设置: apiKey=${state.apiKey.take(5)}..., endpoint=${state.apiEndpoint}, model=${state.modelName}, providerType=${state.provider.name}"
-                )
-                persist(state)
-                AppLogger.d(TAG, "API设置保存完成并刷新服务")
-                if (showSuccess) {
-                    withContext(Dispatchers.Main) {
-                        showNotification(context.getString(R.string.api_settings_saved))
-                    }
-                }
-            } catch (e: Exception) {
-                if (showSuccess) {
-                    withContext(Dispatchers.Main) {
-                        showNotification((e.message ?: context.getString(R.string.save_failed)))
-                    }
-                } else {
-                    AppLogger.e(TAG, "API设置自动保存失败: ${e.message}", e)
-                }
-            }
-        }
     }
 
-    val saveSettings: () -> Unit = {
-        flushSettings(showSuccess = true)
-    }
-
-    // 将保存函数暴露给父组件
-    LaunchedEffect(Unit) {
-        onSaveRequested(saveSettings)
-    }
-
-    LaunchedEffect(config.id) {
-        snapshotFlow {
-            ApiAutoSaveState(
-                apiEndpoint = apiEndpointInput,
-                apiKey = apiKeyInput,
-                modelName = modelNameInput,
-                provider = selectedApiProvider,
-                mnnForwardType = mnnForwardTypeInput,
-                mnnThreadCount = mnnThreadCountInput.toIntOrNull() ?: 4,
-                llamaThreadCount = llamaThreadCountInput.toIntOrNull() ?: 4,
-                llamaContextSize = llamaContextSizeInput.toIntOrNull() ?: 4096,
-                enableDirectImageProcessing = enableDirectImageProcessingInput,
-                enableDirectAudioProcessing = enableDirectAudioProcessingInput,
-                enableDirectVideoProcessing = enableDirectVideoProcessingInput,
-                enableGoogleSearch = enableGoogleSearchInput,
-                enableToolCall = enableToolCallInput,
-                strictToolCall = strictToolCallInput,
+    suspend fun flushSettings(showSuccess: Boolean) {
+        val state = buildAutoSaveState()
+        try {
+            AppLogger.d(
+                TAG,
+                "保存API设置: apiKey=${state.apiKey.take(5)}..., endpoint=${state.apiEndpoint}, model=${state.modelName}, providerType=${state.provider.name}"
             )
-        }
-            .drop(1)
-            .debounce(700)
-            .distinctUntilChanged()
-            .collectLatest { state ->
-                try {
-                    persist(state)
-                } catch (e: Exception) {
-                    showNotification((e.message ?: context.getString(R.string.auto_save_failed)))
-                }
+            persist(state)
+            AppLogger.d(TAG, "API设置保存完成并刷新服务")
+            if (showSuccess) {
+                showNotification(context.getString(R.string.api_settings_saved))
             }
-    }
-
-    DisposableEffect(lifecycleOwner, config.id) {
-        val observer =
-            LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_STOP) {
-                    flushSettings(showSuccess = false)
-                }
+        } catch (e: Exception) {
+            if (showSuccess) {
+                showNotification((e.message ?: context.getString(R.string.save_failed)))
+            } else {
+                AppLogger.e(TAG, "API设置自动保存失败: ${e.message}", e)
             }
-
-        lifecycleOwner.lifecycle.addObserver(observer)
-
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            flushSettings(showSuccess = false)
+            throw e
         }
     }
+
+    RegisterModelConfigSaveAction(
+        coordinator = saveCoordinator,
+        key = "api:${config.id}",
+        action = { showSuccess -> flushSettings(showSuccess) }
+    )
+
+    DebouncedModelConfigAutoSaveEffect(
+        effectKey = config.id,
+        valueProvider = { buildAutoSaveState() },
+        persist = { state -> persist(state) },
+        onError = { e ->
+            showNotification((e.message ?: context.getString(R.string.auto_save_failed)))
+        }
+    )
 
     // 根据API提供商获取默认的API端点URL
     fun getDefaultApiEndpoint(providerType: ApiProviderType): String {
@@ -352,7 +301,6 @@ fun ModelApiSettingsSection(
     val isUsingDefaultApiKey = apiKeyInput == ApiPreferences.DEFAULT_API_KEY
     val providerRequiresApiKey =
         ApiProviderConfigs.requiresApiKey(selectedApiProvider, apiEndpointInput)
-
     // 移除了强制锁定模型名称的逻辑，允许用户自由修改
 
     Card(
@@ -711,7 +659,6 @@ fun ModelApiSettingsSection(
                         }
                     }
             )
-
 
             SettingsSwitchRow(
                 title = stringResource(R.string.enable_direct_image_processing),

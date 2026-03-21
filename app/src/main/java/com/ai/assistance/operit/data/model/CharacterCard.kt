@@ -2,6 +2,38 @@ package com.ai.assistance.operit.data.model
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class CharacterCardToolAccessConfig(
+    val enabled: Boolean = false,
+    val allowedBuiltinTools: List<String> = emptyList(),
+    val allowedPackages: List<String> = emptyList(),
+    val allowedSkills: List<String> = emptyList(),
+    val allowedMcpServers: List<String> = emptyList()
+) {
+    fun normalized(): CharacterCardToolAccessConfig {
+        return copy(
+            allowedBuiltinTools = normalizeEntries(allowedBuiltinTools),
+            allowedPackages = normalizeEntries(allowedPackages),
+            allowedSkills = normalizeEntries(allowedSkills),
+            allowedMcpServers = normalizeEntries(allowedMcpServers)
+        )
+    }
+
+    fun hasExternalSelections(): Boolean {
+        return allowedPackages.isNotEmpty() ||
+            allowedSkills.isNotEmpty() ||
+            allowedMcpServers.isNotEmpty()
+    }
+
+    private fun normalizeEntries(values: List<String>): List<String> {
+        return values
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+    }
+}
 
 /**
  * 角色卡数据模型
@@ -22,6 +54,7 @@ data class CharacterCard(
     val chatModelBindingMode: String = CharacterCardChatModelBindingMode.FOLLOW_GLOBAL, // 对话模型绑定模式
     val chatModelConfigId: String? = null, // 固定绑定时使用的配置ID
     val chatModelIndex: Int = 0, // 固定绑定时使用的模型索引
+    val toolAccessConfig: CharacterCardToolAccessConfig = CharacterCardToolAccessConfig(), // 角色卡自定义工具白名单
     val isDefault: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis()
@@ -89,7 +122,8 @@ data class OperitCharacterCardPayload(
     val marks: String = "",
     val chatModelBindingMode: String = CharacterCardChatModelBindingMode.FOLLOW_GLOBAL,
     val chatModelConfigId: String? = null,
-    val chatModelIndex: Int = 0
+    val chatModelIndex: Int = 0,
+    val toolAccessConfig: CharacterCardToolAccessConfig? = null
 )
 
 data class OperitAttachedTagPayload(

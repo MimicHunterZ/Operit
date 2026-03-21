@@ -156,6 +156,9 @@ class ApiPreferences private constructor(private val context: Context) {
         // Key for Disable LaTeX Description
         val DISABLE_LATEX_DESCRIPTION = booleanPreferencesKey("disable_latex_description")
 
+        // Key for Disable Status Tags
+        val DISABLE_STATUS_TAGS = booleanPreferencesKey("disable_status_tags")
+
         // Custom System Prompt Template (Advanced Configuration)
         val CUSTOM_SYSTEM_PROMPT_TEMPLATE = stringPreferencesKey("custom_system_prompt_template")
 
@@ -189,6 +192,9 @@ class ApiPreferences private constructor(private val context: Context) {
         // Default value for Disable LaTeX Description
         const val DEFAULT_DISABLE_LATEX_DESCRIPTION = false
 
+        // Default value for Disable Status Tags
+        const val DEFAULT_DISABLE_STATUS_TAGS = false
+
         // Default system prompt template (empty means use built-in template)
         const val DEFAULT_SYSTEM_PROMPT_TEMPLATE = ""
 
@@ -202,14 +208,10 @@ class ApiPreferences private constructor(private val context: Context) {
         // 自定义参数存储键
         val CUSTOM_PARAMETERS = stringPreferencesKey("custom_parameters")
 
-        // 自定义请求头存储键
-        val CUSTOM_HEADERS = stringPreferencesKey("custom_headers")
-
         private val SAF_BOOKMARKS_JSON = stringPreferencesKey("saf_bookmarks_json")
 
         // 默认空的自定义参数列表
         const val DEFAULT_CUSTOM_PARAMETERS = "[]"
-        const val DEFAULT_CUSTOM_HEADERS = "{}"
         const val DEFAULT_TOOL_PROMPT_VISIBILITY_JSON = "{}"
         const val DEFAULT_FEATURE_TOGGLES_JSON = "{}"
 
@@ -354,17 +356,17 @@ class ApiPreferences private constructor(private val context: Context) {
             preferences[DISABLE_LATEX_DESCRIPTION] ?: DEFAULT_DISABLE_LATEX_DESCRIPTION
         }
 
+    // Flow for Disable Status Tags
+    val disableStatusTagsFlow: Flow<Boolean> =
+        context.apiDataStore.data.map { preferences ->
+            preferences[DISABLE_STATUS_TAGS] ?: DEFAULT_DISABLE_STATUS_TAGS
+        }
+
     // Custom System Prompt Template Flow
     val customSystemPromptTemplateFlow: Flow<String> =
             context.apiDataStore.data.map { preferences ->
                 preferences[CUSTOM_SYSTEM_PROMPT_TEMPLATE] ?: DEFAULT_SYSTEM_PROMPT_TEMPLATE
             }
-
-    // Flow for Custom Headers
-    val customHeadersFlow: Flow<String> =
-        context.apiDataStore.data.map { preferences ->
-            preferences[CUSTOM_HEADERS] ?: DEFAULT_CUSTOM_HEADERS
-        }
 
     // Flows for Truncation Settings (文件和结果截断配置的Flow)
     val maxFileSizeBytesFlow: Flow<Int> =
@@ -515,17 +517,9 @@ class ApiPreferences private constructor(private val context: Context) {
         context.apiDataStore.edit { preferences -> preferences[DISABLE_LATEX_DESCRIPTION] = isDisabled }
     }
 
-    // 保存自定义请求头
-    suspend fun saveCustomHeaders(headersJson: String) {
-        context.apiDataStore.edit { preferences ->
-            preferences[CUSTOM_HEADERS] = headersJson
-        }
-    }
-
-    // 读取自定义请求头
-    suspend fun getCustomHeaders(): String {
-        val preferences = context.apiDataStore.data.first()
-        return preferences[CUSTOM_HEADERS] ?: DEFAULT_CUSTOM_HEADERS
+    // Save Disable Status Tags setting
+    suspend fun saveDisableStatusTags(isDisabled: Boolean) {
+        context.apiDataStore.edit { preferences -> preferences[DISABLE_STATUS_TAGS] = isDisabled }
     }
 
     /**

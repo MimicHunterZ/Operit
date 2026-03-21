@@ -375,6 +375,12 @@ class ModelConfigManager(private val context: Context) {
         }
     }
 
+    suspend fun updateCustomHeaders(configId: String, customHeaders: String): ModelConfigData {
+        return updateConfigInternal(configId) {
+            it.copy(customHeaders = customHeaders)
+        }
+    }
+
     suspend fun updateRequestQueueSettings(
             configId: String,
             requestLimitPerMinute: Int,

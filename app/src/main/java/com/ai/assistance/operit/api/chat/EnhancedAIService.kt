@@ -68,6 +68,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import com.ai.assistance.operit.data.repository.CustomEmojiRepository
 import com.ai.assistance.operit.data.preferences.CharacterCardManager
+import com.ai.assistance.operit.data.preferences.CharacterCardToolAccessResolver
 import com.ai.assistance.operit.data.preferences.UserPreferencesManager
 import com.ai.assistance.operit.core.config.SystemToolPrompts
 import com.ai.assistance.operit.data.model.ToolPrompt
@@ -344,6 +345,7 @@ class EnhancedAIService private constructor(private val context: Context) {
 
     // Api Preferences for settings
     private val apiPreferences = ApiPreferences.getInstance(context)
+    private val characterCardToolAccessResolver = CharacterCardToolAccessResolver.getInstance(context)
 
     // Execution context for a single sendMessage call to achieve concurrency
     private data class MessageExecutionContext(
@@ -667,6 +669,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                     // 获取工具列表（如果启用Tool Call）
                     val availableTools = getAvailableToolsForFunction(
                         functionType = functionType,
+                        roleCardId = roleCardId,
                         chatModelConfigIdOverride = chatModelConfigIdOverride,
                         chatModelIndexOverride = chatModelIndexOverride
                     )
@@ -1692,6 +1695,7 @@ class EnhancedAIService private constructor(private val context: Context) {
         val processToolJob = toolProcessingScope.launch {
             val allToolResults = ToolExecutionManager.executeInvocations(
                 invocations = toolInvocations,
+                context = this@EnhancedAIService.context,
                 toolHandler = toolHandler,
                 packageManager = packageManager,
                 collector = collector,
@@ -1841,6 +1845,7 @@ class EnhancedAIService private constructor(private val context: Context) {
         // 获取工具列表（如果启用Tool Call）- 提前获取，以便在token计算中使用
         val availableTools = getAvailableToolsForFunction(
             functionType = functionType,
+            roleCardId = roleCardId,
             chatModelConfigIdOverride = chatModelConfigIdOverride,
             chatModelIndexOverride = chatModelIndexOverride
         )
@@ -2250,6 +2255,7 @@ class EnhancedAIService private constructor(private val context: Context) {
      */
     private suspend fun getAvailableToolsForFunction(
         functionType: FunctionType,
+        roleCardId: String? = null,
         chatModelConfigIdOverride: String? = null,
         chatModelIndexOverride: Int? = null
     ): List<ToolPrompt>? {
@@ -2260,6 +2266,11 @@ class EnhancedAIService private constructor(private val context: Context) {
             val toolPromptVisibility = runCatching {
                 apiPreferences.toolPromptVisibilityFlow.first()
             }.getOrElse { emptyMap() }
+            val roleCardToolAccess = characterCardToolAccessResolver.resolve(
+                roleCardId = roleCardId,
+                packageManager = packageManager,
+                globalToolVisibility = toolPromptVisibility
+            )
 
             // 如果同时关闭了普通工具和记忆相关工具，则完全不提供Tool Call工具
             if (!enableTools && !enableMemoryQuery) {
@@ -2344,13 +2355,15 @@ class EnhancedAIService private constructor(private val context: Context) {
                 selectedTools.addAll(memoryTools)
             }
 
-            if (toolPromptVisibility.isNotEmpty()) {
-                selectedTools.retainAll { tool ->
-                    toolPromptVisibility[tool.name] ?: true
-                }
+            selectedTools.retainAll { tool ->
+                roleCardToolAccess.isBuiltinToolAllowed(tool.name)
             }
 
-            if (config.strictToolCall) {
+            val shouldInjectPackageProxy = config.strictToolCall && (
+                !roleCardToolAccess.customEnabled || roleCardToolAccess.hasAnyAllowedExternalSource
+            )
+
+            if (shouldInjectPackageProxy) {
                 selectedTools.add(
                     ToolPrompt(
                         name = "package_proxy",
@@ -2380,7 +2393,7 @@ class EnhancedAIService private constructor(private val context: Context) {
 
             AppLogger.d(
                 TAG,
-                "Tool Call已启用，提供 ${selectedTools.size} 个工具 (enableTools=$enableTools, enableMemoryQuery=$enableMemoryQuery, visibleToolOverrides=${toolPromptVisibility.size})"
+                "Tool Call已启用，提供 ${selectedTools.size} 个工具 (enableTools=$enableTools, enableMemoryQuery=$enableMemoryQuery, visibleToolOverrides=${toolPromptVisibility.size}, roleCardCustomTools=${roleCardToolAccess.customEnabled})"
             )
             selectedTools
         } catch (e: Exception) {

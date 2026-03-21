@@ -407,6 +407,97 @@ fun AvatarConfigSection(
                         valueRange = -2.0f..2.0f
                     )
                 }
+
+                if (currentAvatarConfig.type == AvatarType.FBX) {
+                    val cameraPitch =
+                        currentSettings.customSettings[AvatarSettingKeys.FBX_CAMERA_PITCH] ?: 8f
+                    val cameraYaw =
+                        currentSettings.customSettings[AvatarSettingKeys.FBX_CAMERA_YAW] ?: 0f
+                    val cameraDistanceScale =
+                        currentSettings.customSettings[AvatarSettingKeys.FBX_CAMERA_DISTANCE_SCALE] ?: 1f
+                    val cameraTargetHeight =
+                        currentSettings.customSettings[AvatarSettingKeys.FBX_CAMERA_TARGET_HEIGHT] ?: 0f
+
+                    Text(
+                        text =
+                            stringResource(
+                                R.string.avatar_fbx_camera_pitch,
+                                String.format("%.1f deg", cameraPitch)
+                            ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Slider(
+                        value = cameraPitch,
+                        onValueChange = {
+                            viewModel.updateCustomSetting(
+                                AvatarSettingKeys.FBX_CAMERA_PITCH,
+                                it
+                            )
+                        },
+                        valueRange = -89f..89f
+                    )
+
+                    Text(
+                        text =
+                            stringResource(
+                                R.string.avatar_fbx_camera_yaw,
+                                String.format("%.1f deg", cameraYaw)
+                            ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Slider(
+                        value = cameraYaw,
+                        onValueChange = {
+                            viewModel.updateCustomSetting(
+                                AvatarSettingKeys.FBX_CAMERA_YAW,
+                                it
+                            )
+                        },
+                        valueRange = -180f..180f
+                    )
+
+                    Text(
+                        text =
+                            stringResource(
+                                R.string.avatar_fbx_camera_distance,
+                                String.format("%.3fx", cameraDistanceScale)
+                            ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Slider(
+                        value = cameraDistanceScale.coerceIn(0.02f, 12.0f),
+                        onValueChange = {
+                            viewModel.updateCustomSetting(
+                                AvatarSettingKeys.FBX_CAMERA_DISTANCE_SCALE,
+                                it
+                            )
+                        },
+                        valueRange = 0.02f..12.0f
+                    )
+
+                    Text(
+                        text =
+                            stringResource(
+                                R.string.avatar_fbx_orbit_pivot_height,
+                                String.format("%.2f", cameraTargetHeight)
+                            ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Slider(
+                        value = cameraTargetHeight.coerceIn(-2.0f, 2.0f),
+                        onValueChange = {
+                            viewModel.updateCustomSetting(
+                                AvatarSettingKeys.FBX_CAMERA_TARGET_HEIGHT,
+                                it
+                            )
+                        },
+                        valueRange = -2.0f..2.0f
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))

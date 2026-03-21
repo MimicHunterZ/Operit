@@ -31,7 +31,6 @@ import com.ai.assistance.operit.api.chat.llmprovider.ApiKeyPoolAvailabilityTeste
 import com.ai.assistance.operit.data.model.ApiKeyAvailabilityStatus
 import com.ai.assistance.operit.data.model.ApiKeyInfo
 import com.ai.assistance.operit.data.model.ModelConfigData
-import com.ai.assistance.operit.data.preferences.ApiPreferences
 import com.ai.assistance.operit.data.preferences.ModelConfigManager
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -408,11 +407,9 @@ fun AdvancedSettingsSection(
                             Button(
                                 onClick = {
                                     scope.launch {
-                                        val customHeadersJson = ApiPreferences.getInstance(context).getCustomHeaders()
                                         val concurrency = 5
                                         keyAvailabilityTester.startOrResume(
                                             context = context,
-                                            customHeadersJson = customHeadersJson,
                                             baseConfig = config,
                                             useMultipleApiKeys = useApiKeyPool,
                                             apiKeyPool = apiKeyPool,

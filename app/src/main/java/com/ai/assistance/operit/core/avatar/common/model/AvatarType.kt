@@ -17,6 +17,9 @@ enum class AvatarType {
     /** Real-time 3D glTF/glb model animation. */
     GLTF,
 
+    /** Real-time 3D FBX model animation. */
+    FBX,
+
     /** 3D model animation (e.g., MikuMikuDance, VRM). */
     MMD
 } 

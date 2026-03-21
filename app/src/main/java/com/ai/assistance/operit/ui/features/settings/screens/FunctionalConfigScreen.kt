@@ -32,7 +32,6 @@ import com.ai.assistance.operit.data.model.getModelByIndex
 import com.ai.assistance.operit.data.model.getModelList
 import com.ai.assistance.operit.data.model.getValidModelIndex
 import com.ai.assistance.operit.data.model.ModelConfigData
-import com.ai.assistance.operit.data.preferences.ApiPreferences
 import com.ai.assistance.operit.data.preferences.FunctionalConfigManager
 import com.ai.assistance.operit.data.preferences.FunctionConfigMapping
 import com.ai.assistance.operit.data.preferences.ModelConfigManager
@@ -466,10 +465,6 @@ fun FunctionConfigCard(
                                             val fullConfig =
                                                     modelConfigManager.getModelConfigFlow(configId).first()
 
-                                            // 异步获取自定义请求头
-                                            val apiPreferences = ApiPreferences.getInstance(context)
-                                            val customHeadersJson = apiPreferences.getCustomHeaders()
-
                                             // 根据 modelIndex 选择具体的模型
                                             val actualIndex = getValidModelIndex(fullConfig.modelName, currentModelIndex)
                                             val selectedModelName = getModelByIndex(fullConfig.modelName, actualIndex)
@@ -478,7 +473,6 @@ fun FunctionConfigCard(
                                             val service =
                                                     AIServiceFactory.createService(
                                                             config = configWithSelectedModel,
-                                                            customHeadersJson = customHeadersJson,
                                                             modelConfigManager = modelConfigManager,
                                                             context = context
                                                     )
