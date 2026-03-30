@@ -184,7 +184,16 @@ sealed class Screen(
         ) {
             PackageManagerScreen(
                 onNavigateToMCPMarket = { navigateTo(MCPMarket) },
-                onNavigateToSkillMarket = { navigateTo(SkillMarket) }
+                onNavigateToSkillMarket = { navigateTo(SkillMarket) },
+                onOpenToolPkgPluginConfig = { containerPackageName, uiModuleId, title ->
+                    navigateTo(
+                        ToolPkgPluginConfig(
+                            containerPackageName = containerPackageName,
+                            uiModuleId = uiModuleId,
+                            title = title
+                        )
+                    )
+                }
             )
         }
     }
@@ -1047,6 +1056,34 @@ sealed class Screen(
         val uiModuleId: String,
         val title: String
     ) : Screen(parentScreen = Toolbox, navItem = NavItem.Toolbox) {
+        @Composable
+        override fun Content(
+                navController: NavController,
+                navigateTo: ScreenNavigationHandler,
+                updateNavItem: NavItemChangeHandler,
+                onGoBack: () -> Unit,
+                hasBackgroundImage: Boolean,
+                onLoading: (Boolean) -> Unit,
+                onError: (String) -> Unit,
+                onGestureConsumed: (Boolean) -> Unit
+        ) {
+            ToolPkgComposeDslToolScreen(
+                navController = navController,
+                containerPackageName = containerPackageName,
+                uiModuleId = uiModuleId,
+                fallbackTitle = title
+            )
+        }
+
+        @Composable
+        override fun getTitle(): String = title
+    }
+
+    data class ToolPkgPluginConfig(
+        val containerPackageName: String,
+        val uiModuleId: String,
+        val title: String
+    ) : Screen(parentScreen = Packages, navItem = NavItem.Packages) {
         @Composable
         override fun Content(
                 navController: NavController,

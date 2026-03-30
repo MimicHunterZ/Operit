@@ -34,6 +34,7 @@ fun PackageDetailsDialog(
         toolPackage: ToolPackage?,
         packageManager: PackageManager,
         onRunScript: (String, PackageTool) -> Unit,
+        onOpenToolPkgPluginConfig: (String, String, String) -> Unit,
         onDismiss: () -> Unit,
         onPackageDeleted: () -> Unit
 ) {
@@ -261,6 +262,14 @@ fun PackageDetailsDialog(
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
+                                }
+
+                                if (details.toolboxUiModules.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    ToolPkgPluginConfigCard(
+                                        modules = details.toolboxUiModules,
+                                        onOpenToolPkgPluginConfig = onOpenToolPkgPluginConfig
+                                    )
                                 }
 
                                 if (!toolPkgToggleError.isNullOrBlank()) {
@@ -640,6 +649,67 @@ private fun EmptyToolsCard(message: String) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
+        }
+    }
+}
+
+@Composable
+private fun ToolPkgPluginConfigCard(
+    modules: List<PackageManager.ToolPkgToolboxUiModule>,
+    onOpenToolPkgPluginConfig: (String, String, String) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        modules.forEach { module ->
+            Surface(
+                onClick = {
+                    onOpenToolPkgPluginConfig(
+                        module.containerPackageName,
+                        module.uiModuleId,
+                        module.title
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = module.title,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer,
+                        shape = RoundedCornerShape(999.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.pkg_plugin_config_open_action),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }

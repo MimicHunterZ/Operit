@@ -10,6 +10,48 @@ import java.nio.charset.StandardCharsets
 internal class PackageManagerToolPkgFacade(
     private val packageManager: PackageManager
 ) {
+    private fun buildToolPkgToolboxUiModules(
+        container: ToolPkgContainerRuntime,
+        localizationContext: Context,
+        runtime: String
+    ): List<PackageManager.ToolPkgToolboxUiModule> {
+        val containerDisplayName =
+            container.displayName.resolve(localizationContext).ifBlank { container.packageName }
+        val containerDescription = container.description.resolve(localizationContext)
+        return container.uiModules
+            .filter { module ->
+                module.runtime.equals(runtime, ignoreCase = true)
+            }
+            .map { module ->
+                val moduleTitle =
+                    module.title.resolve(localizationContext).trim().ifBlank { containerDisplayName }
+                PackageManager.ToolPkgToolboxUiModule(
+                    containerPackageName = container.packageName,
+                    toolPkgId = container.packageName,
+                    uiModuleId = module.id,
+                    runtime = module.runtime,
+                    screen = module.screen,
+                    title = moduleTitle,
+                    description = containerDescription,
+                    moduleSpec =
+                        mapOf(
+                            "id" to module.id,
+                            "runtime" to module.runtime,
+                            "screen" to module.screen,
+                            "title" to moduleTitle,
+                            "toolPkgId" to container.packageName
+                        )
+                )
+            }
+            .sortedWith(
+                compareBy(
+                    PackageManager.ToolPkgToolboxUiModule::title,
+                    PackageManager.ToolPkgToolboxUiModule::containerPackageName,
+                    PackageManager.ToolPkgToolboxUiModule::uiModuleId
+                )
+            )
+    }
+
     fun isToolPkgContainer(packageName: String): Boolean {
         packageManager.ensureInitialized()
         val normalizedPackageName = packageManager.normalizePackageName(packageName)
@@ -31,6 +73,16 @@ internal class PackageManagerToolPkgFacade(
         val importedSet = packageManager.getImportedPackageSetInternal()
         val localizationContext = resolveContext ?: packageManager.contextInternal
         val containerEnabled = importedSet.contains(container.packageName)
+        val toolboxUiModules =
+            if (containerEnabled) {
+                buildToolPkgToolboxUiModules(
+                    container = container,
+                    localizationContext = localizationContext,
+                    runtime = TOOLPKG_RUNTIME_COMPOSE_DSL
+                )
+            } else {
+                emptyList()
+            }
 
         val subpackages =
             container.subpackages.map { subpackage ->
@@ -52,6 +104,7 @@ internal class PackageManagerToolPkgFacade(
             version = container.version,
             resourceCount = container.resources.size,
             uiModuleCount = container.uiModules.size,
+            toolboxUiModules = toolboxUiModules,
             subpackages = subpackages
         )
         return result
@@ -62,43 +115,17 @@ internal class PackageManagerToolPkgFacade(
         resolveContext: Context? = null
     ): List<PackageManager.ToolPkgToolboxUiModule> {
         packageManager.ensureInitialized()
-        val localizationContext = resolveContext ?: packageManager.contextInternal
-        fun resolveLocalized(text: com.ai.assistance.operit.core.tools.LocalizedText): String {
-            return text.resolve(localizationContext)
-        }
         val importedSet = packageManager.getImportedPackageSetInternal()
+        val localizationContext = resolveContext ?: packageManager.contextInternal
 
         val result = packageManager.toolPkgContainersInternal.values
             .filter { container -> importedSet.contains(container.packageName) }
             .flatMap { container ->
-                val containerDisplayName =
-                    resolveLocalized(container.displayName).ifBlank { container.packageName }
-                val containerDescription = resolveLocalized(container.description)
-                container.uiModules
-                    .filter { module ->
-                        module.runtime.equals(runtime, ignoreCase = true)
-                    }
-                    .map { module ->
-                        val moduleTitle =
-                            resolveLocalized(module.title).trim().ifBlank { containerDisplayName }
-                        PackageManager.ToolPkgToolboxUiModule(
-                            containerPackageName = container.packageName,
-                            toolPkgId = container.packageName,
-                            uiModuleId = module.id,
-                            runtime = module.runtime,
-                            screen = module.screen,
-                            title = moduleTitle,
-                            description = containerDescription,
-                            moduleSpec =
-                                mapOf(
-                                    "id" to module.id,
-                                    "runtime" to module.runtime,
-                                    "screen" to module.screen,
-                                    "title" to moduleTitle,
-                                    "toolPkgId" to container.packageName
-                                )
-                        )
-                    }
+                buildToolPkgToolboxUiModules(
+                    container = container,
+                    localizationContext = localizationContext,
+                    runtime = runtime
+                )
             }
             .sortedWith(
                 compareBy(

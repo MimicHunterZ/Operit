@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
@@ -97,7 +98,14 @@ internal fun WebSessionMinimizedIndicator(
                 .semantics {
                     this.contentDescription = contentDescription
                 }
-                .clickable { onToggleFullscreen() }
+                // Expanding immediately removes the indicator overlay window.
+                // Skip ripple so Android does not try to start it on a detached view.
+                .clickable(
+                    interactionSource = androidx.compose.runtime.remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    onToggleFullscreen()
+                }
     ) {
         Box(
             modifier =

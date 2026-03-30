@@ -27,10 +27,9 @@ import com.ai.assistance.operit.services.FloatingChatService
 import com.ai.assistance.operit.ui.common.displays.UIAutomationProgressOverlay
 import com.ai.assistance.operit.ui.common.displays.VirtualDisplayOverlay
 import com.ai.assistance.operit.util.AppLogger
+import com.ai.assistance.operit.util.ImageOutputFormat
 import com.ai.assistance.operit.util.ImagePoolManager
-import com.ai.assistance.operit.util.OperitPaths
-import java.io.File
-import java.io.FileOutputStream
+import com.ai.assistance.operit.util.ImageRegistrationOptions
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -833,16 +832,13 @@ class ActionHandler(
 
             if (screenshotLink == null) {
                 val screenshotTool = buildScreenshotTool()
-                val (filePath, fallbackDims) = toolImplementations.captureScreenshot(screenshotTool)
+                val (bitmap, fallbackDims) = toolImplementations.captureScreenshotBitmap(screenshotTool)
 
-                if (filePath != null) {
-                    val bitmap = BitmapFactory.decodeFile(filePath)
-                    if (bitmap != null) {
-                        val (compressedLink, _) = saveCompressedScreenshotFromBitmap(bitmap)
-                        screenshotLink = compressedLink
-                        dimensions = fallbackDims
-                        bitmap.recycle()
-                    }
+                if (bitmap != null) {
+                    val (compressedLink, rawDims) = saveCompressedScreenshotFromBitmap(bitmap)
+                    screenshotLink = compressedLink
+                    dimensions = fallbackDims ?: rawDims
+                    bitmap.recycle()
                 }
             }
         } finally {
@@ -904,39 +900,11 @@ class ActionHandler(
         return try {
             val originalWidth = bitmap.width
             val originalHeight = bitmap.height
-
-            val prefs = DisplayPreferencesManager.getInstance(context)
-            val format = prefs.getScreenshotFormat().uppercase(Locale.getDefault())
-            val quality = prefs.getScreenshotQuality().coerceIn(50, 100)
-            val scalePercent = prefs.getScreenshotScalePercent().coerceIn(50, 100)
-
-            val screenshotDir = OperitPaths.cleanOnExitDir()
-
-            val shortName = System.currentTimeMillis().toString().takeLast(4)
-            val (compressFormat, fileExt, effectiveQuality) = when (format) {
-                "JPG", "JPEG" -> Triple(Bitmap.CompressFormat.JPEG, "jpg", quality)
-                else -> Triple(Bitmap.CompressFormat.PNG, "png", 100)
-            }
-
-            val scaleFactor = scalePercent / 100.0
-            val bitmapForSave = if (scaleFactor in 0.0..0.999) {
-                val newWidth = (originalWidth * scaleFactor).toInt().coerceAtLeast(1)
-                val newHeight = (originalHeight * scaleFactor).toInt().coerceAtLeast(1)
-                Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
-            } else {
-                bitmap
-            }
-
-            val file = File(screenshotDir, "$shortName.$fileExt")
-            try {
-                FileOutputStream(file).use { outputStream ->
-                    bitmapForSave.compress(compressFormat, effectiveQuality, outputStream)
-                }
-            } finally {
-                if (bitmapForSave !== bitmap) bitmapForSave.recycle()
-            }
-
-            val imageId = ImagePoolManager.addImage(file.absolutePath)
+            val imageId = ImagePoolManager.addImageFromBitmap(
+                bitmap = bitmap,
+                mimeType = if (bitmap.hasAlpha()) "image/png" else "image/jpeg",
+                options = buildScreenshotRegistrationOptions()
+            )
             if (imageId == "error") {
                 Pair(null, null)
             } else {
@@ -946,6 +914,23 @@ class ActionHandler(
             AppLogger.e("ActionHandler", "[$agentId] Error saving compressed screenshot", e)
             Pair(null, null)
         }
+    }
+
+    private fun buildScreenshotRegistrationOptions(): ImageRegistrationOptions {
+        val prefs = DisplayPreferencesManager.getInstance(context)
+        val format = prefs.getScreenshotFormat().uppercase(Locale.getDefault())
+        val outputFormat =
+            when (format) {
+                "JPG", "JPEG" -> ImageOutputFormat.JPEG
+                else -> ImageOutputFormat.PNG
+            }
+        return ImageRegistrationOptions(
+            scalePercent = prefs.getScreenshotScalePercent().coerceIn(1, 100),
+            outputFormat = outputFormat,
+            jpegQuality = prefs.getScreenshotQuality().coerceIn(1, 100),
+            normalizeExif = true,
+            maxLongEdge = 0
+        )
     }
 
     fun removeImagesFromLastUserMessage(history: MutableList<Pair<String, String>>) {
@@ -1286,4 +1271,14 @@ interface ToolImplementations {
     suspend fun swipe(tool: AITool): ToolResult
     suspend fun pressKey(tool: AITool): ToolResult
     suspend fun captureScreenshot(tool: AITool): Pair<String?, Pair<Int, Int>?>
+    suspend fun captureScreenshotBitmap(tool: AITool): Pair<Bitmap?, Pair<Int, Int>?> {
+        val (filePath, dimensions) = captureScreenshot(tool)
+        if (filePath == null) {
+            return Pair(null, dimensions)
+        }
+
+        val bitmap = BitmapFactory.decodeFile(filePath) ?: return Pair(null, dimensions)
+        val resolvedDimensions = dimensions ?: Pair(bitmap.width, bitmap.height)
+        return Pair(bitmap, resolvedDimensions)
+    }
 }

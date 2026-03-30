@@ -110,6 +110,7 @@ private constructor(private val context: Context, private val aiToolHandler: AIT
         val version: String,
         val resourceCount: Int,
         val uiModuleCount: Int,
+        val toolboxUiModules: List<ToolPkgToolboxUiModule>,
         val subpackages: List<ToolPkgSubpackageInfo>
     )
 

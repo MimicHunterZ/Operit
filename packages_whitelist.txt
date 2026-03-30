@@ -34,6 +34,7 @@ zhipu_draw.js
 zhipu_search.js
 linux_ssh
 deepsearching
+message_insert
 apktool
 remote_operit
 pdf_vision_parser

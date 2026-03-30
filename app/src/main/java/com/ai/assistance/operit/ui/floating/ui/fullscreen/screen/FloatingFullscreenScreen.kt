@@ -482,9 +482,9 @@ fun FloatingFullscreenMode(floatContext: FloatContext) {
             // 波浪可视化和头像：仅在语音模式下显示
             if (effectiveWaveActive) {
                 val waveOffsetY = (-64).dp
-                val voiceWaveSize = 420.dp
-                val voiceAvatarSize = 320.dp
-                val voiceAvatarTapTargetSize = 220.dp
+                val activeWaveSize = if (isVoiceAvatarEnabled) 420.dp else 300.dp
+                val activeAvatarSize = if (isVoiceAvatarEnabled) 320.dp else 120.dp
+                val centerTapTargetSize = if (isVoiceAvatarEnabled) 220.dp else 140.dp
                 WaveVisualizerSection(
                     isWaveActive = viewModel.isWaveActive,
                     isRecording = viewModel.isRecording,
@@ -507,8 +507,8 @@ fun FloatingFullscreenMode(floatContext: FloatContext) {
                         },
                     clipAvatarContent = false,
                     avatarShape = CircleShape,
-                    activeWaveSize = voiceWaveSize,
-                    activeAvatarSize = voiceAvatarSize,
+                    activeWaveSize = activeWaveSize,
+                    activeAvatarSize = activeAvatarSize,
                     onToggleActive = {
                         if (viewModel.isWaveActive) {
                             viewModel.exitWaveMode()
@@ -527,7 +527,7 @@ fun FloatingFullscreenMode(floatContext: FloatContext) {
                     modifier = Modifier
                         .align(Alignment.Center)
                         .offset(y = waveOffsetY)
-                        .size(voiceAvatarTapTargetSize)
+                        .size(centerTapTargetSize)
                         .zIndex(4f)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },

@@ -1174,6 +1174,26 @@ fun registerAllTools(handler: AIToolHandler, context: Context) {
             executor = { tool -> runBlocking(Dispatchers.IO) { workflowTools.patchWorkflow(tool) } }
     )
 
+    // 启用工作流
+    handler.registerTool(
+            name = "enable_workflow",
+            descriptionGenerator = { tool ->
+                val id = tool.parameters.find { it.name == "workflow_id" }?.value ?: ""
+                s(R.string.toolreg_enable_workflow_desc, id)
+            },
+            executor = { tool -> runBlocking(Dispatchers.IO) { workflowTools.enableWorkflow(tool) } }
+    )
+
+    // 禁用工作流
+    handler.registerTool(
+            name = "disable_workflow",
+            descriptionGenerator = { tool ->
+                val id = tool.parameters.find { it.name == "workflow_id" }?.value ?: ""
+                s(R.string.toolreg_disable_workflow_desc, id)
+            },
+            executor = { tool -> runBlocking(Dispatchers.IO) { workflowTools.disableWorkflow(tool) } }
+    )
+
     // 删除工作流
     handler.registerTool(
             name = "delete_workflow",

@@ -9,7 +9,6 @@ import com.ai.assistance.operit.api.chat.enhance.ConversationMarkupManager
 import com.ai.assistance.operit.api.chat.enhance.ConversationRoundManager
 import com.ai.assistance.operit.api.chat.enhance.ConversationService
 import com.ai.assistance.operit.api.chat.enhance.FileBindingService
-import com.ai.assistance.operit.api.chat.enhance.InputProcessor
 import com.ai.assistance.operit.api.chat.enhance.MultiServiceManager
 import com.ai.assistance.operit.api.chat.enhance.ToolExecutionManager
 import com.ai.assistance.operit.api.chat.llmprovider.AIService
@@ -524,12 +523,6 @@ class EnhancedAIService private constructor(private val context: Context) {
         multiServiceManager.refreshAllServices()
     }
 
-    /** Process user input with a delay for UI feedback */
-    suspend fun processUserInput(input: String): String {
-        _inputProcessingState.value = InputProcessingState.Processing(context.getString(R.string.enhanced_processing_input))
-        return InputProcessor.processUserInput(input)
-    }
-
     private suspend fun getModelParametersForFunction(
         functionType: FunctionType,
         chatModelConfigIdOverride: String? = null,
@@ -598,13 +591,6 @@ class EnhancedAIService private constructor(private val context: Context) {
                         startAiService(characterName, avatarUri)
                     }
 
-                    // Process the input message for any conversation markup (e.g., for AI planning)
-                    val startTime = System.currentTimeMillis()
-                    val processedInput = InputProcessor.processUserInput(message)
-                    val tAfterProcessInput = System.currentTimeMillis()
-                    AppLogger.d(TAG, "sendMessage本地耗时: processUserInput=${tAfterProcessInput - startTime}ms")
-                
-
                     // Update state to show we're processing
                     if (!isSubTask) {
                     withContext(Dispatchers.Main) {
@@ -612,11 +598,13 @@ class EnhancedAIService private constructor(private val context: Context) {
                         }
                     }
 
+                    val startTime = System.currentTimeMillis()
+
                     // Prepare conversation history with system prompt
                     val preparedHistory =
                             prepareConversationHistory(
                                     execContext.conversationHistory, // 始终使用内部历史记录
-                                    processedInput,
+                                    message,
                                     workspacePath,
                                     workspaceEnv,
                                     promptFunctionType,
@@ -633,7 +621,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                                     chatModelIndexOverride
                             )
                     val tAfterPrepareHistory = System.currentTimeMillis()
-                    AppLogger.d(TAG, "sendMessage本地耗时: prepareConversationHistory=${tAfterPrepareHistory - tAfterProcessInput}ms")
+                    AppLogger.d(TAG, "sendMessage本地耗时: prepareConversationHistory=${tAfterPrepareHistory - startTime}ms")
                     
                     // 关键修复：用准备好的历史记录（包含了系统提示）去同步更新内部的 conversationHistory 状态
                     execContext.conversationHistory.clear()
@@ -677,7 +665,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                     val tAfterGetTools = System.currentTimeMillis()
                     AppLogger.d(TAG, "sendMessage本地耗时: getAvailableToolsForFunction=${tAfterGetTools - tAfterGetService}ms")
 
-                    var finalProcessedInput = processedInput
+                    var finalProcessedInput = message
                     var finalPreparedHistory = preparedHistory
                     val beforeFinalizeContext =
                         PromptHookRegistry.dispatchPromptFinalizeHooks(

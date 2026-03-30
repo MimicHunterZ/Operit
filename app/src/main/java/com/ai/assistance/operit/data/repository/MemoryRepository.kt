@@ -340,53 +340,70 @@ class MemoryRepository(private val context: Context, profileId: String) {
         )
     }
 
-    private fun removeMemoryFromAllVectorIndices(memoryId: Long) {
-        currentProfileMemoryIndexFiles().forEach { file ->
-            val dimension = parseMemoryIndexDimension(file) ?: return@forEach
-            val manager = VectorIndexManager<IndexItem<Long, Long>, Long>(
-                dimensions = dimension,
-                maxElements = 1,
-                indexFile = file
-            )
-            val removed = manager.removeItem(memoryId, Long.MAX_VALUE)
-            when {
-                !removed -> manager.close()
-                manager.size() <= 0 -> {
-                    manager.close()
-                    deleteIndexFileIfExists(file)
-                }
-                else -> {
-                    manager.save()
-                    manager.close()
-                }
+    // HNSW 的删除会保留 tombstone，直接增量 add 容易命中容量异常，因此按维度重建活跃记忆索引。
+    private fun rebuildMemoryVectorIndexForDimension(
+        dimension: Int,
+        excludedMemoryId: Long? = null
+    ): Int {
+        if (dimension <= 0) return 0
+
+        val items = memoryBox.all
+            .asSequence()
+            .filter { memory -> excludedMemoryId == null || memory.id != excludedMemoryId }
+            .mapNotNull { memory ->
+                val itemDimension = memory.embedding?.vector?.size ?: return@mapNotNull null
+                if (itemDimension != dimension) return@mapNotNull null
+                createMemoryIndexItem(memory)
             }
-        }
-    }
+            .toList()
 
-    private fun upsertMemoryVectorIndex(memory: Memory) {
-        removeMemoryFromAllVectorIndices(memory.id)
+        val indexFile = memoryIndexFileForDimension(dimension)
+        deleteIndexFileIfExists(indexFile)
+        if (items.isEmpty()) return 0
 
-        val item = createMemoryIndexItem(memory) ?: return
-        val dimension = memory.embedding?.vector?.size ?: return
         val manager = VectorIndexManager<IndexItem<Long, Long>, Long>(
             dimensions = dimension,
-            maxElements = 1,
-            indexFile = memoryIndexFileForDimension(dimension)
+            maxElements = items.size.coerceAtLeast(1),
+            indexFile = indexFile
         )
-        manager.addItem(item)
+        items.forEach { item ->
+            manager.addItem(item)
+        }
         manager.save()
         manager.close()
+        return items.size
     }
 
-    private fun addMemoryToIndexInternal(memory: Memory) {
-        upsertMemoryVectorIndex(memory)
+    private fun rebuildAffectedMemoryVectorIndices(
+        dimensions: Collection<Int?>,
+        excludedMemoryId: Long? = null
+    ) {
+        dimensions
+            .asSequence()
+            .mapNotNull { it?.takeIf { dimension -> dimension > 0 } }
+            .distinct()
+            .forEach { dimension ->
+                rebuildMemoryVectorIndexForDimension(
+                    dimension = dimension,
+                    excludedMemoryId = excludedMemoryId
+                )
+            }
+    }
+
+    private fun addMemoryToIndexInternal(memory: Memory, previousDimension: Int? = null) {
+        rebuildAffectedMemoryVectorIndices(
+            dimensions = listOf(previousDimension, memory.embedding?.vector?.size)
+        )
         if (memory.isDocumentNode) {
             rebuildDocumentChunkIndex(memory)
         }
     }
 
-    private fun removeMemoryFromIndexInternal(memory: Memory) {
-        removeMemoryFromAllVectorIndices(memory.id)
+    private fun removeMemoryFromIndexInternal(memory: Memory, memoryAlreadyRemoved: Boolean = false) {
+        rebuildAffectedMemoryVectorIndices(
+            dimensions = listOf(memory.embedding?.vector?.size),
+            excludedMemoryId = memory.id.takeUnless { memoryAlreadyRemoved }
+        )
         if (!memory.isDocumentNode) return
 
         deleteIndexFileIfExists(memory.chunkIndexFilePath?.let(::File))
@@ -776,13 +793,15 @@ class MemoryRepository(private val context: Context, profileId: String) {
      */
     suspend fun saveMemory(memory: Memory): Long = withContext(Dispatchers.IO){
         val cloudConfig = searchSettingsPreferences.loadCloudEmbedding()
+        val previousDimension = memory.id.takeIf { it > 0L }
+            ?.let { existingId -> memoryBox.get(existingId)?.embedding?.vector?.size }
         memory.folderPath = normalizeFolderPath(memory.folderPath)
         val textForEmbedding = generateTextForEmbedding(memory)
         if (textForEmbedding.isNotBlank()) {
             memory.embedding = generateEmbedding(textForEmbedding, cloudConfig)
         }
         val id = memoryBox.put(memory)
-        addMemoryToIndexInternal(memory)
+        addMemoryToIndexInternal(memory, previousDimension = previousDimension)
         id
     }
 
@@ -849,8 +868,11 @@ class MemoryRepository(private val context: Context, profileId: String) {
                 "Deleted ${linkIdsToDelete.size} links while deleting memory id=$memoryId."
             )
         }
-        removeMemoryFromIndexInternal(memory)
-        memoryBox.remove(memory)
+        val removed = memoryBox.remove(memory)
+        if (removed) {
+            removeMemoryFromIndexInternal(memory, memoryAlreadyRemoved = true)
+        }
+        removed
     }
 
     // --- Link CRUD Operations ---
@@ -1986,6 +2008,7 @@ class MemoryRepository(private val context: Context, profileId: String) {
         newTags: List<String>? = null // 可选的要更新的标签列表
     ): Memory? = withContext(Dispatchers.IO) {
         val cloudConfig = searchSettingsPreferences.loadCloudEmbedding()
+        val previousDimension = memory.embedding?.vector?.size
         val titleChanged = memory.title != newTitle
         val contentChanged = memory.content != newContent
         val credibilityChanged = memory.credibility != newCredibility
@@ -2037,7 +2060,7 @@ class MemoryRepository(private val context: Context, profileId: String) {
         memoryBox.put(memory)
 
         if (needsReEmbedding) {
-            addMemoryToIndex(memory)
+            addMemoryToIndexInternal(memory, previousDimension = previousDimension)
         }
         memory
     }

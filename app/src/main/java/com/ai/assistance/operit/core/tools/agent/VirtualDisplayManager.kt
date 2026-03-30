@@ -60,18 +60,17 @@ class VirtualDisplayManager private constructor(private val context: Context) {
     }
 
     /**
-     * Capture the latest frame from the virtual display into the given PNG file.
-     * Returns true on success, false if no image is available or an error occurs.
+     * Capture the latest frame from the virtual display as a raw bitmap.
      */
-    fun captureLatestFrameToFile(file: File): Boolean {
-        val reader = imageReader ?: return false
+    fun captureLatestFrameBitmap(): Bitmap? {
+        val reader = imageReader ?: return null
         var image: Image? = null
         return try {
-            image = reader.acquireLatestImage() ?: return false
+            image = reader.acquireLatestImage() ?: return null
 
             val width = image.width
             val height = image.height
-            if (width <= 0 || height <= 0) return false
+            if (width <= 0 || height <= 0) return null
 
             val plane = image.planes[0]
             val buffer = plane.buffer
@@ -87,20 +86,37 @@ class VirtualDisplayManager private constructor(private val context: Context) {
             bitmap.copyPixelsFromBuffer(buffer)
 
             val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, height)
-            FileOutputStream(file).use { out ->
-                if (!cropped.compress(Bitmap.CompressFormat.PNG, 100, out)) {
-                    return false
-                }
-            }
-            true
+            bitmap.recycle()
+            cropped
         } catch (e: Exception) {
             AppLogger.e(TAG, "Error capturing virtual display frame", e)
-            false
+            null
         } finally {
             try {
                 image?.close()
             } catch (_: Exception) {
             }
+        }
+    }
+
+    /**
+     * Capture the latest frame from the virtual display into the given PNG file.
+     * Returns true on success, false if no image is available or an error occurs.
+     */
+    fun captureLatestFrameToFile(file: File): Boolean {
+        val bitmap = captureLatestFrameBitmap() ?: return false
+        return try {
+            FileOutputStream(file).use { out ->
+                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) {
+                    return false
+                }
+            }
+            true
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "Error writing virtual display frame to file", e)
+            false
+        } finally {
+            bitmap.recycle()
         }
     }
 

@@ -70,6 +70,8 @@ private data class NodePalette(
     val defaultBorderColor: Color
 )
 
+private const val NODE_HIT_PADDING_PX = 12f
+
 private fun edgeSignature(edge: Edge): String {
     val scaledWeight = (edge.weight * 1000f).toInt()
     val labelPart = edge.label ?: ""
@@ -129,6 +131,79 @@ private fun buildClusterLayoutInfo(graph: Graph): ClusterLayoutInfo {
         clusterByNodeId = clusterByNodeId,
         clusterSizes = clusterSizes,
         clusterIds = clusterSizes.keys.sorted()
+    )
+}
+
+@OptIn(ExperimentalTextApi::class)
+private fun getNodeLayoutMetrics(
+    node: Node,
+    textMeasurer: TextMeasurer,
+    nodeLayoutCache: MutableMap<NodeLayoutCacheKey, NodeLayoutMetrics>,
+    nodePalette: NodePalette
+): NodeLayoutMetrics {
+    return nodeLayoutCache.getOrPut(
+        NodeLayoutCacheKey(
+            nodeId = node.id,
+            label = node.label,
+            styleKey = nodePalette.textColor.hashCode()
+        )
+    ) {
+        val baseScale = 1f
+        val textStyle = TextStyle(
+            fontSize = (11.5f * baseScale).sp,
+            lineHeight = (12.5f * baseScale).sp,
+            color = nodePalette.textColor
+        )
+        val maxTextWidth = (280f * baseScale).toInt().coerceAtLeast(1)
+        val textLayoutResult = textMeasurer.measure(
+            text = AnnotatedString(node.label),
+            style = textStyle,
+            constraints = Constraints(maxWidth = maxTextWidth)
+        )
+        val paddingX = 14f * baseScale
+        val paddingY = 4f * baseScale
+        val textWidth = textLayoutResult.size.width.toFloat()
+        val textHeight = textLayoutResult.size.height.toFloat()
+        val boxWidth = textWidth + paddingX * 2
+        val boxHeight = textHeight + paddingY * 2
+        val rounded = min(boxHeight * 0.48f, 20f * baseScale)
+        NodeLayoutMetrics(
+            textLayoutResult = textLayoutResult,
+            paddingX = paddingX,
+            paddingY = paddingY,
+            boxWidth = boxWidth,
+            boxHeight = boxHeight,
+            cornerRadius = CornerRadius(rounded, rounded)
+        )
+    }
+}
+
+private fun resolveNodeVisualScale(viewScale: Float): Float = viewScale.coerceIn(0.15f, 2.2f)
+
+@OptIn(ExperimentalTextApi::class)
+private fun resolveNodeScreenRect(
+    node: Node,
+    center: Offset,
+    viewScale: Float,
+    textMeasurer: TextMeasurer,
+    nodeLayoutCache: MutableMap<NodeLayoutCacheKey, NodeLayoutMetrics>,
+    nodePalette: NodePalette,
+    extraPadding: Float = 0f
+): Rect {
+    val layoutMetrics = getNodeLayoutMetrics(
+        node = node,
+        textMeasurer = textMeasurer,
+        nodeLayoutCache = nodeLayoutCache,
+        nodePalette = nodePalette
+    )
+    val visualScale = resolveNodeVisualScale(viewScale)
+    val halfWidth = layoutMetrics.boxWidth * visualScale / 2f + extraPadding
+    val halfHeight = layoutMetrics.boxHeight * visualScale / 2f + extraPadding
+    return Rect(
+        left = center.x - halfWidth,
+        top = center.y - halfHeight,
+        right = center.x + halfWidth,
+        bottom = center.y + halfHeight
     )
 }
 
@@ -202,6 +277,9 @@ fun GraphVisualizer(
 
     val clusterLayoutInfo = remember(graph.nodes, graph.edges) {
         buildClusterLayoutInfo(graph)
+    }
+    val nodeById = remember(graph.nodes) {
+        graph.nodes.associateBy { it.id }
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -756,10 +834,25 @@ fun GraphVisualizer(
                                 onDragEnd = {
                                     AppLogger.d("GraphVisualizer", "BoxSelect: onDragEnd")
                                     selectionRect?.let { rect ->
-                                        val selectedIds = nodePositions.filter { (_, pos) ->
-                                            val viewPos = pos * scale + offset
-                                            rect.contains(viewPos)
-                                        }.keys
+                                        val selectedIds = graph.nodes
+                                            .asSequence()
+                                            .filter { node ->
+                                                nodePositions[node.id]?.let { pos ->
+                                                    val viewPos = pos * scale + offset
+                                                    rect.intersects(
+                                                        resolveNodeScreenRect(
+                                                            node = node,
+                                                            center = viewPos,
+                                                            viewScale = scale,
+                                                            textMeasurer = textMeasurer,
+                                                            nodeLayoutCache = nodeLayoutCache,
+                                                            nodePalette = nodePalette
+                                                        )
+                                                    )
+                                                } ?: false
+                                            }
+                                            .map { it.id }
+                                            .toSet()
                                         onNodesSelected(selectedIds)
                                     }
                                     selectionRect = null
@@ -779,7 +872,15 @@ fun GraphVisualizer(
                                 val clickedNode = graph.nodes.findLast { node ->
                                     nodePositions[node.id]?.let { pos ->
                                         val viewPos = pos * scale + offset
-                                        (tapOffset - viewPos).getDistance() <= 60f * scale
+                                        resolveNodeScreenRect(
+                                            node = node,
+                                            center = viewPos,
+                                            viewScale = scale,
+                                            textMeasurer = textMeasurer,
+                                            nodeLayoutCache = nodeLayoutCache,
+                                            nodePalette = nodePalette,
+                                            extraPadding = NODE_HIT_PADDING_PX
+                                        ).contains(tapOffset)
                                     } ?: false
                                 }
                                 if (clickedNode != null) {
@@ -807,7 +908,15 @@ fun GraphVisualizer(
                                 val clickedNode = graph.nodes.findLast { node ->
                                     nodePositions[node.id]?.let { pos ->
                                         val viewPos = pos * scale + offset
-                                        (tapOffset - viewPos).getDistance() <= 60f * scale
+                                        resolveNodeScreenRect(
+                                            node = node,
+                                            center = viewPos,
+                                            viewScale = scale,
+                                            textMeasurer = textMeasurer,
+                                            nodeLayoutCache = nodeLayoutCache,
+                                            nodePalette = nodePalette,
+                                            extraPadding = NODE_HIT_PADDING_PX
+                                        ).contains(tapOffset)
                                     } ?: false
                                 }
                                 val clickedEdge = if (clickedNode == null) {
@@ -836,7 +945,6 @@ fun GraphVisualizer(
         ) {
             // 计算屏幕可见区域（屏幕坐标）
             val screenVisibleRect = Rect(0f, 0f, size.width, size.height)
-            val nodeRadius = 70f * scale
             
             // 绘制选框
             selectionRect?.let { rect ->
@@ -861,24 +969,30 @@ fun GraphVisualizer(
                     // 计算屏幕坐标
                     val sourceCenter = sourcePos * scale + offset
                     val targetCenter = targetPos * scale + offset
+                    val sourceRect = nodeById[edge.sourceId]?.let { sourceNode ->
+                        resolveNodeScreenRect(
+                            node = sourceNode,
+                            center = sourceCenter,
+                            viewScale = scale,
+                            textMeasurer = textMeasurer,
+                            nodeLayoutCache = nodeLayoutCache,
+                            nodePalette = nodePalette
+                        )
+                    }
+                    val targetRect = nodeById[edge.targetId]?.let { targetNode ->
+                        resolveNodeScreenRect(
+                            node = targetNode,
+                            center = targetCenter,
+                            viewScale = scale,
+                            textMeasurer = textMeasurer,
+                            nodeLayoutCache = nodeLayoutCache,
+                            nodePalette = nodePalette
+                        )
+                    }
                     
-                    // 检查是否至少有一个端点在可见区域内（考虑节点半径）
-                    val sourceVisible = screenVisibleRect.intersects(
-                        Rect(
-                            left = sourceCenter.x - nodeRadius,
-                            top = sourceCenter.y - nodeRadius,
-                            right = sourceCenter.x + nodeRadius,
-                            bottom = sourceCenter.y + nodeRadius
-                        )
-                    )
-                    val targetVisible = screenVisibleRect.intersects(
-                        Rect(
-                            left = targetCenter.x - nodeRadius,
-                            top = targetCenter.y - nodeRadius,
-                            right = targetCenter.x + nodeRadius,
-                            bottom = targetCenter.y + nodeRadius
-                        )
-                    )
+                    // 检查是否至少有一个端点在可见区域内（使用节点真实矩形）
+                    val sourceVisible = sourceRect?.let { screenVisibleRect.intersects(it) } == true
+                    val targetVisible = targetRect?.let { screenVisibleRect.intersects(it) } == true
                     
                     // 如果两个端点都不在可见区域内，跳过渲染
                     if (!sourceVisible && !targetVisible) return@forEach
@@ -959,12 +1073,14 @@ fun GraphVisualizer(
                 if (position != null) {
                     val screenPosition = position * scale + offset
                     
-                    // 检查节点是否在可见区域内（考虑节点半径）
-                    val nodeRect = Rect(
-                        left = screenPosition.x - nodeRadius,
-                        top = screenPosition.y - nodeRadius,
-                        right = screenPosition.x + nodeRadius,
-                        bottom = screenPosition.y + nodeRadius
+                    // 检查节点是否在可见区域内（使用节点真实矩形）
+                    val nodeRect = resolveNodeScreenRect(
+                        node = node,
+                        center = screenPosition,
+                        viewScale = scale,
+                        textMeasurer = textMeasurer,
+                        nodeLayoutCache = nodeLayoutCache,
+                        nodePalette = nodePalette
                     )
                     
                     // 如果节点不在可见区域内，跳过渲染
@@ -1025,43 +1141,13 @@ private fun DrawScope.drawNode(
     isLinkingCandidate: Boolean,
     isBoxSelected: Boolean // 新增：接收框选状态
 ) {
-    val visualScale = viewScale.coerceIn(0.15f, 2.2f)
-    val layoutMetrics = nodeLayoutCache.getOrPut(
-        NodeLayoutCacheKey(
-            nodeId = node.id,
-            label = node.label,
-            styleKey = nodePalette.textColor.hashCode()
-        )
-    ) {
-        val baseScale = 1f
-        val textStyle = TextStyle(
-            fontSize = (11.5f * baseScale).sp,
-            lineHeight = (12.5f * baseScale).sp,
-            color = nodePalette.textColor
-        )
-        // 增加最大宽度，减少换行次数，让节点更宽更矮。
-        val maxTextWidth = (280f * baseScale).toInt().coerceAtLeast(1)
-        val textLayoutResult = textMeasurer.measure(
-            text = AnnotatedString(node.label),
-            style = textStyle,
-            constraints = Constraints(maxWidth = maxTextWidth)
-        )
-        val paddingX = 14f * baseScale
-        val paddingY = 4f * baseScale
-        val textWidth = textLayoutResult.size.width.toFloat()
-        val textHeight = textLayoutResult.size.height.toFloat()
-        val boxWidth = textWidth + paddingX * 2
-        val boxHeight = textHeight + paddingY * 2
-        val rounded = min(boxHeight * 0.48f, 20f * baseScale)
-        NodeLayoutMetrics(
-            textLayoutResult = textLayoutResult,
-            paddingX = paddingX,
-            paddingY = paddingY,
-            boxWidth = boxWidth,
-            boxHeight = boxHeight,
-            cornerRadius = CornerRadius(rounded, rounded)
-        )
-    }
+    val visualScale = resolveNodeVisualScale(viewScale)
+    val layoutMetrics = getNodeLayoutMetrics(
+        node = node,
+        textMeasurer = textMeasurer,
+        nodeLayoutCache = nodeLayoutCache,
+        nodePalette = nodePalette
+    )
 
     val textLayoutResult = layoutMetrics.textLayoutResult
     val paddingX = layoutMetrics.paddingX

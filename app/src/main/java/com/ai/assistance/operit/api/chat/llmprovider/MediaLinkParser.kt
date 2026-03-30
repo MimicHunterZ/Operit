@@ -1,6 +1,5 @@
 package com.ai.assistance.operit.api.chat.llmprovider
 
-import com.ai.assistance.operit.util.ImageBitmapLimiter
 import com.ai.assistance.operit.util.ImagePoolManager
 import com.ai.assistance.operit.util.MediaBase64Limiter
 import com.ai.assistance.operit.util.MediaPoolManager
@@ -59,14 +58,12 @@ object MediaLinkParser {
                     return@forEach
                 }
                 val imageData = ImagePoolManager.getImage(id) ?: return@forEach
-                val limited = ImageBitmapLimiter.limitBase64ForAi(imageData.base64, imageData.mimeType)
-                    ?: return@forEach
                 imageLinks.add(
                     ImageLink(
                         type = "image",
                         id = id,
-                        base64Data = limited.base64,
-                        mimeType = limited.mimeType
+                        base64Data = imageData.base64,
+                        mimeType = imageData.mimeType
                     )
                 )
             }

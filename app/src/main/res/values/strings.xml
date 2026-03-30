@@ -973,6 +973,7 @@
     <string name="pkg_toolpkg_empty_subpackages">该 ToolPkg 未声明任何子包</string>
     <string name="pkg_toolpkg_tool_count">工具数：%1$d</string>
     <string name="pkg_toolpkg_subpackage_toggle_failed">子包开关失败，请重试</string>
+    <string name="pkg_plugin_config_open_action">打开配置</string>
     <string name="automation_json_only">仅支持JSON文件</string>
     <string name="no_filename">无法获取文件名</string>
     <string name="external_package_imported">外部包已导入</string>
@@ -5200,6 +5201,8 @@
     <string name="toolreg_update_workflow_with_name_desc">更新工作流: %1$s (新名称: %2$s)</string>
     <string name="toolreg_update_workflow_desc">更新工作流: %1$s</string>
     <string name="toolreg_patch_workflow_desc">差异更新工作流: %1$s</string>
+    <string name="toolreg_enable_workflow_desc">启用工作流: %1$s</string>
+    <string name="toolreg_disable_workflow_desc">禁用工作流: %1$s</string>
     <string name="toolreg_delete_workflow_desc">删除工作流: %1$s</string>
     <string name="toolreg_trigger_workflow_desc">触发工作流: %1$s</string>
     <string name="toolreg_start_chat_service_desc">启动对话服务（悬浮窗）</string>

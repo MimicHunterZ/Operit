@@ -7,8 +7,8 @@
     en: "Workflow Management"
   }
   description: {
-    zh: '''工作流管理工具：创建/查询/更新/删除/触发执行；支持 on_success/on_error 分支；支持语音触发（speech）。'''
-    en: '''Workflow management tools for creating/querying/updating/deleting workflows, triggering execution, and branching via on_success/on_error. Supports speech trigger (speech).'''
+    zh: '''工作流管理工具：创建/查询/更新/启用/禁用/删除/触发执行；支持 on_success/on_error 分支；支持语音触发（speech）。'''
+    en: '''Workflow management tools for creating/querying/updating/enabling/disabling/deleting workflows, triggering execution, and branching via on_success/on_error. Supports speech trigger (speech).'''
   }  
   "category": "Workflow",
   enabledByDefault: true
@@ -347,6 +347,22 @@ Notes:
     }
 
     {
+      name: "enable_workflow"
+      description: { zh: "启用指定工作流。", en: "Enable a specific workflow." }
+      parameters: [
+        { name: "workflow_id", description: { zh: "工作流 ID", en: "Workflow ID" }, type: "string", required: true }
+      ]
+    }
+
+    {
+      name: "disable_workflow"
+      description: { zh: "禁用指定工作流。", en: "Disable a specific workflow." }
+      parameters: [
+        { name: "workflow_id", description: { zh: "工作流 ID", en: "Workflow ID" }, type: "string", required: true }
+      ]
+    }
+
+    {
       name: "delete_workflow"
       description: { zh: "删除指定工作流。", en: "Delete a specific workflow." }
       parameters: [
@@ -370,7 +386,7 @@ const WorkflowIntegration = (function () {
   async function usage_advice(_params: {}): Promise<any> {
     return {
       success: true,
-      message: "请阅读 workflow 工具 METADATA 中的 usage_advice 说明：包含节点/连线 schema、分支 condition 规则、触发类型与配置示例。建议在脚本里直接使用 Tools.Workflow.getAll/get/create/update/patch/delete/trigger 等封装方法。"
+      message: "请阅读 workflow 工具 METADATA 中的 usage_advice 说明：包含节点/连线 schema、分支 condition 规则、触发类型与配置示例。建议在脚本里直接使用 Tools.Workflow.getAll/get/create/update/patch/setEnabled/enable/disable/delete/trigger 等封装方法。"
     };
   }
 
@@ -452,6 +468,34 @@ const WorkflowIntegration = (function () {
   }
 
   /**
+   * 启用工作流
+   * @param params 启用参数
+   * @returns 更新结果
+   */
+  async function enable_workflow(params: Workflow.EnableParams): Promise<any> {
+    const data = await Tools.Workflow.enable(params.workflow_id);
+    return {
+      success: true,
+      message: "成功启用工作流",
+      data
+    };
+  }
+
+  /**
+   * 禁用工作流
+   * @param params 禁用参数
+   * @returns 更新结果
+   */
+  async function disable_workflow(params: Workflow.DisableParams): Promise<any> {
+    const data = await Tools.Workflow.disable(params.workflow_id);
+    return {
+      success: true,
+      message: "成功禁用工作流",
+      data
+    };
+  }
+
+  /**
    * 删除工作流
    * @param params 删除参数
    * @returns 删除结果
@@ -501,6 +545,8 @@ const WorkflowIntegration = (function () {
     get_workflow: (params: Workflow.GetParams) => wrapToolExecution(get_workflow, params),
     update_workflow: (params: Workflow.UpdateParams) => wrapToolExecution(update_workflow, params),
     patch_workflow: (params: Workflow.PatchParams) => wrapToolExecution(patch_workflow, params),
+    enable_workflow: (params: Workflow.EnableParams) => wrapToolExecution(enable_workflow, params),
+    disable_workflow: (params: Workflow.DisableParams) => wrapToolExecution(disable_workflow, params),
     delete_workflow: (params: Workflow.DeleteParams) => wrapToolExecution(delete_workflow, params),
     trigger_workflow: (params: Workflow.TriggerParams) => wrapToolExecution(trigger_workflow, params)
   };
@@ -512,6 +558,8 @@ exports.create_workflow = WorkflowIntegration.create_workflow;
 exports.get_workflow = WorkflowIntegration.get_workflow;
 exports.update_workflow = WorkflowIntegration.update_workflow;
 exports.patch_workflow = WorkflowIntegration.patch_workflow;
+exports.enable_workflow = WorkflowIntegration.enable_workflow;
+exports.disable_workflow = WorkflowIntegration.disable_workflow;
 exports.delete_workflow = WorkflowIntegration.delete_workflow;
 exports.trigger_workflow = WorkflowIntegration.trigger_workflow;
 

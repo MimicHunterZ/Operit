@@ -1003,6 +1003,75 @@ object SystemToolPromptsInternal {
                                 )
                         ),
                         ToolPrompt(
+                            name = "patch_workflow",
+                            description = "Patch a workflow incrementally.",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(
+                                        name = "workflow_id",
+                                        type = "string",
+                                        description = "workflow id",
+                                        required = true
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "name",
+                                        type = "string",
+                                        description = "optional",
+                                        required = false
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "description",
+                                        type = "string",
+                                        description = "optional",
+                                        required = false
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "enabled",
+                                        type = "boolean",
+                                        description = "optional",
+                                        required = false
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "node_patches",
+                                        type = "string",
+                                        description = "optional, node patch JSON array string",
+                                        required = false
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "connection_patches",
+                                        type = "string",
+                                        description = "optional, connection patch JSON array string",
+                                        required = false
+                                    )
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "enable_workflow",
+                            description = "Enable a workflow.",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(
+                                        name = "workflow_id",
+                                        type = "string",
+                                        description = "workflow id",
+                                        required = true
+                                    )
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "disable_workflow",
+                            description = "Disable a workflow.",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(
+                                        name = "workflow_id",
+                                        type = "string",
+                                        description = "workflow id",
+                                        required = true
+                                    )
+                                )
+                        ),
+                        ToolPrompt(
                             name = "delete_workflow",
                             description = "Delete a workflow.",
                             parametersStructured =
@@ -3768,6 +3837,75 @@ object SystemToolPromptsInternal {
                                         type = "boolean",
                                         description = "可选",
                                         required = false
+                                    )
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "patch_workflow",
+                            description = "差异更新工作流。",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(
+                                        name = "workflow_id",
+                                        type = "string",
+                                        description = "工作流 ID",
+                                        required = true
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "name",
+                                        type = "string",
+                                        description = "可选",
+                                        required = false
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "description",
+                                        type = "string",
+                                        description = "可选",
+                                        required = false
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "enabled",
+                                        type = "boolean",
+                                        description = "可选",
+                                        required = false
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "node_patches",
+                                        type = "string",
+                                        description = "可选，节点 patch JSON 数组字符串",
+                                        required = false
+                                    ),
+                                    ToolParameterSchema(
+                                        name = "connection_patches",
+                                        type = "string",
+                                        description = "可选，连线 patch JSON 数组字符串",
+                                        required = false
+                                    )
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "enable_workflow",
+                            description = "启用工作流。",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(
+                                        name = "workflow_id",
+                                        type = "string",
+                                        description = "工作流 ID",
+                                        required = true
+                                    )
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "disable_workflow",
+                            description = "禁用工作流。",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(
+                                        name = "workflow_id",
+                                        type = "string",
+                                        description = "工作流 ID",
+                                        required = true
                                     )
                                 )
                         ),

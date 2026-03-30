@@ -199,6 +199,16 @@ export namespace Workflow {
         workflow_id: string;
     }
 
+    export interface EnableParams {
+        /** Workflow ID */
+        workflow_id: string;
+    }
+
+    export interface DisableParams {
+        /** Workflow ID */
+        workflow_id: string;
+    }
+
     /**
      * Parameters for triggering a workflow
      */
@@ -263,6 +273,12 @@ export namespace Workflow {
             workflowId: string,
             patch?: Omit<PatchParams, 'workflow_id'>
         ): Promise<WorkflowDetailResultData>;
+
+        setEnabled(workflowId: string, enabled: boolean): Promise<WorkflowDetailResultData>;
+
+        enable(workflowId: string): Promise<WorkflowDetailResultData>;
+
+        disable(workflowId: string): Promise<WorkflowDetailResultData>;
 
         'delete'(workflowId: string): Promise<StringResultData>;
 

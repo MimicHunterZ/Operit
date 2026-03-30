@@ -102,21 +102,24 @@ class MediaProjectionCaptureManager(private val context: Context, private val me
     }
 
     /**
-     * Capture the latest frame to a file.
+     * Capture the latest frame as a raw bitmap.
      */
-    fun captureToFile(file: File): Boolean {
-        val reader = imageReader ?: return false
+    fun captureToBitmap(): Bitmap? {
+        val reader = imageReader ?: return null
         var image: Image? = null
         return try {
             // Try to get the latest image
             image = reader.acquireLatestImage()
             if (image == null) {
                  // Sometimes it takes a moment for the first frame to arrive
-                 return false
+                 return null
             }
 
             val width = image.width
             val height = image.height
+            if (width <= 0 || height <= 0) {
+                return null
+            }
             
             val plane = image.planes[0]
             val buffer = plane.buffer
@@ -132,19 +135,34 @@ class MediaProjectionCaptureManager(private val context: Context, private val me
             bitmap.copyPixelsFromBuffer(buffer)
 
             val cropped = Bitmap.createBitmap(bitmap, 0, 0, width, height)
-            
-            FileOutputStream(file).use { out ->
-                cropped.compress(Bitmap.CompressFormat.PNG, 100, out)
-            }
             bitmap.recycle()
-            if (cropped != bitmap) cropped.recycle()
-            
-            true
+
+            cropped
         } catch (e: Exception) {
             AppLogger.e(TAG, "Error capturing frame from MediaProjection", e)
-            false
+            null
         } finally {
             image?.close()
+        }
+    }
+
+    /**
+     * Capture the latest frame to a file.
+     */
+    fun captureToFile(file: File): Boolean {
+        val bitmap = captureToBitmap() ?: return false
+        return try {
+            FileOutputStream(file).use { out ->
+                if (!bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)) {
+                    return false
+                }
+            }
+            true
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "Error writing MediaProjection capture to file", e)
+            false
+        } finally {
+            bitmap.recycle()
         }
     }
 

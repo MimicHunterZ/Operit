@@ -1015,6 +1015,55 @@ class WorkflowViewModel(application: Application) : AndroidViewModel(application
             isLoading = false
         }
     }
+
+    private fun replaceWorkflowInState(updatedWorkflow: Workflow) {
+        workflows = workflows.map { workflow ->
+            if (workflow.id == updatedWorkflow.id) {
+                updatedWorkflow
+            } else {
+                workflow
+            }
+        }
+
+        if (currentWorkflow?.id == updatedWorkflow.id) {
+            currentWorkflow = updatedWorkflow
+        }
+    }
+
+    fun setWorkflowEnabled(workflowId: String, enabled: Boolean) {
+        val previousWorkflow = workflows.find { it.id == workflowId } ?: return
+        if (previousWorkflow.enabled == enabled) return
+
+        replaceWorkflowInState(previousWorkflow.copy(enabled = enabled))
+
+        viewModelScope.launch {
+            error = null
+
+            repository.getWorkflowById(workflowId).fold(
+                onSuccess = { storedWorkflow ->
+                    if (storedWorkflow == null) {
+                        replaceWorkflowInState(previousWorkflow)
+                        error = app.getString(R.string.workflow_not_found)
+                        return@fold
+                    }
+
+                    repository.updateWorkflow(storedWorkflow.copy(enabled = enabled)).fold(
+                        onSuccess = { savedWorkflow ->
+                            replaceWorkflowInState(savedWorkflow)
+                        },
+                        onFailure = {
+                            replaceWorkflowInState(previousWorkflow)
+                            error = it.message ?: app.getString(R.string.workflow_error_update_failed)
+                        }
+                    )
+                },
+                onFailure = {
+                    replaceWorkflowInState(previousWorkflow)
+                    error = it.message ?: app.getString(R.string.workflow_error_update_failed)
+                }
+            )
+        }
+    }
     
     /**
      * 更新工作流
@@ -1447,4 +1496,3 @@ class WorkflowViewModel(application: Application) : AndroidViewModel(application
         }
     }
 }
-

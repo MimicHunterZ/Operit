@@ -266,9 +266,11 @@ class WorkflowRepository(private val context: Context) {
             
             AppLogger.d(TAG, "Workflow updated: ${updatedWorkflow.id}")
             
-            // Reschedule workflow only when it has a schedule trigger
+            // Keep WorkManager in sync with the latest workflow state.
             if (updatedWorkflow.enabled && hasScheduleTrigger(updatedWorkflow)) {
                 rescheduleWorkflow(updatedWorkflow.id)
+            } else {
+                unscheduleWorkflow(updatedWorkflow.id)
             }
 
             notifyWorkflowsChanged()
@@ -706,4 +708,3 @@ class WorkflowRepository(private val context: Context) {
         }
     }
 }
-

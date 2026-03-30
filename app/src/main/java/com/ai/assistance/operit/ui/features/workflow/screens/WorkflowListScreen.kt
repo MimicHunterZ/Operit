@@ -26,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -257,6 +258,9 @@ fun WorkflowListScreen(
                                     } else {
                                         onNavigateToDetail(workflow.id)
                                     }
+                                },
+                                onEnabledChange = { enabled ->
+                                    viewModel.setWorkflowEnabled(workflow.id, enabled)
                                 },
                                 isSelectionMode = isSelectionMode,
                                 isSelected = isSelected,
@@ -567,6 +571,7 @@ private fun SpeedDialAction(
 fun WorkflowCard(
     workflow: Workflow,
     onClick: () -> Unit,
+    onEnabledChange: (Boolean) -> Unit = {},
     isSelectionMode: Boolean = false,
     isSelected: Boolean = false,
     onSelectionChange: (Boolean) -> Unit = {}
@@ -631,6 +636,12 @@ fun WorkflowCard(
                         Checkbox(
                             checked = isSelected,
                             onCheckedChange = { onSelectionChange(it) }
+                        )
+                    } else {
+                        Switch(
+                            checked = workflow.enabled,
+                            onCheckedChange = onEnabledChange,
+                            modifier = Modifier.scale(0.82f)
                         )
                     }
                 }

@@ -26,7 +26,6 @@ import com.ai.assistance.operit.ui.common.displays.UIOperationOverlay
 import com.ai.assistance.operit.ui.common.displays.UIAutomationProgressOverlay
 import com.ai.assistance.operit.ui.common.displays.VirtualDisplayOverlay
 import com.ai.assistance.operit.util.AppLogger
-import com.ai.assistance.operit.util.ImagePoolManager
 import com.ai.assistance.operit.util.LocaleUtils
 import com.ai.assistance.operit.util.OperitPaths
 import com.ai.assistance.operit.core.tools.agent.ActionHandler
@@ -39,7 +38,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
@@ -531,8 +529,8 @@ open class StandardUITools(protected val context: Context) : ToolImplementations
     /**
      * Default screenshot implementation for the UI subagent.
      *
-     * It captures the current screen to /sdcard/Download/Operit/cleanOnExit,
-     * then registers the image in ImagePoolManager and returns a <link type="image" ...> tag.
+     * It captures the current screen to /sdcard/Download/Operit/cleanOnExit for file-based tools.
+     * AI screenshot paths can separately consume a raw bitmap and hand compression options to ImagePoolManager.
      *
      * Subclasses can override this method if they have a more specialized screenshot pipeline.
      */
@@ -561,6 +559,56 @@ open class StandardUITools(protected val context: Context) : ToolImplementations
         return FunctionalPrompts.buildUiAutomationAgentPrompt(formattedDate, useEnglish)
     }
 
+    private suspend fun ensureMediaProjectionCaptureManager(): MediaProjectionCaptureManager? {
+        if (MediaProjectionHolder.mediaProjection == null) {
+            AppLogger.d(TAG, "captureScreenshot: Requesting MediaProjection permission...")
+            withContext(Dispatchers.Main) {
+                ScreenCaptureActivity.cleanStart(context)
+            }
+
+            var retries = 0
+            while (MediaProjectionHolder.mediaProjection == null && retries < 20) {
+                delay(500)
+                retries++
+            }
+
+            if (MediaProjectionHolder.mediaProjection == null) {
+                AppLogger.w(TAG, "captureScreenshot: MediaProjection permission not granted or timed out")
+                return null
+            }
+        }
+
+        return try {
+            val projection = MediaProjectionHolder.mediaProjection ?: return null
+            val manager =
+                if (cachedMediaProjectionCaptureManager == null || cachedMediaProjection !== projection) {
+                    try {
+                        cachedMediaProjectionCaptureManager?.release()
+                    } catch (_: Exception) {
+                    }
+                    cachedMediaProjection = projection
+                    MediaProjectionCaptureManager(context, projection).also {
+                        cachedMediaProjectionCaptureManager = it
+                    }
+                } else {
+                    cachedMediaProjectionCaptureManager!!
+                }
+
+            manager.setupDisplay()
+            delay(200)
+            manager
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "captureScreenshot: Error preparing MediaProjectionCaptureManager", e)
+            try {
+                cachedMediaProjectionCaptureManager?.release()
+            } catch (_: Exception) {
+            }
+            cachedMediaProjectionCaptureManager = null
+            cachedMediaProjection = null
+            null
+        }
+    }
+
     protected open suspend fun captureScreenshotToFile(tool: AITool): Pair<String?, Pair<Int, Int>?> {
         return try {
             val screenshotDir = OperitPaths.cleanOnExitDir()
@@ -568,84 +616,33 @@ open class StandardUITools(protected val context: Context) : ToolImplementations
             val shortName = System.currentTimeMillis().toString().takeLast(4)
             val file = File(screenshotDir, "$shortName.png")
 
-            // 1) Check if we have a valid MediaProjection token
-            if (MediaProjectionHolder.mediaProjection == null) {
-                AppLogger.d(TAG, "captureScreenshotToFile: Requesting MediaProjection permission...")
-                withContext(Dispatchers.Main) {
-                    ScreenCaptureActivity.cleanStart(context)
-                }
-                
-                // Wait for permission (poll for 10 seconds)
-                var retries = 0
-                while (MediaProjectionHolder.mediaProjection == null && retries < 20) {
-                    delay(500)
-                    retries++
-                }
+            val manager = ensureMediaProjectionCaptureManager() ?: return Pair(null, null)
 
-                if (MediaProjectionHolder.mediaProjection == null) {
-                   AppLogger.w(TAG, "captureScreenshotToFile: MediaProjection permission not granted or timed out")
-                   return Pair(null, null)
+            var success = false
+            var attempt = 0
+            while (!success && attempt < 3) {
+                success = manager.captureToFile(file)
+                if (!success) {
+                    delay(120)
                 }
+                attempt++
             }
 
-            // 2) Use MediaProjectionCaptureManager
-            try {
-                // We create a temporary manager for this capture
-                // In a real app, you might want to keep this alive if you do continuous capture,
-                // but for one-off screenshots, creating/releasing is safer to avoid resource leaks.
-                val projection = MediaProjectionHolder.mediaProjection
-                if (projection != null) {
-                    val manager = if (cachedMediaProjectionCaptureManager == null || cachedMediaProjection !== projection) {
-                        try {
-                            cachedMediaProjectionCaptureManager?.release()
-                        } catch (_: Exception) {
-                        }
-                        cachedMediaProjection = projection
-                        MediaProjectionCaptureManager(context, projection).also {
-                            cachedMediaProjectionCaptureManager = it
-                        }
+            if (success) {
+                AppLogger.d(TAG, "captureScreenshotToFile: captured via MediaProjectionCaptureManager")
+                val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(file.absolutePath, options)
+                val dimensions =
+                    if (options.outWidth > 0 && options.outHeight > 0) {
+                        Pair(options.outWidth, options.outHeight)
                     } else {
-                        cachedMediaProjectionCaptureManager!!
+                        null
                     }
-
-                    manager.setupDisplay()
-                    delay(200)
-
-                    var success = false
-                    var attempt = 0
-                    while (!success && attempt < 3) {
-                        success = manager.captureToFile(file)
-                        if (!success) {
-                            delay(120)
-                        }
-                        attempt++
-                    }
-
-                    if (success) {
-                        AppLogger.d(TAG, "captureScreenshotToFile: captured via MediaProjectionCaptureManager")
-                        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                        BitmapFactory.decodeFile(file.absolutePath, options)
-                        val dimensions = if (options.outWidth > 0 && options.outHeight > 0) {
-                            Pair(options.outWidth, options.outHeight)
-                        } else {
-                            null
-                        }
-                        return Pair(file.absolutePath, dimensions)
-                    } else {
-                        AppLogger.w(TAG, "captureScreenshotToFile: MediaProjectionCaptureManager capture failed")
-                    }
-                }
-            } catch (e: Exception) {
-                AppLogger.e(TAG, "captureScreenshotToFile: Error using MediaProjectionCaptureManager", e)
-                try {
-                    cachedMediaProjectionCaptureManager?.release()
-                } catch (_: Exception) {
-                }
-                cachedMediaProjectionCaptureManager = null
-                cachedMediaProjection = null
+                Pair(file.absolutePath, dimensions)
+            } else {
+                AppLogger.w(TAG, "captureScreenshotToFile: MediaProjectionCaptureManager capture failed")
+                Pair(null, null)
             }
-
-            Pair(null, null)
         } catch (e: Exception) {
             AppLogger.e(TAG, "captureScreenshotToFile failed", e)
             Pair(null, null)
@@ -654,6 +651,30 @@ open class StandardUITools(protected val context: Context) : ToolImplementations
 
     override suspend fun captureScreenshot(tool: AITool): Pair<String?, Pair<Int, Int>?> {
         return captureScreenshotToFile(tool)
+    }
+
+    override suspend fun captureScreenshotBitmap(tool: AITool): Pair<Bitmap?, Pair<Int, Int>?> {
+        return try {
+            val manager = ensureMediaProjectionCaptureManager() ?: return Pair(null, null)
+
+            var attempt = 0
+            while (attempt < 3) {
+                val bitmap = manager.captureToBitmap()
+                if (bitmap != null) {
+                    return Pair(bitmap, Pair(bitmap.width, bitmap.height))
+                }
+                if (attempt < 2) {
+                    delay(120)
+                }
+                attempt++
+            }
+
+            AppLogger.w(TAG, "captureScreenshotToFile: MediaProjectionCaptureManager capture failed")
+            Pair(null, null)
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "captureScreenshotBitmap failed", e)
+            Pair(null, null)
+        }
     }
 
 }

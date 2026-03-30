@@ -1026,6 +1026,7 @@
     <string name="pkg_toolpkg_empty_subpackages">This ToolPkg does not declare any subpackages</string>
     <string name="pkg_toolpkg_tool_count">Tools: %1$d</string>
     <string name="pkg_toolpkg_subpackage_toggle_failed">Failed to update subpackage state. Please retry.</string>
+    <string name="pkg_plugin_config_open_action">Open Config</string>
     <string name="automation_json_only">Only JSON files supported</string>
     <string name="no_filename">Unable to get filename</string>
     <string name="external_package_imported">External package imported</string>
@@ -5205,6 +5206,8 @@
     <string name="toolreg_update_workflow_with_name_desc">Update workflow: %1$s (new name: %2$s)</string>
     <string name="toolreg_update_workflow_desc">Update workflow: %1$s</string>
     <string name="toolreg_patch_workflow_desc">Patch workflow: %1$s</string>
+    <string name="toolreg_enable_workflow_desc">Enable workflow: %1$s</string>
+    <string name="toolreg_disable_workflow_desc">Disable workflow: %1$s</string>
     <string name="toolreg_delete_workflow_desc">Delete workflow: %1$s</string>
     <string name="toolreg_trigger_workflow_desc">Trigger workflow: %1$s</string>
     <string name="toolreg_start_chat_service_desc">Start chat service (floating window)</string>

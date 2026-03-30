@@ -795,6 +795,21 @@ fun getJsToolsDefinition(): String {
                     }
                     return toolCall("patch_workflow", params);
                 },
+                // 设置工作流启用状态
+                setEnabled: (workflowId, enabled) => {
+                    const params = { workflow_id: workflowId };
+                    return toolCall(enabled ? "enable_workflow" : "disable_workflow", params);
+                },
+                // 启用工作流
+                enable: (workflowId) => {
+                    const params = { workflow_id: workflowId };
+                    return toolCall("enable_workflow", params);
+                },
+                // 禁用工作流
+                disable: (workflowId) => {
+                    const params = { workflow_id: workflowId };
+                    return toolCall("disable_workflow", params);
+                },
                 // 删除工作流
                 delete: (workflowId) => {
                     const params = { workflow_id: workflowId };

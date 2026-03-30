@@ -78,6 +78,7 @@ private data class ExternalPackageImportResult(
 fun PackageManagerScreen(
     onNavigateToMCPMarket: () -> Unit = {},
     onNavigateToSkillMarket: () -> Unit = {},
+    onOpenToolPkgPluginConfig: (String, String, String) -> Unit = { _, _, _ -> },
     onNavigateToMCPDetail: ((com.ai.assistance.operit.data.api.GitHubIssue) -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -680,6 +681,10 @@ fun PackageManagerScreen(
                         selectedToolPackageName = toolPackageName
                         selectedTool = tool
                         showScriptExecution = true
+                    },
+                    onOpenToolPkgPluginConfig = { containerPackageName, uiModuleId, title ->
+                        showDetails = false
+                        onOpenToolPkgPluginConfig(containerPackageName, uiModuleId, title)
                     },
                     onDismiss = {
                         showDetails = false

@@ -28,7 +28,7 @@ import java.util.UUID
 
 /**
  * 工作流管理工具
- * 提供工作流的创建、查询、更新和删除功能
+ * 提供工作流的创建、查询、更新、启停、删除与触发功能
  */
 class StandardWorkflowTools(private val context: Context) {
 
@@ -40,6 +40,24 @@ class StandardWorkflowTools(private val context: Context) {
     private val json = Json {
         ignoreUnknownKeys = true
         classDiscriminator = "__type"
+    }
+
+    private fun workflowDetailResultData(workflow: Workflow): WorkflowDetailResultData {
+        return WorkflowDetailResultData(
+            id = workflow.id,
+            name = workflow.name,
+            description = workflow.description,
+            nodes = workflow.nodes,
+            connections = workflow.connections,
+            enabled = workflow.enabled,
+            createdAt = workflow.createdAt,
+            updatedAt = workflow.updatedAt,
+            lastExecutionTime = workflow.lastExecutionTime,
+            lastExecutionStatus = workflow.lastExecutionStatus?.name,
+            totalExecutions = workflow.totalExecutions,
+            successfulExecutions = workflow.successfulExecutions,
+            failedExecutions = workflow.failedExecutions
+        )
     }
 
     /**
@@ -342,6 +360,74 @@ class StandardWorkflowTools(private val context: Context) {
                 error = "Failed to update workflow: ${e.message}"
             )
         }
+    }
+
+    private suspend fun setWorkflowEnabled(tool: AITool, enabled: Boolean): ToolResult {
+        val workflowId = tool.parameters.find { it.name == "workflow_id" }?.value
+        if (workflowId.isNullOrBlank()) {
+            return ToolResult(
+                toolName = tool.name,
+                success = false,
+                result = WorkflowDetailResultData.empty(),
+                error = "Workflow ID cannot be empty"
+            )
+        }
+
+        val action = if (enabled) "enable" else "disable"
+
+        return try {
+            val existingResult = workflowRepository.getWorkflowById(workflowId)
+            if (existingResult.isFailure || existingResult.getOrNull() == null) {
+                return ToolResult(
+                    toolName = tool.name,
+                    success = false,
+                    result = WorkflowDetailResultData.empty(),
+                    error = "Workflow not found: $workflowId"
+                )
+            }
+
+            val existingWorkflow = existingResult.getOrNull()!!
+            if (existingWorkflow.enabled == enabled) {
+                return ToolResult(
+                    toolName = tool.name,
+                    success = true,
+                    result = workflowDetailResultData(existingWorkflow)
+                )
+            }
+
+            val saveResult = workflowRepository.updateWorkflow(existingWorkflow.copy(enabled = enabled))
+            if (saveResult.isSuccess) {
+                val savedWorkflow = saveResult.getOrNull()!!
+                ToolResult(
+                    toolName = tool.name,
+                    success = true,
+                    result = workflowDetailResultData(savedWorkflow)
+                )
+            } else {
+                ToolResult(
+                    toolName = tool.name,
+                    success = false,
+                    result = WorkflowDetailResultData.empty(),
+                    error = "Failed to $action workflow: ${saveResult.exceptionOrNull()?.message}"
+                )
+            }
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "Failed to $action workflow", e)
+            ToolResult(
+                toolName = tool.name,
+                success = false,
+                result = WorkflowDetailResultData.empty(),
+                error = "Failed to $action workflow: ${e.message}"
+            )
+        }
+    }
+
+    suspend fun enableWorkflow(tool: AITool): ToolResult {
+        return setWorkflowEnabled(tool, enabled = true)
+    }
+
+    suspend fun disableWorkflow(tool: AITool): ToolResult {
+        return setWorkflowEnabled(tool, enabled = false)
     }
 
     /**
@@ -1215,4 +1301,3 @@ class StandardWorkflowTools(private val context: Context) {
         return map
     }
 }
-

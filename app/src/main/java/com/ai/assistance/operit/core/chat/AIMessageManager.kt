@@ -6,6 +6,7 @@ import android.os.SystemClock
 import com.ai.assistance.operit.R
 import com.ai.assistance.operit.util.AppLogger
 import com.ai.assistance.operit.api.chat.EnhancedAIService
+import com.ai.assistance.operit.api.chat.enhance.InputProcessor
 import com.ai.assistance.operit.api.chat.llmprovider.MediaLinkParser
 import com.ai.assistance.operit.api.chat.llmprovider.MediaLinkBuilder
 import com.ai.assistance.operit.core.chat.plugins.MessageProcessingController
@@ -122,9 +123,16 @@ object AIMessageManager {
         enableDirectVideoProcessing: Boolean = false
     ): String {
         val totalStartTime = messageTimingNow()
+        val promptInputStartTime = messageTimingNow()
+        val processedMessageText = InputProcessor.processUserInput(messageText)
+        logMessageTiming(
+            stage = "buildUserMessageContent.processUserInput",
+            startTimeMs = promptInputStartTime,
+            details = "originalLength=${messageText.length}, processedLength=${processedMessageText.length}"
+        )
         val proxySenderTag =
             if (!proxySenderName.isNullOrBlank() &&
-                !messageText.contains("<proxy_sender", ignoreCase = true)
+                !processedMessageText.contains("<proxy_sender", ignoreCase = true)
             ) {
                 val safeProxySenderName = proxySenderName.replace("\"", "'")
                 "<proxy_sender name=\"$safeProxySenderName\"/>"
@@ -152,7 +160,7 @@ object AIMessageManager {
 
         // 3. 根据开关决定是否生成工作区附着
         val workspaceTagStartTime = messageTimingNow()
-        val workspaceTag = if (enableWorkspaceAttachment && !workspacePath.isNullOrBlank() && !messageText.contains("<workspace_attachment>", ignoreCase = true)) {
+        val workspaceTag = if (enableWorkspaceAttachment && !workspacePath.isNullOrBlank() && !processedMessageText.contains("<workspace_attachment>", ignoreCase = true)) {
             try {
                 val workspaceContent = WorkspaceAttachmentProcessor.generateWorkspaceAttachment(
                     context = context,
@@ -252,13 +260,13 @@ object AIMessageManager {
         )
 
         // 5. 组合最终消息
-        val finalMessageContent = listOf(proxySenderTag, messageText, attachmentTags, workspaceTag, replyTag)
+        val finalMessageContent = listOf(proxySenderTag, processedMessageText, attachmentTags, workspaceTag, replyTag)
             .filter { it.isNotBlank() }
             .joinToString(" ")
         logMessageTiming(
             stage = "buildUserMessageContent.total",
             startTimeMs = totalStartTime,
-            details = "messageLength=${messageText.length}, finalLength=${finalMessageContent.length}, attachments=${attachments.size}"
+            details = "messageLength=${processedMessageText.length}, finalLength=${finalMessageContent.length}, attachments=${attachments.size}"
         )
         return finalMessageContent
     }
