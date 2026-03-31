@@ -23,6 +23,10 @@ fun createAndGetDefaultWorkspace(context: Context, chatId: String, projectType: 
             copyTemplateFiles(context, webContentDir, "android")
             createProjectConfigIfNeeded(context, webContentDir, ProjectType.ANDROID)
         }
+        "flutter" -> {
+            copyTemplateFiles(context, webContentDir, "flutter")
+            createProjectConfigIfNeeded(context, webContentDir, ProjectType.FLUTTER)
+        }
         "node" -> {
             copyTemplateFiles(context, webContentDir, "node")
             createProjectConfigIfNeeded(context, webContentDir, ProjectType.NODE)
@@ -84,7 +88,7 @@ fun ensureWorkspaceDirExists(path: String): File {
 }
 
 private enum class ProjectType {
-    WEB, ANDROID, NODE, TYPESCRIPT, PYTHON, JAVA, GO, OFFICE, BLANK
+    WEB, ANDROID, FLUTTER, NODE, TYPESCRIPT, PYTHON, JAVA, GO, OFFICE, BLANK
 }
 
 /**
@@ -189,6 +193,93 @@ private fun generateAndroidProjectConfig(context: Context): String {
             "id": "gradle_test",
             "label": "${context.getString(R.string.workspace_cmd_android_test)}",
             "command": "./gradlew test",
+            "workingDir": ".",
+            "shell": true
+        }
+    ],
+    "export": {
+        "enabled": false
+    }
+}
+""".trimIndent()
+}
+
+/**
+ * 生成Flutter项目配置JSON
+ */
+private fun generateFlutterProjectConfig(context: Context): String {
+    return """
+{
+    "projectType": "flutter",
+    "title": "${context.getString(R.string.workspace_project_flutter_title)}",
+    "description": "${context.getString(R.string.workspace_project_flutter_description)}",
+    "server": {
+        "enabled": false,
+        "port": 8093,
+        "autoStart": false
+    },
+    "preview": {
+        "type": "terminal",
+        "url": "http://localhost:8093",
+        "showPreviewButton": true,
+        "previewButtonLabel": "${context.getString(R.string.workspace_preview_button_label_browser)}"
+    },
+    "commands": [
+        {
+            "id": "flutter_android_setup_env",
+            "label": "${context.getString(R.string.workspace_cmd_flutter_setup_env)}",
+            "command": "bash android/setup_android_env.sh",
+            "workingDir": ".",
+            "shell": true
+        },
+        {
+            "id": "flutter_doctor",
+            "label": "${context.getString(R.string.workspace_cmd_flutter_doctor)}",
+            "command": "flutter doctor",
+            "workingDir": ".",
+            "shell": true
+        },
+        {
+            "id": "flutter_pub_get",
+            "label": "${context.getString(R.string.workspace_cmd_flutter_pub_get)}",
+            "command": "flutter pub get",
+            "workingDir": ".",
+            "shell": true
+        },
+        {
+            "id": "flutter_run_web_server",
+            "label": "${context.getString(R.string.workspace_cmd_flutter_run_web)}",
+            "command": "flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8093",
+            "workingDir": ".",
+            "shell": true,
+            "usesDedicatedSession": true,
+            "sessionTitle": "Flutter Web Server"
+        },
+        {
+            "id": "flutter_analyze",
+            "label": "${context.getString(R.string.workspace_cmd_flutter_analyze)}",
+            "command": "flutter analyze",
+            "workingDir": ".",
+            "shell": true
+        },
+        {
+            "id": "flutter_test",
+            "label": "${context.getString(R.string.workspace_cmd_flutter_test)}",
+            "command": "flutter test",
+            "workingDir": ".",
+            "shell": true
+        },
+        {
+            "id": "flutter_build_apk",
+            "label": "${context.getString(R.string.workspace_cmd_flutter_build_apk)}",
+            "command": "flutter build apk",
+            "workingDir": ".",
+            "shell": true
+        },
+        {
+            "id": "flutter_build_web",
+            "label": "${context.getString(R.string.workspace_cmd_flutter_build_web)}",
+            "command": "flutter build web",
             "workingDir": ".",
             "shell": true
         }
@@ -659,23 +750,26 @@ private fun createProjectConfigIfNeeded(context: Context, workspaceDir: File, pr
     }
 
     val configFile = File(operitDir, "config.json")
-    if (!configFile.exists()) {
-        val configContent = when (projectType) {
-            ProjectType.WEB -> generateWebProjectConfig(context)
-            ProjectType.ANDROID -> generateAndroidProjectConfig(context)
-            ProjectType.NODE -> generateNodeProjectConfig(context)
-            ProjectType.TYPESCRIPT -> generateTypeScriptProjectConfig(context)
-            ProjectType.PYTHON -> generatePythonProjectConfig(context)
-            ProjectType.JAVA -> generateJavaProjectConfig(context)
-            ProjectType.GO -> generateGoProjectConfig(context)
-            ProjectType.OFFICE -> generateOfficeProjectConfig(context)
-            ProjectType.BLANK -> generateBlankProjectConfig(context)
-        }
+    if (configFile.exists()) {
+        return
+    }
 
-        try {
-            configFile.writeText(configContent.trimIndent())
-        } catch (_: IOException) {
-            // Ignore write errors for now
-        }
+    val configContent = when (projectType) {
+        ProjectType.WEB -> generateWebProjectConfig(context)
+        ProjectType.ANDROID -> generateAndroidProjectConfig(context)
+        ProjectType.FLUTTER -> generateFlutterProjectConfig(context)
+        ProjectType.NODE -> generateNodeProjectConfig(context)
+        ProjectType.TYPESCRIPT -> generateTypeScriptProjectConfig(context)
+        ProjectType.PYTHON -> generatePythonProjectConfig(context)
+        ProjectType.JAVA -> generateJavaProjectConfig(context)
+        ProjectType.GO -> generateGoProjectConfig(context)
+        ProjectType.OFFICE -> generateOfficeProjectConfig(context)
+        ProjectType.BLANK -> generateBlankProjectConfig(context)
+    }
+
+    try {
+        configFile.writeText(configContent.trimIndent())
+    } catch (_: IOException) {
+        // Ignore write errors for now
     }
 }

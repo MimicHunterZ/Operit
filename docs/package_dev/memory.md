@@ -21,7 +21,7 @@ Tools.Memory
 
 ### 记忆查询与读取
 
-#### `query(query, folderPath?, limit?, startTime?, endTime?, snapshotId?)`
+#### `query(query, folderPath?, limit?, startTime?, endTime?, snapshotId?, threshold?)`
 
 ```ts
 query(
@@ -30,7 +30,8 @@ query(
   limit?: number,
   startTime?: string,
   endTime?: string,
-  snapshotId?: string
+  snapshotId?: string,
+  threshold?: number
 ): Promise<MemoryQueryResultData>
 ```
 
@@ -44,6 +45,7 @@ query(
 - `snapshotId` 不传或传空时，会自动创建一个新的查询快照，并在返回值里带回 `snapshotId`。
 - `snapshotId` 传入任意非空字符串时，会直接使用这个 id；如果该快照还不存在，就按这个 id 创建，而不是要求它必须已经存在。
 - 后续串行或并发复用同一个 `snapshotId` 查询时，会自动排除该快照里已经返回过的记忆，并把本次新返回的记忆继续记入快照。
+- `threshold` 是可选相关度阈值，要求 `>= 0`；只有得分不低于该阈值的记忆会被返回。`query_memory` 默认阈值为 `0`。
 - 返回结构体中包含 `memories[]`，每项有 `title`、`content`、`source`、`tags`、`createdAt`，文档型记忆还可能带 `chunkInfo` 与 `chunkIndices`。
 - 返回结构体还包含 `snapshotId`、`snapshotCreated`、`excludedBySnapshotCount`，用于分页式去重检索。
 
@@ -133,7 +135,11 @@ update(oldTitle: string, updates?: {
 const result = await Tools.Memory.query(
   '最近关于网络请求的笔记',
   'dev/network',
-  20
+  20,
+  undefined,
+  undefined,
+  undefined,
+  0
 );
 console.log(result.snapshotId);
 console.log(result.memories.map(item => item.title));
@@ -147,7 +153,9 @@ const result = await Tools.Memory.query(
   'dev/network',
   5,
   '2026-03-01',
-  '2026-03-27 18:30'
+  '2026-03-27 18:30',
+  undefined,
+  0.1
 );
 console.log(result.memories.length);
 ```
@@ -162,7 +170,8 @@ const secondPage = await Tools.Memory.query(
   5,
   undefined,
   undefined,
-  firstPage.snapshotId || undefined
+  firstPage.snapshotId || undefined,
+  0
 );
 console.log(secondPage.excludedBySnapshotCount);
 ```
@@ -171,10 +180,11 @@ console.log(secondPage.excludedBySnapshotCount);
 
 ```ts
 const snapshotId = 'network-audit-batch-1';
+const threshold = 0.05;
 
 const [recent, historical] = await Promise.all([
-  Tools.Memory.query('最近关于网络请求的笔记', 'dev/network', 5, '2026-03-20', undefined, snapshotId),
-  Tools.Memory.query('历史上的网络超时案例', 'dev/network', 5, undefined, '2026-03-19 23:59', snapshotId)
+  Tools.Memory.query('最近关于网络请求的笔记', 'dev/network', 5, '2026-03-20', undefined, snapshotId, threshold),
+  Tools.Memory.query('历史上的网络超时案例', 'dev/network', 5, undefined, '2026-03-19 23:59', snapshotId, threshold)
 ]);
 
 console.log(snapshotId, recent.snapshotCreated, historical.snapshotCreated);

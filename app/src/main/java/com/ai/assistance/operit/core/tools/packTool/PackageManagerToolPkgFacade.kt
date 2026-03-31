@@ -524,6 +524,13 @@ internal class PackageManagerToolPkgFacade(
             if (!normalizedPluginId.isNullOrBlank()) {
                 params["pluginId"] = normalizedPluginId
             }
+            eventPayload["chatId"]
+                ?.toString()
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?.let { chatId ->
+                    params["__operit_package_chat_id"] = chatId
+                }
             if (!functionSource.isNullOrBlank()) {
                 params["__operit_inline_function_name"] = functionName
                 params["__operit_inline_function_source"] = functionSource

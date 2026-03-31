@@ -18,6 +18,13 @@ function readSettings(): ExtraInfoInjectionSettings {
   return loadSettings();
 }
 
+function formatDecimal(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "0";
+  }
+  return value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
+
 function createSectionTitle(ctx: ComposeDslContext, icon: string, title: string): ComposeNode {
   return ctx.UI.Row({ verticalAlignment: "center" }, [
     ctx.UI.Icon({ name: icon, tint: "primary", size: 20 }),
@@ -31,6 +38,21 @@ function createSectionTitle(ctx: ComposeDslContext, icon: string, title: string)
   ]);
 }
 
+const toggleCardStyle = {
+  fillMaxWidth: true,
+  shape: { cornerRadius: 8 },
+  containerColor: "surfaceVariant",
+  alpha: 0.38,
+} as const;
+
+function createDivider(ctx: ComposeDslContext): ComposeNode {
+  return ctx.UI.HorizontalDivider({
+    padding: { horizontal: 14 },
+    color: "outlineVariant",
+    thickness: 1,
+  });
+}
+
 function createToggleCard(
   ctx: ComposeDslContext,
   title: string,
@@ -42,21 +64,6 @@ function createToggleCard(
     createToggleRow(ctx, title, subtitle, checked, onCheckedChange),
   ]);
 }
-
-type ToggleCardItem = {
-  key: string;
-  title: string;
-  subtitle: string;
-  checked: boolean;
-  onCheckedChange: (checked: boolean) => void;
-};
-
-const toggleCardStyle = {
-  fillMaxWidth: true,
-  shape: { cornerRadius: 8 },
-  containerColor: "surfaceVariant",
-  alpha: 0.38,
-} as const;
 
 function createToggleRow(
   ctx: ComposeDslContext,
@@ -94,9 +101,80 @@ function createToggleRow(
   );
 }
 
-function createToggleGroupCard(
+type ToggleCardItem = {
+  title: string;
+  subtitle: string;
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+};
+
+function createMemoryConfigSection(
   ctx: ComposeDslContext,
-  items: ToggleCardItem[]
+  text: ReturnType<typeof resolveExtraInfoI18n>,
+  enabled: boolean,
+  thresholdValue: string,
+  limitValue: string,
+  onThresholdChange: (value: string) => void,
+  onLimitChange: (value: string) => void,
+  onApply: () => void
+): ComposeNode {
+  return ctx.UI.Column(
+    {
+      fillMaxWidth: true,
+      padding: { horizontal: 14, vertical: 12 },
+      spacing: 10,
+    },
+    [
+      ctx.UI.Text({
+        text: text.memoryConfigTitle,
+        style: "bodyMedium",
+        fontWeight: "medium",
+      }),
+      ctx.UI.Text({
+        text: text.memoryConfigDescription,
+        style: "bodySmall",
+        color: "onSurfaceVariant",
+      }),
+      ctx.UI.TextField({
+        enabled,
+        label: text.memoryThresholdFieldLabel,
+        placeholder: text.memoryThresholdFieldPlaceholder,
+        value: thresholdValue,
+        onValueChange: onThresholdChange,
+        singleLine: true,
+      }),
+      ctx.UI.Text({
+        text: text.memoryThresholdFieldDescription,
+        style: "bodySmall",
+        color: "onSurfaceVariant",
+      }),
+      ctx.UI.TextField({
+        enabled,
+        label: text.memoryLimitFieldLabel,
+        placeholder: text.memoryLimitFieldPlaceholder,
+        value: limitValue,
+        onValueChange: onLimitChange,
+        singleLine: true,
+      }),
+      ctx.UI.Text({
+        text: text.memoryLimitFieldDescription,
+        style: "bodySmall",
+        color: "onSurfaceVariant",
+      }),
+      ctx.UI.Button({
+        text: text.memoryConfigApplyButton,
+        enabled,
+        fillMaxWidth: true,
+        onClick: onApply,
+      }),
+    ]
+  );
+}
+
+function createInjectionItemsCard(
+  ctx: ComposeDslContext,
+  items: ToggleCardItem[],
+  memoryConfigSection: ComposeNode
 ): ComposeNode {
   const children: ComposeNode[] = [];
 
@@ -110,15 +188,10 @@ function createToggleGroupCard(
         item.onCheckedChange
       )
     );
+    children.push(createDivider(ctx));
 
-    if (index < items.length - 1) {
-      children.push(
-        ctx.UI.HorizontalDivider({
-          padding: { horizontal: 14 },
-          color: "outlineVariant",
-          thickness: 1,
-        })
-      );
+    if (index === items.length - 1) {
+      children.push(memoryConfigSection);
     }
   });
 
@@ -141,6 +214,19 @@ export default function Screen(ctx: ComposeDslContext): ComposeNode {
     "injectNotifications",
     initial.injectNotifications
   );
+  const injectMemoryState = useStateValue(ctx, "injectMemory", initial.injectMemory);
+  const memoryThresholdState = useStateValue(ctx, "memoryThreshold", initial.memoryThreshold);
+  const memoryLimitState = useStateValue(ctx, "memoryLimit", initial.memoryLimit);
+  const memoryThresholdInputState = useStateValue(
+    ctx,
+    "memoryThresholdInput",
+    formatDecimal(initial.memoryThreshold)
+  );
+  const memoryLimitInputState = useStateValue(
+    ctx,
+    "memoryLimitInput",
+    String(initial.memoryLimit)
+  );
   const successMessageState = useStateValue(ctx, "successMessage", "");
   const errorMessageState = useStateValue(ctx, "errorMessage", "");
   const hasInitializedState = useStateValue(ctx, "hasInitialized", false);
@@ -152,9 +238,17 @@ export default function Screen(ctx: ComposeDslContext): ComposeNode {
     injectWeatherState.set(next.injectWeather);
     injectLocationState.set(next.injectLocation);
     injectNotificationsState.set(next.injectNotifications);
+    injectMemoryState.set(next.injectMemory);
+    memoryThresholdState.set(next.memoryThreshold);
+    memoryLimitState.set(next.memoryLimit);
+    memoryThresholdInputState.set(formatDecimal(next.memoryThreshold));
+    memoryLimitInputState.set(String(next.memoryLimit));
   };
 
-  const persistSettings = (patch: Partial<ExtraInfoInjectionSettings>, successMessage = ""): void => {
+  const persistSettings = (
+    patch: Partial<ExtraInfoInjectionSettings>,
+    successMessage = ""
+  ): void => {
     try {
       const next = saveSettings(patch);
       syncSettings(next);
@@ -167,6 +261,28 @@ export default function Screen(ctx: ComposeDslContext): ComposeNode {
     }
   };
 
+  const applyMemorySettings = (): void => {
+    const threshold = Number(memoryThresholdInputState.value.trim());
+    const limit = Number(memoryLimitInputState.value.trim());
+
+    if (!Number.isFinite(threshold) || threshold < 0) {
+      successMessageState.set("");
+      errorMessageState.set(`${text.saveErrorPrefix}${text.invalidMemoryThresholdMessage}`);
+      return;
+    }
+
+    if (!Number.isFinite(limit) || limit < 1) {
+      successMessageState.set("");
+      errorMessageState.set(`${text.saveErrorPrefix}${text.invalidMemoryLimitMessage}`);
+      return;
+    }
+
+    persistSettings({
+      memoryThreshold: threshold,
+      memoryLimit: Math.floor(limit),
+    });
+  };
+
   const summaryLines = [
     masterEnabledState.value ? text.summaryMasterEnabled : text.summaryMasterDisabled,
     injectTimeState.value ? text.summaryTimeEnabled : text.summaryTimeDisabled,
@@ -176,6 +292,11 @@ export default function Screen(ctx: ComposeDslContext): ComposeNode {
     injectNotificationsState.value
       ? text.summaryNotificationsEnabled
       : text.summaryNotificationsDisabled,
+    injectMemoryState.value
+      ? `${text.summaryMemoryEnabled} (${text.memoryThresholdLabel}: ${formatDecimal(
+          memoryThresholdState.value
+        )}; ${text.memoryLimitLabel}: ${memoryLimitState.value})`
+      : text.summaryMemoryDisabled,
     text.summaryRulesHint,
   ];
 
@@ -194,21 +315,27 @@ export default function Screen(ctx: ComposeDslContext): ComposeNode {
       style: "bodyMedium",
       color: "onSurfaceVariant",
     }),
-    ctx.UI.Surface({
-      fillMaxWidth: true,
-      shape: { cornerRadius: 12 },
-      containerColor: "secondaryContainer",
-    }, [
-      ctx.UI.Row({ padding: { horizontal: 14, vertical: 12 }, verticalAlignment: "center" }, [
-        ctx.UI.Icon({ name: "info", tint: "onSecondaryContainer", size: 18 }),
-        ctx.UI.Spacer({ width: 8 }),
-        ctx.UI.Text({
-          text: text.toolboxBanner,
-          style: "bodySmall",
-          color: "onSecondaryContainer",
-        }),
-      ]),
-    ]),
+    ctx.UI.Surface(
+      {
+        fillMaxWidth: true,
+        shape: { cornerRadius: 12 },
+        containerColor: "secondaryContainer",
+      },
+      [
+        ctx.UI.Row(
+          { padding: { horizontal: 14, vertical: 12 }, verticalAlignment: "center" },
+          [
+            ctx.UI.Icon({ name: "info", tint: "onSecondaryContainer", size: 18 }),
+            ctx.UI.Spacer({ width: 8 }),
+            ctx.UI.Text({
+              text: text.toolboxBanner,
+              style: "bodySmall",
+              color: "onSecondaryContainer",
+            }),
+          ]
+        ),
+      ]
+    ),
 
     createSectionTitle(ctx, "settings", text.masterSectionTitle),
     createToggleCard(
@@ -222,70 +349,96 @@ export default function Screen(ctx: ComposeDslContext): ComposeNode {
     ),
 
     createSectionTitle(ctx, "bolt", text.itemsSectionTitle),
-    createToggleGroupCard(ctx, [
-      {
-        key: "time",
-        title: text.timeToggleTitle,
-        subtitle: text.timeToggleDescription,
-        checked: injectTimeState.value,
-        onCheckedChange: checked => {
-          persistSettings({ injectTime: checked });
+    createInjectionItemsCard(
+      ctx,
+      [
+        {
+          title: text.timeToggleTitle,
+          subtitle: text.timeToggleDescription,
+          checked: injectTimeState.value,
+          onCheckedChange: checked => {
+            persistSettings({ injectTime: checked });
+          },
         },
-      },
-      {
-        key: "battery",
-        title: text.batteryToggleTitle,
-        subtitle: text.batteryToggleDescription,
-        checked: injectBatteryState.value,
-        onCheckedChange: checked => {
-          persistSettings({ injectBattery: checked });
+        {
+          title: text.batteryToggleTitle,
+          subtitle: text.batteryToggleDescription,
+          checked: injectBatteryState.value,
+          onCheckedChange: checked => {
+            persistSettings({ injectBattery: checked });
+          },
         },
-      },
-      {
-        key: "weather",
-        title: text.weatherToggleTitle,
-        subtitle: text.weatherToggleDescription,
-        checked: injectWeatherState.value,
-        onCheckedChange: checked => {
-          persistSettings({ injectWeather: checked });
+        {
+          title: text.weatherToggleTitle,
+          subtitle: text.weatherToggleDescription,
+          checked: injectWeatherState.value,
+          onCheckedChange: checked => {
+            persistSettings({ injectWeather: checked });
+          },
         },
-      },
-      {
-        key: "location",
-        title: text.locationToggleTitle,
-        subtitle: text.locationToggleDescription,
-        checked: injectLocationState.value,
-        onCheckedChange: checked => {
-          persistSettings({ injectLocation: checked });
+        {
+          title: text.locationToggleTitle,
+          subtitle: text.locationToggleDescription,
+          checked: injectLocationState.value,
+          onCheckedChange: checked => {
+            persistSettings({ injectLocation: checked });
+          },
         },
-      },
-      {
-        key: "notifications",
-        title: text.notificationsToggleTitle,
-        subtitle: text.notificationsToggleDescription,
-        checked: injectNotificationsState.value,
-        onCheckedChange: checked => {
-          persistSettings({ injectNotifications: checked });
+        {
+          title: text.notificationsToggleTitle,
+          subtitle: text.notificationsToggleDescription,
+          checked: injectNotificationsState.value,
+          onCheckedChange: checked => {
+            persistSettings({ injectNotifications: checked });
+          },
         },
-      },
-    ]),
+        {
+          title: text.memoryToggleTitle,
+          subtitle: text.memoryToggleDescription,
+          checked: injectMemoryState.value,
+          onCheckedChange: checked => {
+            persistSettings({ injectMemory: checked });
+          },
+        },
+      ],
+      createMemoryConfigSection(
+        ctx,
+        text,
+        injectMemoryState.value,
+        memoryThresholdInputState.value,
+        memoryLimitInputState.value,
+        value => {
+          memoryThresholdInputState.set(value);
+        },
+        value => {
+          memoryLimitInputState.set(value);
+        },
+        applyMemorySettings
+      )
+    ),
 
     createSectionTitle(ctx, "checkCircle", text.summarySectionTitle),
-    ctx.UI.Card({
-      fillMaxWidth: true,
-      shape: { cornerRadius: 12 },
-      containerColor: "primaryContainer",
-      elevation: 1,
-    }, [
-      ctx.UI.Column({ padding: 16, spacing: 8 }, summaryLines.map((line, index) =>
-        ctx.UI.Text({
-          key: `summary-${index}`,
-          text: line,
-          style: index === summaryLines.length - 1 ? "bodySmall" : "bodyMedium",
-          color: "onPrimaryContainer",
-        })
-      )),
-    ]),
+    ctx.UI.Card(
+      {
+        fillMaxWidth: true,
+        shape: { cornerRadius: 12 },
+        containerColor: "primaryContainer",
+        elevation: 1,
+      },
+      [
+        ctx.UI.Column(
+          { padding: 16, spacing: 8 },
+          summaryLines.map((line, index) =>
+            ctx.UI.Text({
+              key: `summary-${index}`,
+              text: line,
+              style: index === summaryLines.length - 1 ? "bodySmall" : "bodyMedium",
+              color: "onPrimaryContainer",
+            })
+          )
+        ),
+      ]
+    ),
   ];
 
   if (successMessageState.value.trim()) {

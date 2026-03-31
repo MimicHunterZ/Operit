@@ -472,7 +472,8 @@ class MessageCoordinationDelegate(
                 enableWorkspaceAttachment = !workspacePath.isNullOrBlank(),
                 workspacePath = workspacePath,
                 workspaceEnv = workspaceEnv,
-                replyToMessage = replyToMessage
+                replyToMessage = replyToMessage,
+                chatId = chatId
             )
         val userMessage = ChatMessage(
             sender = "user",

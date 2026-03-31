@@ -202,7 +202,8 @@ class MessageProcessingDelegate(
         enableWorkspaceAttachment: Boolean,
         workspacePath: String?,
         workspaceEnv: String?,
-        replyToMessage: ChatMessage?
+        replyToMessage: ChatMessage?,
+        chatId: String? = null
     ): String {
         val totalStartTime = messageTimingNow()
         val configId = functionalConfigManager.getConfigIdForFunction(FunctionType.CHAT)
@@ -221,7 +222,8 @@ class MessageProcessingDelegate(
             replyToMessage = replyToMessage,
             enableDirectImageProcessing = enableDirectImageProcessing,
             enableDirectAudioProcessing = enableDirectAudioProcessing,
-            enableDirectVideoProcessing = enableDirectVideoProcessing
+            enableDirectVideoProcessing = enableDirectVideoProcessing,
+            chatId = chatId
         )
         logMessageTiming(
             stage = "delegate.groupOrchestration.buildUserMessageContent",
@@ -447,7 +449,8 @@ class MessageProcessingDelegate(
                 replyToMessage,
                 enableDirectImageProcessing,
                 enableDirectAudioProcessing,
-                enableDirectVideoProcessing
+                enableDirectVideoProcessing,
+                chatId = chatId
             )
             logMessageTiming(
                 stage = "delegate.buildUserMessageContent",

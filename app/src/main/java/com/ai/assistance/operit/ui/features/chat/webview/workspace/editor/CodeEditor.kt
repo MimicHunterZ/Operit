@@ -3,156 +3,166 @@ package com.ai.assistance.operit.ui.features.chat.webview.workspace.editor
 import android.content.Context
 import android.graphics.Point
 import android.util.AttributeSet
-import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
-import com.ai.assistance.operit.ui.components.CustomScaffold
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.ai.assistance.operit.ui.components.CustomScaffold
 import com.ai.assistance.operit.ui.features.chat.webview.workspace.editor.completion.CompletionItem
 import com.ai.assistance.operit.ui.features.chat.webview.workspace.editor.completion.CompletionPopup
+import com.ai.assistance.operit.ui.features.chat.webview.workspace.editor.theme.EditorTheme
 import com.ai.assistance.operit.ui.features.chat.webview.workspace.editor.theme.getThemeForLanguage
+import kotlin.math.roundToInt
 
-/**
- * 代码编辑器组件，支持语法高亮、行号显示和代码补全
- * @param code 初始代码内容
- * @param language 代码语言，用于语法高亮
- * @param onCodeChange 代码变更回调
- * @param modifier 修饰符
- * @param readOnly 是否只读模式
- * @param showLineNumbers 是否显示行号
- * @param enableCompletion 是否启用代码补全
- * @param editorRef 获取编辑器引用的回调
- */
 @Composable
 fun CodeEditor(
-        code: String,
-        language: String,
-        onCodeChange: (String) -> Unit,
-        modifier: Modifier = Modifier,
-        readOnly: Boolean = false,
-        showLineNumbers: Boolean = true,
-        enableCompletion: Boolean = true,
-        editorRef: ((NativeCodeEditor) -> Unit)? = null
+    code: String,
+    language: String,
+    onCodeChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    readOnly: Boolean = false,
+    showLineNumbers: Boolean = true,
+    enableCompletion: Boolean = true,
+    editorRef: ((NativeCodeEditor) -> Unit)? = null
 ) {
     val theme = getThemeForLanguage(language)
-    
-    // 补全状态
-    var showCompletions by remember { mutableStateOf(false) }
-    var completionItems by remember { mutableStateOf<List<CompletionItem>>(emptyList()) }
-    var completionPrefix by remember { mutableStateOf("") }
-    var completionPosition by remember { mutableStateOf(Offset.Zero) }
-    var cursorOffset by remember { mutableStateOf(IntOffset.Zero) }
-    
-    // 编辑器引用
-    val editorRefState = remember { mutableStateOf<NativeCodeEditor?>(null) }
-    
-    // 当前密度，用于dp转px
+    val latestCode = rememberUpdatedState(code)
+    val latestOnCodeChange = rememberUpdatedState(onCodeChange)
+    val latestEditorRef = rememberUpdatedState(editorRef)
     val density = LocalDensity.current
-    
+    val popupVerticalOffsetPx = with(density) { 6.dp.toPx().roundToInt() }
+    val imeBottomInsetPx = WindowInsets.ime.getBottom(density)
+    val keyboardAvoidancePaddingPx = with(density) {
+        if (imeBottomInsetPx > 0) 24.dp.roundToPx() else 0
+    }
+
+    var completionItems by remember { mutableStateOf<List<CompletionItem>>(emptyList()) }
+    var showCompletions by remember { mutableStateOf(false) }
+    var popupOffset by remember { mutableStateOf(IntOffset.Zero) }
+    var editorWindowOffset by remember { mutableStateOf(IntOffset.Zero) }
+    val editorRefState = remember { mutableStateOf<NativeCodeEditor?>(null) }
+
+    fun updatePopupAnchor(editor: NativeCodeEditor?) {
+        val cursor = editor?.getCursorScreenPosition() ?: Point(0, 0)
+        popupOffset =
+            IntOffset(
+                editorWindowOffset.x + cursor.x,
+                editorWindowOffset.y + cursor.y + popupVerticalOffsetPx
+            )
+    }
+
     CustomScaffold(modifier = modifier.fillMaxSize()) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
-            // 编辑器区域
-            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        Column(
+            modifier = Modifier
+                .padding(paddingValues)
+                .fillMaxSize()
+                .background(theme.background)
+        ) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth().background(theme.background)) {
                 AndroidView(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .onGloballyPositioned { coordinates ->
-                                // 保存编辑器位置，用于定位补全弹窗
-                                val position = coordinates.positionInRoot()
-                                completionPosition = position
-                            },
-                        factory = { context ->
-                            NativeCodeEditor(context).apply {
-                                this.layoutParams =
-                                        ViewGroup.LayoutParams(
-                                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                                ViewGroup.LayoutParams.MATCH_PARENT
-                                        )
-                                
-                                // 设置补全回调
-                                if (enableCompletion) {
-                                    setCompletionCallback(object : CodeText.CompletionCallback {
-                                        override fun showCompletions(items: List<CompletionItem>, prefix: String) {
-                                            showCompletions = true
-                                            completionItems = items
-                                            completionPrefix = prefix
-                                            
-                                            // 获取光标位置
-                                            val cursorPos = getCursorScreenPosition()
-                                            if (cursorPos != null) {
-                                                completionPosition = Offset(
-                                                    completionPosition.x + cursorPos.x,
-                                                    completionPosition.y + cursorPos.y
-                                                )
-                                            }
-                                        }
-                                        
-                                        override fun hideCompletions() {
-                                            showCompletions = false
-                                        }
-                                        
-                                       override fun isCompletionVisible(): Boolean {
-                                            return showCompletions
-                                        }
-                                    })
-                                }
-                                
-                                // 传递编辑器引用
-                                editorRefState.value = this
-                                editorRef?.invoke(this)
+                    modifier =
+                        Modifier.fillMaxSize().onGloballyPositioned { coordinates ->
+                            val position = coordinates.positionInWindow()
+                            editorWindowOffset =
+                                IntOffset(position.x.roundToInt(), position.y.roundToInt())
+                            if (showCompletions) {
+                                updatePopupAnchor(editorRefState.value)
                             }
                         },
-                        update = { view ->
-                            view.setLanguage(language)
-                            view.isEnabled = !readOnly
-
-                            // 始终更新监听器以捕获最新的`code`和`onCodeChange`
-                            view.setOnTextChangedListener { newText ->
-                                if (newText != code) {
-                                    onCodeChange(newText)
-                                }
-                            }
-
-                            // 仅当文本不同时才设置文本，以避免循环和光标重置
-                            if (view.getText() != code) {
-                                view.setText(code, true)
+                    factory = { context ->
+                        NativeCodeEditor(context).apply {
+                            layoutParams =
+                                ViewGroup.LayoutParams(
+                                    ViewGroup.LayoutParams.MATCH_PARENT,
+                                    ViewGroup.LayoutParams.MATCH_PARENT
+                                )
+                            editorRefState.value = this
+                            latestEditorRef.value?.invoke(this)
+                        }
+                    },
+                    update = { view ->
+                        editorRefState.value = view
+                        latestEditorRef.value?.invoke(view)
+                        view.setEditorTheme(theme)
+                        view.setLanguage(language)
+                        view.setReadOnly(readOnly)
+                        view.setShowLineNumbers(showLineNumbers)
+                        view.setCompletionEnabled(enableCompletion)
+                        view.setViewportBottomPadding(keyboardAvoidancePaddingPx)
+                        view.setOnTextChangedListener { newText ->
+                            if (newText != latestCode.value) {
+                                latestOnCodeChange.value(newText)
                             }
                         }
-                )
-                
-                // 显示补全弹窗
-                if (showCompletions && completionItems.isNotEmpty()) {
-                    val density = LocalDensity.current
-                    val popupOffset = with(density) {
-                        // 直接使用光标底部坐标，并稍微向下偏移一点点以增加间距
-                        IntOffset(cursorOffset.x, cursorOffset.y + 4.dp.toPx().toInt())
+                        view.setCompletionCallback(
+                            if (enableCompletion) {
+                                object : EditorCompletionCallback {
+                                    override fun showCompletions(
+                                        items: List<CompletionItem>,
+                                        prefix: String
+                                    ) {
+                                        completionItems = items
+                                        showCompletions = items.isNotEmpty()
+                                        updatePopupAnchor(view)
+                                    }
+
+                                    override fun hideCompletions() {
+                                        showCompletions = false
+                                        completionItems = emptyList()
+                                    }
+
+                                    override fun isCompletionVisible(): Boolean = showCompletions
+                                }
+                            } else {
+                                showCompletions = false
+                                completionItems = emptyList()
+                                null
+                            }
+                        )
+                        if (view.getText() != latestCode.value) {
+                            view.setText(latestCode.value, fromUpdate = true)
+                        }
                     }
-                    
+                )
+
+                if (showCompletions && completionItems.isNotEmpty()) {
                     CompletionPopup(
                         completionItems = completionItems,
+                        theme = theme,
                         onItemSelected = { item ->
-                            // 应用选中的补全项
                             editorRefState.value?.applyCompletion(item)
                             showCompletions = false
                         },
@@ -163,29 +173,27 @@ fun CodeEditor(
                     )
                 }
             }
-            
-            // 快捷输入栏
+
             Surface(
-                modifier = Modifier.fillMaxWidth().height(40.dp), // 减小高度
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth().height(40.dp),
+                color = theme.gutterBackground,
+                contentColor = theme.textColor,
                 shadowElevation = 4.dp
             ) {
                 LazyRow(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(horizontal = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp), // 使用间隔布局
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    // 常用编程标点符号，重新排序并添加
-                    val symbols = listOf(
-                        "{", "}", "(", ")", "[", "]", "=", ".", ",", ";", ":",
-                        "\"", "'", "+", "-", "*", "/", "_", "<", ">", "&", "|",
-                        "!", "?"
-                    )
-                    
-                    items(symbols) { symbol ->
-                        SymbolButton(symbol = symbol) {
-                            // 插入符号到光标位置
+                    items(
+                        listOf(
+                            "{", "}", "(", ")", "[", "]", "=", ".", ",", ";", ":",
+                            "\"", "'", "+", "-", "*", "/", "_", "<", ">", "&", "|",
+                            "!", "?"
+                        )
+                        ) { symbol ->
+                        SymbolButton(symbol = symbol, theme = theme) {
                             editorRefState.value?.insertSymbol(symbol)
                         }
                     }
@@ -195,176 +203,111 @@ fun CodeEditor(
     }
 }
 
-/**
- * 符号按钮组件
- */
 @Composable
-private fun SymbolButton(symbol: String, onClick: () -> Unit) {
+private fun SymbolButton(symbol: String, theme: EditorTheme, onClick: () -> Unit) {
     Box(
-        modifier = Modifier
-            .size(32.dp) // 减小按钮大小
-            .clip(CircleShape)
-            .clickable(onClick = onClick)
-            .padding(4.dp),
+        modifier =
+            Modifier.size(32.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .border(width = 1.dp, color = theme.gutterBorder, shape = RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick)
+                .padding(4.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = symbol,
             fontSize = 18.sp,
             textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = theme.textColor
         )
     }
 }
 
-/** 原生代码编辑器视图 */
-class NativeCodeEditor : ViewGroup {
-    private val codePane: CodePane
+class NativeCodeEditor @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet? = null
+) : ViewGroup(context, attrs) {
 
-    private var onTextChangedListener: ((String) -> Unit)? = null
+    private val canvasEditorView = CanvasCodeEditorView(context, attrs)
 
-    constructor(context: Context) : super(context) {
-        codePane = CodePane(context)
-        init()
+    init {
+        addView(canvasEditorView)
     }
 
-    constructor(context: Context, attrs: AttributeSet?) : super(context, attrs) {
-        codePane = CodePane(context, attrs)
-        init()
-    }
-
-    private fun init() {
-        addView(codePane)
-
-        // 添加文本变化监听
-        codePane.getCodeText()
-                .addTextChangedListener(
-                        object : android.text.TextWatcher {
-                            override fun beforeTextChanged(
-                                    s: CharSequence?,
-                                    start: Int,
-                                    count: Int,
-                                    after: Int
-                            ) {}
-
-                            override fun onTextChanged(
-                                    s: CharSequence?,
-                                    start: Int,
-                                    before: Int,
-                                    count: Int
-                            ) {}
-
-                            override fun afterTextChanged(s: android.text.Editable?) {
-                                onTextChangedListener?.invoke(s?.toString() ?: "")
-                            }
-                        }
-                )
-    }
-
-    /** 设置文本变化监听器 */
     fun setOnTextChangedListener(listener: (String) -> Unit) {
-        onTextChangedListener = listener
+        canvasEditorView.setOnTextChangedListener(listener)
     }
 
-    /** 设置语言 */
+    fun setEditorTheme(theme: EditorTheme) {
+        canvasEditorView.setEditorTheme(theme)
+    }
+
     fun setLanguage(language: String) {
-        codePane.setLanguage(language)
+        canvasEditorView.setLanguage(language)
     }
 
-    /** 设置文本内容，并可选择是否添加到撤销历史 */
+    fun setReadOnly(readOnly: Boolean) {
+        canvasEditorView.setReadOnly(readOnly)
+        isEnabled = !readOnly
+    }
+
+    fun setShowLineNumbers(showLineNumbers: Boolean) {
+        canvasEditorView.setShowLineNumbers(showLineNumbers)
+    }
+
+    fun setCompletionEnabled(enableCompletion: Boolean) {
+        canvasEditorView.setCompletionEnabled(enableCompletion)
+    }
+
+    fun setViewportBottomPadding(bottomPaddingPx: Int) {
+        canvasEditorView.setViewportBottomPadding(bottomPaddingPx)
+    }
+
     fun setText(text: String, fromUpdate: Boolean = false) {
-        val codeText = codePane.getCodeText()
-        if (fromUpdate) {
-            codeText.ignoreNextChange()
-        }
-        codeText.setText(text)
-        
-        // 如果是从外部更新（如加载文件），手动触发代码解析以显示高亮
-        if (fromUpdate) {
-            codeText.triggerParse(immediate = true)
+        if (canvasEditorView.getTextContent() != text || !fromUpdate) {
+            canvasEditorView.setTextContent(text)
         }
     }
 
-    /** 获取文本内容 */
-    fun getText(): String {
-        return codePane.getCodeText().text.toString()
+    fun getText(): String = canvasEditorView.getTextContent()
+
+    fun setCompletionCallback(callback: EditorCompletionCallback?) {
+        canvasEditorView.setCompletionCallback(callback)
     }
-    
-    /** 设置补全回调 */
-    fun setCompletionCallback(callback: CodeText.CompletionCallback) {
-        codePane.getCodeText().completionCallback = callback
-    }
-    
-    /** 应用补全项 */
+
     fun applyCompletion(item: CompletionItem) {
-        codePane.getCodeText().applyCompletion(item)
-    }
-    
-    /** 撤销 */
-    fun undo() {
-        val codeText = codePane.getCodeText()
-        codeText.undo()
-    }
-    
-    /** 重做 */
-    fun redo() {
-        val codeText = codePane.getCodeText()
-        codeText.redo()
-    }
-    
-    /** 插入符号到光标位置 */
-    fun insertSymbol(symbol: String) {
-        val codeText = codePane.getCodeText()
-        val start = codeText.selectionStart
-        
-        if (start != -1) {
-            // 使用新的方法插入文本，以记录历史
-            codeText.insertTextProgrammatically(start, symbol)
-            // 移动光标
-            codeText.setSelection(start + symbol.length)
-        }
+        canvasEditorView.applyCompletion(item)
     }
 
-    /**
-     * 以编程方式替换所有文本，并记录为单一的可撤销操作
-     * @param newText 新的文本内容
-     */
+    fun undo() {
+        canvasEditorView.undo()
+    }
+
+    fun redo() {
+        canvasEditorView.redo()
+    }
+
+    fun insertSymbol(symbol: String) {
+        canvasEditorView.insertSymbol(symbol)
+    }
+
     fun replaceAllText(newText: String) {
-        codePane.getCodeText().replaceAllText(newText)
+        canvasEditorView.replaceAllText(newText)
     }
-    
-    /** 获取光标在屏幕上的位置 */
-    fun getCursorScreenPosition(): Point? {
-        val codeText = codePane.getCodeText()
-        val layout = codeText.layout ?: return null
-        
-        val line = layout.getLineForOffset(codeText.selectionStart)
-        val baseline = layout.getLineBaseline(line)
-        val ascent = layout.getLineAscent(line)
-        
-        val x = layout.getPrimaryHorizontal(codeText.selectionStart)
-        val y = baseline + ascent
-        
-        // 考虑滚动位置
-        val scrollX = codePane.scrollX
-        val scrollY = codePane.scrollY
-        
-        return Point((x - scrollX).toInt(), (y - scrollY).toInt())
-    }
+
+    fun getCursorScreenPosition(): Point = canvasEditorView.getCursorScreenPosition()
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)
         val height = MeasureSpec.getSize(heightMeasureSpec)
-
-        codePane.measure(
-                MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
+        canvasEditorView.measure(
+            MeasureSpec.makeMeasureSpec(width, MeasureSpec.EXACTLY),
+            MeasureSpec.makeMeasureSpec(height, MeasureSpec.EXACTLY)
         )
-
         setMeasuredDimension(width, height)
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
-        codePane.layout(0, 0, r - l, b - t)
+        canvasEditorView.layout(0, 0, r - l, b - t)
     }
 }

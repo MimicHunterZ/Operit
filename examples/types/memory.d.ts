@@ -15,6 +15,7 @@ export namespace Memory {
      * @param startTime - Optional local-time start time in `YYYY-MM-DD` or `YYYY-MM-DD HH:mm` format, filters memories by createdAt >= startTime
      * @param endTime - Optional local-time end time in `YYYY-MM-DD` or `YYYY-MM-DD HH:mm` format, filters memories by createdAt <= endTime
      * @param snapshotId - Optional snapshot id. Omit or pass empty to auto-create one; pass any non-empty id to use or create that exact snapshot so follow-up or parallel queries can exclude already returned memories
+     * @param threshold - Optional relevance threshold (>=0). Only memories whose score is at least this value are returned; `query_memory` defaults to `0`
      * @returns Structured query results
      */
     function query(
@@ -23,7 +24,8 @@ export namespace Memory {
         limit?: number,
         startTime?: string,
         endTime?: string,
-        snapshotId?: string
+        snapshotId?: string,
+        threshold?: number
     ): Promise<import('./results').MemoryQueryResultData>;
 
     /**

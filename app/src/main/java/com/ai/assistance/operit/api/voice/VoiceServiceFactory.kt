@@ -17,6 +17,8 @@ object VoiceServiceFactory {
         OPENAI_WS_TTS,
         /** 硅基流动TTS服务 */
         SILICONFLOW_TTS,
+        /** MiniMax TTS 服务 */
+        MINIMAX_TTS,
         OPENAI_TTS,
     }
 
@@ -59,6 +61,13 @@ object VoiceServiceFactory {
                         apiKey = httpConfig.apiKey,
                         initialVoiceId = httpConfig.voiceId,
                         initialModelName = httpConfig.modelName
+                    )
+                }
+                VoiceServiceType.MINIMAX_TTS -> {
+                    val httpConfig = prefs.ttsHttpConfigFlow.first()
+                    MiniMaxVoiceProvider(
+                        context = context,
+                        config = httpConfig
                     )
                 }
                 VoiceServiceType.OPENAI_TTS -> {

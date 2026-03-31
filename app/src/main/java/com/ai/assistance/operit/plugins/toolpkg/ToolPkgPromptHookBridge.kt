@@ -269,6 +269,7 @@ internal object ToolPkgPromptHookBridge {
     private fun buildPromptEventPayload(context: PromptHookContext): Map<String, Any?> {
         return buildMap {
             put("stage", context.stage)
+            put("chatId", context.chatId)
             put("functionType", context.functionType)
             put("promptFunctionType", context.promptFunctionType)
             put("useEnglish", context.useEnglish)

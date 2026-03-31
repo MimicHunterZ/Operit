@@ -31,6 +31,7 @@ class MemoryQueryToolExecutor(private val context: Context) : ToolExecutor {
     companion object {
         private const val TAG = "MemoryQueryToolExecutor"
         private const val MAX_QUERY_SNAPSHOTS_PER_PROFILE = 32
+        private const val DEFAULT_RELEVANCE_THRESHOLD = 0.0
 
         private data class QuerySnapshotState(
             val id: String,
@@ -182,7 +183,27 @@ class MemoryQueryToolExecutor(private val context: Context) : ToolExecutor {
         val startTimeParam = tool.parameters.find { it.name == "start_time" }?.value
         val endTimeParam = tool.parameters.find { it.name == "end_time" }?.value
         val snapshotIdParam = tool.parameters.find { it.name == "snapshot_id" }?.value
+        val thresholdParam = tool.parameters.find { it.name == "threshold" }?.value
         val normalizedSnapshotId = snapshotIdParam?.trim()?.takeIf { it.isNotEmpty() }
+        val threshold = thresholdParam?.trim()?.takeIf { it.isNotEmpty() }?.toDoubleOrNull()
+
+        if (!thresholdParam.isNullOrBlank() && threshold == null) {
+            return ToolResult(
+                toolName = tool.name,
+                success = false,
+                result = StringResultData(""),
+                error = "Invalid threshold. Expected a non-negative number."
+            )
+        }
+
+        if (threshold != null && threshold < 0.0) {
+            return ToolResult(
+                toolName = tool.name,
+                success = false,
+                result = StringResultData(""),
+                error = "Invalid threshold. Expected a non-negative number."
+            )
+        }
 
         val startTimeMs = parseTimeBoundary(startTimeParam, isEnd = false)
         if (!startTimeParam.isNullOrBlank() && startTimeMs == null) {
@@ -232,7 +253,7 @@ class MemoryQueryToolExecutor(private val context: Context) : ToolExecutor {
 
         AppLogger.d(
             TAG,
-            "Executing memory query: '$query' in folder: '${folderPath ?: "All"}', snapshot_id=${snapshotState.id}, snapshot_created=$snapshotCreated, start_time: ${startTimeMs ?: "null"}, end_time: ${endTimeMs ?: "null"}, limit: $validLimit, mode=${settings.scoreMode}, keywordWeight=${settings.keywordWeight}, vectorWeight=${settings.vectorWeight}, edgeWeight=${settings.edgeWeight}"
+            "Executing memory query: '$query' in folder: '${folderPath ?: "All"}', snapshot_id=${snapshotState.id}, snapshot_created=$snapshotCreated, start_time: ${startTimeMs ?: "null"}, end_time: ${endTimeMs ?: "null"}, limit: $validLimit, threshold=${threshold ?: DEFAULT_RELEVANCE_THRESHOLD}, mode=${settings.scoreMode}, keywordWeight=${settings.keywordWeight}, vectorWeight=${settings.vectorWeight}, edgeWeight=${settings.edgeWeight}"
         )
 
         return try {
@@ -243,6 +264,7 @@ class MemoryQueryToolExecutor(private val context: Context) : ToolExecutor {
                 keywordWeight = settings.keywordWeight,
                 semanticWeight = settings.vectorWeight,
                 edgeWeight = settings.edgeWeight,
+                relevanceThreshold = threshold ?: DEFAULT_RELEVANCE_THRESHOLD,
                 createdAtStartMs = startTimeMs,
                 createdAtEndMs = endTimeMs
             )

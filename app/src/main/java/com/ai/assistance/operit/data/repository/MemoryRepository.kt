@@ -1093,6 +1093,7 @@ class MemoryRepository(private val context: Context, profileId: String) {
         keywordWeight: Float = 10.0f,
         semanticWeight: Float = 0.5f,
         edgeWeight: Float = 0.4f,
+        relevanceThreshold: Double = SEARCH_RELEVANCE_THRESHOLD,
         createdAtStartMs: Long? = null,
         createdAtEndMs: Long? = null
     ): List<Memory> {
@@ -1103,6 +1104,7 @@ class MemoryRepository(private val context: Context, profileId: String) {
             keywordWeight = keywordWeight,
             semanticWeight = semanticWeight,
             edgeWeight = edgeWeight,
+            relevanceThreshold = relevanceThreshold,
             createdAtStartMs = createdAtStartMs,
             createdAtEndMs = createdAtEndMs
         ).memories
@@ -1115,6 +1117,7 @@ class MemoryRepository(private val context: Context, profileId: String) {
         keywordWeight: Float = 10.0f,
         semanticWeight: Float = 0.5f,
         edgeWeight: Float = 0.4f,
+        relevanceThreshold: Double = SEARCH_RELEVANCE_THRESHOLD,
         createdAtStartMs: Long? = null,
         createdAtEndMs: Long? = null
     ): MemorySearchDebugInfo {
@@ -1125,6 +1128,7 @@ class MemoryRepository(private val context: Context, profileId: String) {
             keywordWeight = keywordWeight,
             semanticWeight = semanticWeight,
             edgeWeight = edgeWeight,
+            relevanceThreshold = relevanceThreshold,
             createdAtStartMs = createdAtStartMs,
             createdAtEndMs = createdAtEndMs
         ).debug
@@ -1137,6 +1141,7 @@ class MemoryRepository(private val context: Context, profileId: String) {
         keywordWeight: Float = 10.0f,
         semanticWeight: Float = 0.5f,
         edgeWeight: Float = 0.4f,
+        relevanceThreshold: Double = SEARCH_RELEVANCE_THRESHOLD,
         createdAtStartMs: Long? = null,
         createdAtEndMs: Long? = null
     ): SearchComputationResult = withContext(Dispatchers.IO) {
@@ -1174,7 +1179,7 @@ class MemoryRepository(private val context: Context, profileId: String) {
         val effectiveSemanticWeight = resolvedWeights.effectiveSemanticWeight
         val effectiveEdgeWeight = resolvedWeights.effectiveEdgeWeight
         val semanticKeywordNormFactor = resolvedWeights.semanticKeywordNormFactor
-        val relevanceThreshold = SEARCH_RELEVANCE_THRESHOLD
+        val effectiveRelevanceThreshold = relevanceThreshold.coerceAtLeast(0.0)
 
         fun buildDebug(
             debugKeywords: List<String> = keywords,
@@ -1194,7 +1199,7 @@ class MemoryRepository(private val context: Context, profileId: String) {
                 keywords = debugKeywords,
                 lexicalTokens = lexicalTokens,
                 scoreMode = scoreMode,
-                relevanceThreshold = relevanceThreshold,
+                relevanceThreshold = effectiveRelevanceThreshold,
                 effectiveKeywordWeight = effectiveKeywordWeight,
                 effectiveSemanticWeight = effectiveSemanticWeight,
                 semanticKeywordNormFactor = debugSemanticKeywordNormFactor,
@@ -1434,7 +1439,7 @@ class MemoryRepository(private val context: Context, profileId: String) {
         }
 
         // 添加相关性阈值过滤，避免返回不相关的记忆
-        val filteredScores = scores.entries.filter { it.value >= relevanceThreshold }
+        val filteredScores = scores.entries.filter { it.value >= effectiveRelevanceThreshold }
 
         com.ai.assistance.operit.util.AppLogger.d("MemoryRepo", "Final results: ${filteredScores.size}/${scores.size} above threshold")
 
@@ -1461,7 +1466,7 @@ class MemoryRepository(private val context: Context, profileId: String) {
                 semanticScore = parts.semanticScore,
                 edgeScore = parts.edgeScore,
                 totalScore = totalScore,
-                passedThreshold = totalScore >= relevanceThreshold
+                passedThreshold = totalScore >= effectiveRelevanceThreshold
             )
         }
 

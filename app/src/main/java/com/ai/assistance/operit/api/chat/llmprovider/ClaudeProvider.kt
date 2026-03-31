@@ -691,36 +691,50 @@ class ClaudeProvider(
         return request
     }
 
+    private fun resolveRetryErrorText(context: Context, exception: Exception): String {
+        return when (exception) {
+            is SocketTimeoutException -> context.getString(R.string.provider_error_timeout)
+            is UnknownHostException -> context.getString(R.string.provider_error_unknown_host)
+            else -> exception.message?.takeIf { it.isNotBlank() }
+                ?: context.getString(R.string.provider_error_network_interrupted)
+        }
+    }
+
     private suspend fun handleRetryableError(
         context: Context,
         exception: Exception,
         retryCount: Int,
         maxRetries: Int,
-        errorType: String,
-        errorMessage: String,
-        noRetryMessage: String,
         enableRetry: Boolean,
         onNonFatalError: suspend (String) -> Unit,
-        buildRetryMessage: (Int) -> String
+        buildRetryMessage: (String, Int) -> String
     ): Int {
+        if (exception is UserCancellationException || exception is CancellationException) {
+            throw exception
+        }
         if (isManuallyCancelled) {
             AppLogger.d("AIService", "【Claude】请求被用户取消，停止重试。")
             throw UserCancellationException(context.getString(R.string.openai_error_request_cancelled), exception)
         }
 
+        val errorText = resolveRetryErrorText(context, exception)
+
         if (!enableRetry) {
-            throw IOException(noRetryMessage, exception)
+            throw IOException(errorText, exception)
         }
 
         val newRetryCount = retryCount + 1
         if (newRetryCount > maxRetries) {
-            AppLogger.e("AIService", "【Claude】$errorType 且达到最大重试次数($maxRetries)", exception)
-            throw IOException(errorMessage, exception)
+            AppLogger.e("AIService", "【Claude】$errorText 且达到最大重试次数($maxRetries)", exception)
+            throw IOException(
+                context.getString(R.string.openai_error_connection_timeout, maxRetries, errorText),
+                exception
+            )
         }
 
         val retryDelayMs = LlmRetryPolicy.nextDelayMs(newRetryCount)
-        AppLogger.w("AIService", "【Claude】$errorType，将在 ${retryDelayMs}ms 后进行第 $newRetryCount 次重试...", exception)
-        onNonFatalError(buildRetryMessage(newRetryCount))
+        AppLogger.w("AIService", "【Claude】$errorText，将在 ${retryDelayMs}ms 后进行第 $newRetryCount 次重试...", exception)
+        onNonFatalError(buildRetryMessage(errorText, newRetryCount))
         delay(retryDelayMs)
         return newRetryCount
     }
@@ -1222,80 +1236,19 @@ class ClaudeProvider(
 
                 AppLogger.d("AIService", "【Claude】请求成功完成")
                 return@stream
-            } catch (e: NonRetriableException) {
+            } catch (e: Exception) {
                 lastException = e
                 emitRollback(requestSavepointId)
-                val errorText = e.message ?: context.getString(R.string.provider_error_network_interrupted)
                 retryCount = handleRetryableError(
                     context,
                     e,
                     retryCount,
                     maxRetries,
-                    errorText,
-                    errorText,
-                    errorText,
                     enableRetry,
                     onNonFatalError
-                ) { retryNumber ->
+                ) { errorText, retryNumber ->
                     context.getString(R.string.provider_error_retry_message, errorText, retryNumber)
                 }
-            } catch (e: SocketTimeoutException) {
-                lastException = e
-                emitRollback(requestSavepointId)
-                retryCount = handleRetryableError(
-                    context,
-                    e,
-                    retryCount,
-                    maxRetries,
-                    context.getString(R.string.provider_error_timeout),
-                    context.getString(R.string.openai_error_timeout_max_retries, e.message ?: ""),
-                    context.getString(R.string.provider_error_timeout),
-                    enableRetry,
-                    onNonFatalError
-                ) { retryNumber ->
-                    context.getString(R.string.provider_error_retry_message, context.getString(R.string.provider_error_timeout), retryNumber)
-                }
-            } catch (e: UnknownHostException) {
-                lastException = e
-                emitRollback(requestSavepointId)
-                retryCount = handleRetryableError(
-                    context,
-                    e,
-                    retryCount,
-                    maxRetries,
-                    context.getString(R.string.provider_error_unknown_host),
-                    context.getString(R.string.openai_error_cannot_connect),
-                    context.getString(R.string.provider_error_unknown_host),
-                    enableRetry,
-                    onNonFatalError
-                ) { retryNumber ->
-                    context.getString(R.string.provider_error_retry_message, context.getString(R.string.provider_error_unknown_host), retryNumber)
-                }
-            } catch (e: IOException) {
-                lastException = e
-                emitRollback(requestSavepointId)
-                val errorText = e.message ?: context.getString(R.string.provider_error_network_interrupted)
-                retryCount = handleRetryableError(
-                    context,
-                    e,
-                    retryCount,
-                    maxRetries,
-                    context.getString(R.string.provider_error_network_interrupted),
-                    context.getString(R.string.openai_error_max_retries, e.message ?: ""),
-                    errorText,
-                    enableRetry,
-                    onNonFatalError
-                ) { retryNumber ->
-                    context.getString(R.string.provider_error_retry_message, context.getString(R.string.provider_error_network_interrupted), retryNumber)
-                }
-            } catch (e: Exception) {
-                if (isManuallyCancelled) {
-                    AppLogger.d("AIService", "【Claude】请求被用户取消，停止重试。")
-                    throw UserCancellationException(context.getString(R.string.openai_error_request_cancelled), e)
-                }
-                emitRollback(requestSavepointId)
-                AppLogger.e("AIService", "【Claude】发生未知异常，停止重试", e)
-                throw IOException(context.getString(R.string.openai_error_response_failed, e.message ?: ""), e)
             } finally {
                 activeCall = null
                 activeResponse = null
@@ -1305,7 +1258,13 @@ class ClaudeProvider(
         lastException?.let { ex ->
             AppLogger.e("AIService", "【Claude】重试失败，请检查网络连接", ex)
         } ?: AppLogger.e("AIService", "【Claude】重试失败，请检查网络连接")
-        throw IOException(context.getString(R.string.openai_error_connection_timeout, maxRetries, lastException?.message ?: ""))
+        throw IOException(
+            context.getString(
+                R.string.openai_error_connection_timeout,
+                maxRetries,
+                lastException?.message ?: context.getString(R.string.provider_error_network_interrupted)
+            )
+        )
         }
         return responseStream.withEventChannel(eventChannel)
     }

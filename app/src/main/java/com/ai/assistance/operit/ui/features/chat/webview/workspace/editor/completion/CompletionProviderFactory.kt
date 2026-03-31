@@ -14,6 +14,7 @@ object CompletionProviderFactory {
             "javascript" -> JavaScriptCompletionProvider()
             "kotlin" -> KotlinCompletionProvider()
             "html" -> HtmlCompletionProvider()
+            "dart" -> DartCompletionProvider()
             else -> DefaultCompletionProvider()
         }
     }

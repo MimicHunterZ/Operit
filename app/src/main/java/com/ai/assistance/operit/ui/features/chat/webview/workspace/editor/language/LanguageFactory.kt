@@ -12,6 +12,7 @@ object LanguageFactory {
         JavaScriptSupport
         KotlinSupport
         HtmlSupport
+        DartSupport
         // 未来添加更多语言支持时，在这里添加
         
         // 初始化语言注册表

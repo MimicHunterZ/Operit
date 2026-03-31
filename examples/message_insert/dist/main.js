@@ -30,24 +30,23 @@ function registerToolPkg() {
     return true;
 }
 async function onPromptInput(input) {
-    const payload = (0, shared_1.normalizeHookPayload)(input);
-    const stage = String(payload.stage ?? input.eventName ?? "");
+    const stage = String(input.eventPayload.stage ?? input.eventName ?? "");
     if (stage !== "before_process") {
         return null;
     }
-    const processedInput = String(payload.processedInput ?? payload.rawInput ?? "");
+    const processedInput = String(input.eventPayload.processedInput ?? input.eventPayload.rawInput ?? "");
     if (!processedInput.trim()) {
         return null;
     }
-    const tags = await (0, shared_1.buildExtraInfoAttachmentTags)(processedInput);
+    const chatId = String(input.eventPayload.chatId ?? getChatId() ?? "").trim();
+    const tags = await (0, shared_1.buildExtraInfoAttachmentTags)(processedInput, chatId || undefined);
     if (!tags.length) {
         return null;
     }
     return `${processedInput.replace(/\s+$/, "")} ${tags.join(" ")}`;
 }
 function onInputMenuToggle(input) {
-    const payload = (0, shared_1.normalizeHookPayload)(input);
-    const action = String(payload.action ?? "").toLowerCase();
+    const action = String(input.eventPayload.action ?? "").toLowerCase();
     if (action === "toggle") {
         (0, shared_1.setExtraInfoInjectionEnabled)(!(0, shared_1.getExtraInfoInjectionEnabled)());
         return [];

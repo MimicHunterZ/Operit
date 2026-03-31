@@ -161,6 +161,7 @@ export namespace ToolPkg {
 
     export interface PromptHookEventPayload extends JsonObject {
         stage?: string;
+        chatId?: string;
         functionType?: string;
         promptFunctionType?: string;
         useEnglish?: boolean;

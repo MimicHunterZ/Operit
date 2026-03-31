@@ -1,6 +1,6 @@
 package com.ai.assistance.operit.ui.features.chat.webview.workspace.editor.completion
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.ai.assistance.operit.ui.features.chat.webview.workspace.editor.language.LanguageSupport
+import com.ai.assistance.operit.ui.features.chat.webview.workspace.editor.theme.EditorTheme
 
 /**
  * 代码补全弹出组件
@@ -28,6 +29,7 @@ import com.ai.assistance.operit.ui.features.chat.webview.workspace.editor.langua
 @Composable
 fun CompletionPopup(
     completionItems: List<CompletionItem>,
+    theme: EditorTheme,
     onItemSelected: (CompletionItem) -> Unit,
     onDismissRequest: () -> Unit,
     offset: IntOffset = IntOffset.Zero,
@@ -38,31 +40,33 @@ fun CompletionPopup(
     val listState = rememberLazyListState()
     
     Popup(
-        alignment = Alignment.TopEnd,
-        offset = offset.copy(x = -16), // 使用.copy确保在现有y偏移基础上修改
+        alignment = Alignment.TopStart,
+        offset = offset,
         onDismissRequest = onDismissRequest,
         properties = PopupProperties(
             focusable = false, // 设置为false，避免抢占焦点
             dismissOnBackPress = true,
             dismissOnClickOutside = true,
             clippingEnabled = false // 允许在父布局边界外绘制，防止截断
-        )
+        ) 
     ) {
         Surface(
-            shape = RoundedCornerShape(8.dp),
-            shadowElevation = 8.dp,
-            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(10.dp),
+            shadowElevation = 12.dp,
+            color = theme.gutterBackground,
+            contentColor = theme.textColor,
+            border = BorderStroke(1.dp, theme.gutterBorder),
             modifier = modifier
-                .width(240.dp) // 减小宽度
-                .heightIn(max = 180.dp) // 减小最大高度
+                .width(260.dp)
+                .heightIn(max = 220.dp)
         ) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(vertical = 4.dp) // 减小顶部和底部的内边距
+                contentPadding = PaddingValues(vertical = 6.dp)
             ) {
                 items(completionItems) { item ->
-                    CompletionItemRow(item, onItemSelected)
+                    CompletionItemRow(item, theme, onItemSelected)
                 }
             }
         }
@@ -75,13 +79,14 @@ fun CompletionPopup(
 @Composable
 fun CompletionItemRow(
     item: CompletionItem,
+    theme: EditorTheme,
     onItemSelected: (CompletionItem) -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onItemSelected(item) }
-            .padding(horizontal = 12.dp, vertical = 4.dp), // 减小垂直和水平padding
+            .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // 图标
@@ -103,7 +108,7 @@ fun CompletionItemRow(
                 CompletionItemKind.VARIABLE -> Color(LanguageSupport.VARIABLE_COLOR)
                 CompletionItemKind.CLASS -> Color(LanguageSupport.TYPE_COLOR)
                 CompletionItemKind.PROPERTY -> Color(LanguageSupport.VARIABLE_COLOR)
-                else -> LocalContentColor.current
+                else -> theme.lineNumberColor
             },
             modifier = Modifier.size(20.dp)
         )
@@ -115,7 +120,8 @@ fun CompletionItemRow(
             Text(
                 text = item.label,
                 fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
+                fontWeight = FontWeight.Medium,
+                color = theme.textColor
             )
             
             // 详情信息
@@ -123,7 +129,7 @@ fun CompletionItemRow(
                 Text(
                     text = item.detail,
                     fontSize = 12.sp,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                    color = theme.lineNumberColor
                 )
             }
         }

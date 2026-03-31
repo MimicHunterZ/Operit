@@ -730,36 +730,50 @@ class GeminiProvider(
         }
     }
 
+    private fun resolveRetryErrorText(context: Context, exception: Exception): String {
+        return when (exception) {
+            is SocketTimeoutException -> context.getString(R.string.provider_error_timeout)
+            is UnknownHostException -> context.getString(R.string.provider_error_unknown_host)
+            else -> exception.message?.takeIf { it.isNotBlank() }
+                ?: context.getString(R.string.provider_error_network_interrupted)
+        }
+    }
+
     private suspend fun handleRetryableError(
         context: Context,
         exception: Exception,
         retryCount: Int,
         maxRetries: Int,
-        errorType: String,
-        errorMessage: String,
-        noRetryMessage: String,
         enableRetry: Boolean,
         onNonFatalError: suspend (String) -> Unit,
-        buildRetryMessage: (Int) -> String
+        buildRetryMessage: (String, Int) -> String
     ): Int {
+        if (exception is UserCancellationException || exception is kotlinx.coroutines.CancellationException) {
+            throw exception
+        }
         if (isManuallyCancelled) {
             logError("请求被用户取消，停止重试。", exception)
             throw UserCancellationException(context.getString(R.string.gemini_error_request_cancelled), exception)
         }
 
+        val errorText = resolveRetryErrorText(context, exception)
+
         if (!enableRetry) {
-            throw IOException(noRetryMessage, exception)
+            throw IOException(errorText, exception)
         }
 
         val newRetryCount = retryCount + 1
         if (newRetryCount > maxRetries) {
-            logError("$errorType 且达到最大重试次数($maxRetries)", exception)
-            throw IOException(errorMessage, exception)
+            logError("$errorText 且达到最大重试次数($maxRetries)", exception)
+            throw IOException(
+                context.getString(R.string.gemini_error_connection_timeout, maxRetries, errorText),
+                exception
+            )
         }
 
         val retryDelayMs = LlmRetryPolicy.nextDelayMs(newRetryCount)
-        AppLogger.w(TAG, "$errorType，将在 ${retryDelayMs}ms 后进行第 $newRetryCount 次重试...", exception)
-        onNonFatalError(buildRetryMessage(newRetryCount))
+        AppLogger.w(TAG, "$errorText，将在 ${retryDelayMs}ms 后进行第 $newRetryCount 次重试...", exception)
+        onNonFatalError(buildRetryMessage(errorText, newRetryCount))
         delay(retryDelayMs)
         return newRetryCount
     }
@@ -892,86 +906,30 @@ class GeminiProvider(
                 activeCall = null
                 activeResponse = null
                 return@stream
-            } catch (e: NonRetriableException) {
+            } catch (e: Exception) {
                 lastException = e
                 emitRollback(requestSavepointId)
-                val errorText = e.message ?: context.getString(R.string.provider_error_network_interrupted)
                 retryCount = handleRetryableError(
                     context,
                     e,
                     retryCount,
                     maxRetries,
-                    errorText,
-                    errorText,
-                    errorText,
                     enableRetry,
                     onNonFatalError
-                ) { retryNumber ->
+                ) { errorText, retryNumber ->
                     context.getString(R.string.provider_error_retry_message, errorText, retryNumber)
                 }
-            } catch (e: SocketTimeoutException) {
-                lastException = e
-                emitRollback(requestSavepointId)
-                retryCount = handleRetryableError(
-                    context,
-                    e,
-                    retryCount,
-                    maxRetries,
-                    context.getString(R.string.provider_error_timeout),
-                    context.getString(R.string.gemini_error_timeout_max_retries, e.message ?: ""),
-                    context.getString(R.string.provider_error_timeout),
-                    enableRetry,
-                    onNonFatalError
-                ) { retryNumber ->
-                    context.getString(R.string.gemini_network_timeout_retry, retryNumber)
-                }
-            } catch (e: UnknownHostException) {
-                lastException = e
-                emitRollback(requestSavepointId)
-                retryCount = handleRetryableError(
-                    context,
-                    e,
-                    retryCount,
-                    maxRetries,
-                    context.getString(R.string.provider_error_unknown_host),
-                    context.getString(R.string.gemini_error_cannot_connect),
-                    context.getString(R.string.provider_error_unknown_host),
-                    enableRetry,
-                    onNonFatalError
-                ) { retryNumber ->
-                    context.getString(R.string.gemini_network_unstable_retry, retryNumber)
-                }
-            } catch (e: IOException) {
-                lastException = e
-                emitRollback(requestSavepointId)
-                val errorText = e.message ?: context.getString(R.string.provider_error_network_interrupted)
-                retryCount = handleRetryableError(
-                    context,
-                    e,
-                    retryCount,
-                    maxRetries,
-                    context.getString(R.string.provider_error_network_interrupted),
-                    context.getString(R.string.gemini_error_max_retries, e.message ?: ""),
-                    errorText,
-                    enableRetry,
-                    onNonFatalError
-                ) { retryNumber ->
-                    context.getString(R.string.gemini_network_interrupted_retry, retryNumber)
-                }
-            } catch (e: Exception) {
-                if (isManuallyCancelled) {
-                    logError("请求被用户取消，停止重试。")
-                    throw UserCancellationException(context.getString(R.string.gemini_error_request_cancelled), e)
-                }
-                lastException = e
-                emitRollback(requestSavepointId)
-                logError("发送消息时发生未知异常，不进行重试", e)
-                throw IOException(context.getString(R.string.gemini_error_response_failed, e.message ?: ""), e)
             }
         }
 
         logError("重试${maxRetries}次后仍然失败", lastException)
-        throw IOException(context.getString(R.string.gemini_error_connection_timeout, maxRetries, lastException?.message ?: ""))
+        throw IOException(
+            context.getString(
+                R.string.gemini_error_connection_timeout,
+                maxRetries,
+                lastException?.message ?: context.getString(R.string.provider_error_network_interrupted)
+            )
+        )
         }
         return responseStream.withEventChannel(eventChannel)
     }

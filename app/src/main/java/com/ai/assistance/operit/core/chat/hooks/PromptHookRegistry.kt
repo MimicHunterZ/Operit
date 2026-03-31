@@ -12,6 +12,7 @@ data class PromptMessage(
 
 data class PromptHookContext(
     val stage: String,
+    val chatId: String? = null,
     val functionType: String? = null,
     val promptFunctionType: String? = null,
     val useEnglish: Boolean? = null,

@@ -14,11 +14,15 @@ object InputProcessor {
      * @param input The input text to process
      * @return The processed input text
      */
-    suspend fun processUserInput(input: String): String {
+    suspend fun processUserInput(
+        input: String,
+        chatId: String? = null
+    ): String {
         val beforeContext =
             PromptHookRegistry.dispatchPromptInputHooks(
                 PromptHookContext(
                     stage = "before_process",
+                    chatId = chatId,
                     rawInput = input,
                     processedInput = input
                 )

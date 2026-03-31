@@ -8,8 +8,8 @@
     "en": "Extra Info Injection"
   },
   "description": {
-    "zh": "在用户发送消息时，把时间、电量、天气等信息作为显性附件注入，并提供工具箱设置界面与菜单开关。",
-    "en": "Inject time, battery, weather, and other info as visible attachments when the user sends a message, with both a toolbox settings screen and menu toggle."
+    "zh": "在用户发送消息时，把时间、电量、天气、位置、通知、记忆等信息作为显性附件注入，并提供工具箱设置界面与菜单开关。",
+    "en": "Inject time, battery, weather, location, notifications, memories, and other info as visible attachments when the user sends a message, with both a toolbox settings screen and menu toggle."
   },
   "enabled_by_default": false,
   "subpackages": []

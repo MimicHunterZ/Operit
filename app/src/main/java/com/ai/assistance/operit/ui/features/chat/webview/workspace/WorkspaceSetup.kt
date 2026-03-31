@@ -269,7 +269,19 @@ fun WorkspaceSetup(chatId: String, onBindWorkspace: (String, String?) -> Unit) {
                                     showProjectTypeDialog = false
                                 }
                             )
-                            
+
+                            // Flutter 项目卡片
+                            ProjectTypeCard(
+                                icon = Icons.Default.Widgets,
+                                title = context.getString(R.string.workspace_project_type_flutter_title),
+                                description = context.getString(R.string.workspace_project_type_flutter_description),
+                                onClick = {
+                                    val workspaceDir = createAndGetDefaultWorkspace(context, chatId, "flutter")
+                                    onBindWorkspace(workspaceDir.absolutePath, null)
+                                    showProjectTypeDialog = false
+                                }
+                            )
+                             
                             // Node.js 项目卡片
                             ProjectTypeCard(
                                 icon = Icons.Default.Terminal,

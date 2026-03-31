@@ -54,6 +54,10 @@ internal fun workspaceMimeTypeForPath(path: String): String {
 internal val OpenFileInfo.isHtml: Boolean
     get() = name.endsWith(".html", ignoreCase = true) || name.endsWith(".htm", ignoreCase = true)
 
+internal val OpenFileInfo.isMarkdown: Boolean
+    get() = name.endsWith(".md", ignoreCase = true) ||
+        name.endsWith(".markdown", ignoreCase = true)
+
 internal val OpenFileInfo.isImage: Boolean
     get() = resolvedMimeType.startsWith("image/", ignoreCase = true)
 

@@ -605,6 +605,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                             prepareConversationHistory(
                                     execContext.conversationHistory, // 始终使用内部历史记录
                                     message,
+                                    chatId,
                                     workspacePath,
                                     workspaceEnv,
                                     promptFunctionType,
@@ -671,6 +672,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                         PromptHookRegistry.dispatchPromptFinalizeHooks(
                             PromptHookContext(
                                 stage = "before_finalize_prompt",
+                                chatId = chatId,
                                 functionType = functionType.name,
                                 promptFunctionType = promptFunctionType.name,
                                 rawInput = message,
@@ -680,7 +682,6 @@ class EnhancedAIService private constructor(private val context: Context) {
                                 availableTools = serializePromptHookToolPrompts(availableTools),
                                 metadata =
                                     mapOf(
-                                        "chatId" to chatId,
                                         "workspacePath" to workspacePath,
                                         "workspaceEnv" to workspaceEnv,
                                         "enableThinking" to enableThinking,
@@ -2095,6 +2096,7 @@ class EnhancedAIService private constructor(private val context: Context) {
     private suspend fun prepareConversationHistory(
             chatHistory: List<Pair<String, String>>,
             processedInput: String,
+            chatId: String?,
             workspacePath: String?,
             workspaceEnv: String?,
             promptFunctionType: PromptFunctionType,
@@ -2131,6 +2133,7 @@ class EnhancedAIService private constructor(private val context: Context) {
         return conversationService.prepareConversationHistory(
                 chatHistory,
                 processedInput,
+                chatId,
                 workspacePath,
                 workspaceEnv,
                 packageManager,

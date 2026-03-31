@@ -2,7 +2,6 @@ import toolboxUI from "./ui/index.ui.js";
 import {
   buildExtraInfoAttachmentTags,
   getExtraInfoInjectionEnabled,
-  normalizeHookPayload,
   resolveExtraInfoI18n,
   setExtraInfoInjectionEnabled,
 } from "./shared";
@@ -35,18 +34,23 @@ export function registerToolPkg(): boolean {
 export async function onPromptInput(
   input: ToolPkg.PromptInputHookEvent
 ) {
-  const payload = normalizeHookPayload(input);
-  const stage = String(payload.stage ?? input.eventName ?? "");
+  const stage = String(input.eventPayload.stage ?? input.eventName ?? "");
   if (stage !== "before_process") {
     return null;
   }
 
-  const processedInput = String(payload.processedInput ?? payload.rawInput ?? "");
+  const processedInput = String(
+    input.eventPayload.processedInput ?? input.eventPayload.rawInput ?? ""
+  );
   if (!processedInput.trim()) {
     return null;
   }
 
-  const tags = await buildExtraInfoAttachmentTags(processedInput);
+  const chatId = String(input.eventPayload.chatId ?? getChatId() ?? "").trim();
+  const tags = await buildExtraInfoAttachmentTags(
+    processedInput,
+    chatId || undefined
+  );
   if (!tags.length) {
     return null;
   }
@@ -55,10 +59,9 @@ export async function onPromptInput(
 }
 
 export function onInputMenuToggle(
-  input: ToolPkg.InputMenuToggleHookEvent | unknown
+  input: ToolPkg.InputMenuToggleHookEvent
 ): ToolPkg.InputMenuToggleDefinitionResult[] {
-  const payload = normalizeHookPayload(input);
-  const action = String(payload.action ?? "").toLowerCase();
+  const action = String(input.eventPayload.action ?? "").toLowerCase();
 
   if (action === "toggle") {
     setExtraInfoInjectionEnabled(!getExtraInfoInjectionEnabled());

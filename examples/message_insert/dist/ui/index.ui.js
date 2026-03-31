@@ -9,6 +9,12 @@ function useStateValue(ctx, key, initialValue) {
 function readSettings() {
     return (0, shared_1.loadSettings)();
 }
+function formatDecimal(value) {
+    if (!Number.isFinite(value)) {
+        return "0";
+    }
+    return value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
 function createSectionTitle(ctx, icon, title) {
     return ctx.UI.Row({ verticalAlignment: "center" }, [
         ctx.UI.Icon({ name: icon, tint: "primary", size: 20 }),
@@ -21,17 +27,24 @@ function createSectionTitle(ctx, icon, title) {
         }),
     ]);
 }
-function createToggleCard(ctx, title, subtitle, checked, onCheckedChange) {
-    return ctx.UI.Surface(toggleCardStyle, [
-        createToggleRow(ctx, title, subtitle, checked, onCheckedChange),
-    ]);
-}
 const toggleCardStyle = {
     fillMaxWidth: true,
     shape: { cornerRadius: 8 },
     containerColor: "surfaceVariant",
     alpha: 0.38,
 };
+function createDivider(ctx) {
+    return ctx.UI.HorizontalDivider({
+        padding: { horizontal: 14 },
+        color: "outlineVariant",
+        thickness: 1,
+    });
+}
+function createToggleCard(ctx, title, subtitle, checked, onCheckedChange) {
+    return ctx.UI.Surface(toggleCardStyle, [
+        createToggleRow(ctx, title, subtitle, checked, onCheckedChange),
+    ]);
+}
 function createToggleRow(ctx, title, subtitle, checked, onCheckedChange) {
     return ctx.UI.Row({
         fillMaxWidth: true,
@@ -58,16 +71,63 @@ function createToggleRow(ctx, title, subtitle, checked, onCheckedChange) {
         }),
     ]);
 }
-function createToggleGroupCard(ctx, items) {
+function createMemoryConfigSection(ctx, text, enabled, thresholdValue, limitValue, onThresholdChange, onLimitChange, onApply) {
+    return ctx.UI.Column({
+        fillMaxWidth: true,
+        padding: { horizontal: 14, vertical: 12 },
+        spacing: 10,
+    }, [
+        ctx.UI.Text({
+            text: text.memoryConfigTitle,
+            style: "bodyMedium",
+            fontWeight: "medium",
+        }),
+        ctx.UI.Text({
+            text: text.memoryConfigDescription,
+            style: "bodySmall",
+            color: "onSurfaceVariant",
+        }),
+        ctx.UI.TextField({
+            enabled,
+            label: text.memoryThresholdFieldLabel,
+            placeholder: text.memoryThresholdFieldPlaceholder,
+            value: thresholdValue,
+            onValueChange: onThresholdChange,
+            singleLine: true,
+        }),
+        ctx.UI.Text({
+            text: text.memoryThresholdFieldDescription,
+            style: "bodySmall",
+            color: "onSurfaceVariant",
+        }),
+        ctx.UI.TextField({
+            enabled,
+            label: text.memoryLimitFieldLabel,
+            placeholder: text.memoryLimitFieldPlaceholder,
+            value: limitValue,
+            onValueChange: onLimitChange,
+            singleLine: true,
+        }),
+        ctx.UI.Text({
+            text: text.memoryLimitFieldDescription,
+            style: "bodySmall",
+            color: "onSurfaceVariant",
+        }),
+        ctx.UI.Button({
+            text: text.memoryConfigApplyButton,
+            enabled,
+            fillMaxWidth: true,
+            onClick: onApply,
+        }),
+    ]);
+}
+function createInjectionItemsCard(ctx, items, memoryConfigSection) {
     const children = [];
     items.forEach((item, index) => {
         children.push(createToggleRow(ctx, item.title, item.subtitle, item.checked, item.onCheckedChange));
-        if (index < items.length - 1) {
-            children.push(ctx.UI.HorizontalDivider({
-                padding: { horizontal: 14 },
-                color: "outlineVariant",
-                thickness: 1,
-            }));
+        children.push(createDivider(ctx));
+        if (index === items.length - 1) {
+            children.push(memoryConfigSection);
         }
     });
     return ctx.UI.Surface(toggleCardStyle, [
@@ -83,6 +143,11 @@ function Screen(ctx) {
     const injectWeatherState = useStateValue(ctx, "injectWeather", initial.injectWeather);
     const injectLocationState = useStateValue(ctx, "injectLocation", initial.injectLocation);
     const injectNotificationsState = useStateValue(ctx, "injectNotifications", initial.injectNotifications);
+    const injectMemoryState = useStateValue(ctx, "injectMemory", initial.injectMemory);
+    const memoryThresholdState = useStateValue(ctx, "memoryThreshold", initial.memoryThreshold);
+    const memoryLimitState = useStateValue(ctx, "memoryLimit", initial.memoryLimit);
+    const memoryThresholdInputState = useStateValue(ctx, "memoryThresholdInput", formatDecimal(initial.memoryThreshold));
+    const memoryLimitInputState = useStateValue(ctx, "memoryLimitInput", String(initial.memoryLimit));
     const successMessageState = useStateValue(ctx, "successMessage", "");
     const errorMessageState = useStateValue(ctx, "errorMessage", "");
     const hasInitializedState = useStateValue(ctx, "hasInitialized", false);
@@ -93,6 +158,11 @@ function Screen(ctx) {
         injectWeatherState.set(next.injectWeather);
         injectLocationState.set(next.injectLocation);
         injectNotificationsState.set(next.injectNotifications);
+        injectMemoryState.set(next.injectMemory);
+        memoryThresholdState.set(next.memoryThreshold);
+        memoryLimitState.set(next.memoryLimit);
+        memoryThresholdInputState.set(formatDecimal(next.memoryThreshold));
+        memoryLimitInputState.set(String(next.memoryLimit));
     };
     const persistSettings = (patch, successMessage = "") => {
         try {
@@ -107,6 +177,24 @@ function Screen(ctx) {
             errorMessageState.set(`${text.saveErrorPrefix}${message}`);
         }
     };
+    const applyMemorySettings = () => {
+        const threshold = Number(memoryThresholdInputState.value.trim());
+        const limit = Number(memoryLimitInputState.value.trim());
+        if (!Number.isFinite(threshold) || threshold < 0) {
+            successMessageState.set("");
+            errorMessageState.set(`${text.saveErrorPrefix}${text.invalidMemoryThresholdMessage}`);
+            return;
+        }
+        if (!Number.isFinite(limit) || limit < 1) {
+            successMessageState.set("");
+            errorMessageState.set(`${text.saveErrorPrefix}${text.invalidMemoryLimitMessage}`);
+            return;
+        }
+        persistSettings({
+            memoryThreshold: threshold,
+            memoryLimit: Math.floor(limit),
+        });
+    };
     const summaryLines = [
         masterEnabledState.value ? text.summaryMasterEnabled : text.summaryMasterDisabled,
         injectTimeState.value ? text.summaryTimeEnabled : text.summaryTimeDisabled,
@@ -116,6 +204,9 @@ function Screen(ctx) {
         injectNotificationsState.value
             ? text.summaryNotificationsEnabled
             : text.summaryNotificationsDisabled,
+        injectMemoryState.value
+            ? `${text.summaryMemoryEnabled} (${text.memoryThresholdLabel}: ${formatDecimal(memoryThresholdState.value)}; ${text.memoryLimitLabel}: ${memoryLimitState.value})`
+            : text.summaryMemoryDisabled,
         text.summaryRulesHint,
     ];
     const rootChildren = [
@@ -153,9 +244,8 @@ function Screen(ctx) {
             persistSettings({ masterEnabled: checked });
         }),
         createSectionTitle(ctx, "bolt", text.itemsSectionTitle),
-        createToggleGroupCard(ctx, [
+        createInjectionItemsCard(ctx, [
             {
-                key: "time",
                 title: text.timeToggleTitle,
                 subtitle: text.timeToggleDescription,
                 checked: injectTimeState.value,
@@ -164,7 +254,6 @@ function Screen(ctx) {
                 },
             },
             {
-                key: "battery",
                 title: text.batteryToggleTitle,
                 subtitle: text.batteryToggleDescription,
                 checked: injectBatteryState.value,
@@ -173,7 +262,6 @@ function Screen(ctx) {
                 },
             },
             {
-                key: "weather",
                 title: text.weatherToggleTitle,
                 subtitle: text.weatherToggleDescription,
                 checked: injectWeatherState.value,
@@ -182,7 +270,6 @@ function Screen(ctx) {
                 },
             },
             {
-                key: "location",
                 title: text.locationToggleTitle,
                 subtitle: text.locationToggleDescription,
                 checked: injectLocationState.value,
@@ -191,7 +278,6 @@ function Screen(ctx) {
                 },
             },
             {
-                key: "notifications",
                 title: text.notificationsToggleTitle,
                 subtitle: text.notificationsToggleDescription,
                 checked: injectNotificationsState.value,
@@ -199,7 +285,19 @@ function Screen(ctx) {
                     persistSettings({ injectNotifications: checked });
                 },
             },
-        ]),
+            {
+                title: text.memoryToggleTitle,
+                subtitle: text.memoryToggleDescription,
+                checked: injectMemoryState.value,
+                onCheckedChange: checked => {
+                    persistSettings({ injectMemory: checked });
+                },
+            },
+        ], createMemoryConfigSection(ctx, text, injectMemoryState.value, memoryThresholdInputState.value, memoryLimitInputState.value, value => {
+            memoryThresholdInputState.set(value);
+        }, value => {
+            memoryLimitInputState.set(value);
+        }, applyMemorySettings)),
         createSectionTitle(ctx, "checkCircle", text.summarySectionTitle),
         ctx.UI.Card({
             fillMaxWidth: true,

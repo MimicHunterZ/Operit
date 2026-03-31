@@ -243,6 +243,7 @@ class ConversationService(
     suspend fun prepareConversationHistory(
             chatHistory: List<Pair<String, String>>,
             processedInput: String,
+            chatId: String?,
             workspacePath: String?,
             workspaceEnv: String? = null,
             packageManager: PackageManager,
@@ -267,6 +268,7 @@ class ConversationService(
             PromptHookRegistry.dispatchPromptHistoryHooks(
                 PromptHookContext(
                     stage = "before_prepare_history",
+                    chatId = chatId,
                     promptFunctionType = promptFunctionType.name,
                     processedInput = processedInput,
                     chatHistory = chatHistory.toPromptMessages(),

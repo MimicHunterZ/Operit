@@ -22,7 +22,7 @@ import {
  */
 export namespace SoftwareSettings {
     interface SpeechServicesUpdateOptions {
-        tts_service_type?: 'SIMPLE_TTS' | 'HTTP_TTS' | 'OPENAI_WS_TTS' | 'SILICONFLOW_TTS' | 'OPENAI_TTS';
+        tts_service_type?: 'SIMPLE_TTS' | 'HTTP_TTS' | 'OPENAI_WS_TTS' | 'SILICONFLOW_TTS' | 'MINIMAX_TTS' | 'OPENAI_TTS';
         tts_url_template?: string;
         tts_api_key?: string;
         tts_headers?: string | Record<string, string>;

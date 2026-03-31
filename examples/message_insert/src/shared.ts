@@ -27,6 +27,9 @@ export type ExtraInfoInjectionSettings = {
   injectWeather: boolean;
   injectLocation: boolean;
   injectNotifications: boolean;
+  injectMemory: boolean;
+  memoryThreshold: number;
+  memoryLimit: number;
 };
 
 export type ExtraInfoI18n = {
@@ -49,6 +52,19 @@ export type ExtraInfoI18n = {
   locationToggleDescription: string;
   notificationsToggleTitle: string;
   notificationsToggleDescription: string;
+  memoryToggleTitle: string;
+  memoryToggleDescription: string;
+  memoryConfigTitle: string;
+  memoryConfigDescription: string;
+  memoryThresholdFieldLabel: string;
+  memoryThresholdFieldDescription: string;
+  memoryThresholdFieldPlaceholder: string;
+  memoryLimitFieldLabel: string;
+  memoryLimitFieldDescription: string;
+  memoryLimitFieldPlaceholder: string;
+  memoryConfigApplyButton: string;
+  invalidMemoryThresholdMessage: string;
+  invalidMemoryLimitMessage: string;
   summarySectionTitle: string;
   summaryMasterEnabled: string;
   summaryMasterDisabled: string;
@@ -62,6 +78,8 @@ export type ExtraInfoI18n = {
   summaryLocationDisabled: string;
   summaryNotificationsEnabled: string;
   summaryNotificationsDisabled: string;
+  summaryMemoryEnabled: string;
+  summaryMemoryDisabled: string;
   summaryRulesHint: string;
   saveErrorPrefix: string;
   attachmentTimeTitle: string;
@@ -69,6 +87,7 @@ export type ExtraInfoI18n = {
   attachmentWeatherTitle: string;
   attachmentLocationTitle: string;
   attachmentNotificationsTitle: string;
+  attachmentMemoryTitle: string;
   timeZoneLabel: string;
   weekdayLabel: string;
   batteryLevelLabel: string;
@@ -92,15 +111,28 @@ export type ExtraInfoI18n = {
   notificationTextLabel: string;
   notificationTimeLabel: string;
   notificationsEmpty: string;
+  memoryQueryLabel: string;
+  memorySnapshotLabel: string;
+  memoryThresholdLabel: string;
+  memoryLimitLabel: string;
+  memoryResultCountLabel: string;
+  memoryTitleLabel: string;
+  memoryContentLabel: string;
+  memorySourceLabel: string;
+  memoryCreatedAtLabel: string;
+  memoryTagsLabel: string;
+  memoryChunkInfoLabel: string;
+  memoryEmpty: string;
+  memorySnapshotUnavailable: string;
   errorLabel: string;
 };
 
 const ZH_CN_I18N: ExtraInfoI18n = {
   menuTitle: "额外信息注入",
-  menuDescription: "发送消息时自动附加时间、电量、天气、位置、通知等额外信息，并与设置页开关同步",
+  menuDescription: "发送消息时自动附加时间、电量、天气、位置、通知、记忆等额外信息，并与设置页开关同步",
   toolboxTitle: "额外信息注入",
-  toolboxSubtitle: "把时间、电量、天气、位置、通知作为显性附件挂到用户消息上方，并随消息一起保存。",
-  toolboxBanner: "这里的开关和输入菜单里的“额外信息注入”是同一个状态；启用的项目都会在每次发送时一起注入。",
+  toolboxSubtitle: "把时间、电量、天气、位置、通知、记忆作为显性附件挂到用户消息上方，并随消息一起保存。",
+  toolboxBanner: "这里的开关和输入菜单里的“额外信息注入”是同一个状态；启用的项目都会在每次发送时一起注入，记忆检索会复用当前会话的快照。",
   masterSectionTitle: "注入开关",
   masterToggleTitle: "额外信息注入",
   masterToggleDescription: "和输入菜单里的“额外信息注入”开关完全同步，切一个地方，另一个地方会一起变化。",
@@ -115,6 +147,19 @@ const ZH_CN_I18N: ExtraInfoI18n = {
   locationToggleDescription: "每次发送消息时都插入当前定位信息与地址。",
   notificationsToggleTitle: "注入通知",
   notificationsToggleDescription: "每次发送消息时都插入最近通知摘要。",
+  memoryToggleTitle: "注入记忆",
+  memoryToggleDescription: "每次发送消息时根据当前输入自动分词检索记忆，并把命中的记忆摘要附加进去。",
+  memoryConfigTitle: "记忆检索设置",
+  memoryConfigDescription: "使用当前会话 id 的前六位作为快照 id，关键词会自动用 | 拼接后查询记忆。",
+  memoryThresholdFieldLabel: "记忆阈值",
+  memoryThresholdFieldDescription: "默认 0。数值越高，返回结果越严格。",
+  memoryThresholdFieldPlaceholder: "例如 0",
+  memoryLimitFieldLabel: "记忆上限",
+  memoryLimitFieldDescription: "默认 3。控制每次最多注入多少条记忆。",
+  memoryLimitFieldPlaceholder: "例如 3",
+  memoryConfigApplyButton: "保存记忆设置",
+  invalidMemoryThresholdMessage: "记忆阈值必须是大于等于 0 的数字",
+  invalidMemoryLimitMessage: "记忆上限必须是大于等于 1 的整数",
   summarySectionTitle: "当前规则",
   summaryMasterEnabled: "额外信息注入：已开启",
   summaryMasterDisabled: "额外信息注入：已关闭",
@@ -128,6 +173,8 @@ const ZH_CN_I18N: ExtraInfoI18n = {
   summaryLocationDisabled: "位置：已关闭",
   summaryNotificationsEnabled: "通知：每次发送都注入",
   summaryNotificationsDisabled: "通知：已关闭",
+  summaryMemoryEnabled: "记忆：已开启，按当前输入自动分词检索",
+  summaryMemoryDisabled: "记忆：已关闭",
   summaryRulesHint: "这些设置会直接影响用户消息中显性附件的生成规则。",
   saveErrorPrefix: "保存失败：",
   attachmentTimeTitle: "【当前时间】",
@@ -135,6 +182,7 @@ const ZH_CN_I18N: ExtraInfoI18n = {
   attachmentWeatherTitle: "【当前天气】",
   attachmentLocationTitle: "【当前位置】",
   attachmentNotificationsTitle: "【最近通知】",
+  attachmentMemoryTitle: "【相关记忆】",
   timeZoneLabel: "时区",
   weekdayLabel: "星期",
   batteryLevelLabel: "电量",
@@ -158,15 +206,28 @@ const ZH_CN_I18N: ExtraInfoI18n = {
   notificationTextLabel: "内容",
   notificationTimeLabel: "时间",
   notificationsEmpty: "当前没有可注入的通知",
+  memoryQueryLabel: "查询",
+  memorySnapshotLabel: "快照",
+  memoryThresholdLabel: "阈值",
+  memoryLimitLabel: "上限",
+  memoryResultCountLabel: "命中数量",
+  memoryTitleLabel: "标题",
+  memoryContentLabel: "内容",
+  memorySourceLabel: "来源",
+  memoryCreatedAtLabel: "时间",
+  memoryTagsLabel: "标签",
+  memoryChunkInfoLabel: "分块",
+  memoryEmpty: "当前没有命中的记忆",
+  memorySnapshotUnavailable: "当前会话 id 不可用，无法生成记忆快照",
   errorLabel: "错误",
 };
 
 const EN_US_I18N: ExtraInfoI18n = {
   menuTitle: "Extra Info Injection",
-  menuDescription: "Automatically attach time, battery, weather, location, notifications, and other extra info when sending messages, synced with the settings switch",
+  menuDescription: "Automatically attach time, battery, weather, location, notifications, memories, and other extra info when sending messages, synced with the settings switch",
   toolboxTitle: "Extra Info Injection",
-  toolboxSubtitle: "Attach time, battery, weather, location, and notifications as visible attachments above the user message and save them with the message.",
-  toolboxBanner: "This switch is the same state as the input-menu toggle. Every enabled item is injected on each send.",
+  toolboxSubtitle: "Attach time, battery, weather, location, notifications, and memories as visible attachments above the user message and save them with the message.",
+  toolboxBanner: "This switch is the same state as the input-menu toggle. Every enabled item is injected on each send, and memory lookup reuses the current chat snapshot.",
   masterSectionTitle: "Injection Switch",
   masterToggleTitle: "Extra Info Injection",
   masterToggleDescription: "This is the exact same switch as the input-menu toggle. Changing either one keeps the other in sync.",
@@ -181,6 +242,19 @@ const EN_US_I18N: ExtraInfoI18n = {
   locationToggleDescription: "Insert current location and address on every send.",
   notificationsToggleTitle: "Inject Notifications",
   notificationsToggleDescription: "Insert a summary of recent notifications on every send.",
+  memoryToggleTitle: "Inject Memory",
+  memoryToggleDescription: "Tokenize the current input, query related memories, and attach the matched memory summaries on every send.",
+  memoryConfigTitle: "Memory Search Settings",
+  memoryConfigDescription: "The first 6 characters of the current chat id are used as the snapshot id, and tokenized keywords are joined with | for querying.",
+  memoryThresholdFieldLabel: "Memory threshold",
+  memoryThresholdFieldDescription: "Default is 0. Higher values make the results stricter.",
+  memoryThresholdFieldPlaceholder: "For example 0",
+  memoryLimitFieldLabel: "Memory limit",
+  memoryLimitFieldDescription: "Default is 3. Controls how many memories can be injected each time.",
+  memoryLimitFieldPlaceholder: "For example 3",
+  memoryConfigApplyButton: "Save memory settings",
+  invalidMemoryThresholdMessage: "Memory threshold must be a number greater than or equal to 0",
+  invalidMemoryLimitMessage: "Memory limit must be an integer greater than or equal to 1",
   summarySectionTitle: "Current Rules",
   summaryMasterEnabled: "Extra info injection: enabled",
   summaryMasterDisabled: "Extra info injection: disabled",
@@ -194,6 +268,8 @@ const EN_US_I18N: ExtraInfoI18n = {
   summaryLocationDisabled: "Location: disabled",
   summaryNotificationsEnabled: "Notifications: inject on every send",
   summaryNotificationsDisabled: "Notifications: disabled",
+  summaryMemoryEnabled: "Memory: enabled with automatic tokenized lookup",
+  summaryMemoryDisabled: "Memory: disabled",
   summaryRulesHint: "These settings directly control how visible attachments are generated for user messages.",
   saveErrorPrefix: "Save failed: ",
   attachmentTimeTitle: "[Current Time]",
@@ -201,6 +277,7 @@ const EN_US_I18N: ExtraInfoI18n = {
   attachmentWeatherTitle: "[Current Weather]",
   attachmentLocationTitle: "[Current Location]",
   attachmentNotificationsTitle: "[Recent Notifications]",
+  attachmentMemoryTitle: "[Related Memories]",
   timeZoneLabel: "Time zone",
   weekdayLabel: "Weekday",
   batteryLevelLabel: "Level",
@@ -224,6 +301,19 @@ const EN_US_I18N: ExtraInfoI18n = {
   notificationTextLabel: "Content",
   notificationTimeLabel: "Time",
   notificationsEmpty: "There are no notifications to inject right now",
+  memoryQueryLabel: "Query",
+  memorySnapshotLabel: "Snapshot",
+  memoryThresholdLabel: "Threshold",
+  memoryLimitLabel: "Limit",
+  memoryResultCountLabel: "Matched",
+  memoryTitleLabel: "Title",
+  memoryContentLabel: "Content",
+  memorySourceLabel: "Source",
+  memoryCreatedAtLabel: "Time",
+  memoryTagsLabel: "Tags",
+  memoryChunkInfoLabel: "Chunk",
+  memoryEmpty: "There are no matched memories right now",
+  memorySnapshotUnavailable: "Current chat id is unavailable, so the memory snapshot cannot be created",
   errorLabel: "Error",
 };
 
@@ -234,6 +324,9 @@ const DEFAULT_SETTINGS: ExtraInfoInjectionSettings = {
   injectWeather: false,
   injectLocation: false,
   injectNotifications: false,
+  injectMemory: false,
+  memoryThreshold: 0,
+  memoryLimit: 3,
 };
 
 function normalizeLocale(locale?: string): string {
@@ -271,6 +364,8 @@ function getPrefs() {
 }
 
 function sanitizeSettings(input: Partial<ExtraInfoInjectionSettings> | null | undefined): ExtraInfoInjectionSettings {
+  const memoryThreshold = Number(input?.memoryThreshold);
+  const memoryLimit = Number(input?.memoryLimit);
   return {
     masterEnabled: Boolean(input?.masterEnabled ?? DEFAULT_SETTINGS.masterEnabled),
     injectTime: Boolean(input?.injectTime ?? DEFAULT_SETTINGS.injectTime),
@@ -278,6 +373,13 @@ function sanitizeSettings(input: Partial<ExtraInfoInjectionSettings> | null | un
     injectWeather: Boolean(input?.injectWeather ?? DEFAULT_SETTINGS.injectWeather),
     injectLocation: Boolean(input?.injectLocation ?? DEFAULT_SETTINGS.injectLocation),
     injectNotifications: Boolean(input?.injectNotifications ?? DEFAULT_SETTINGS.injectNotifications),
+    injectMemory: Boolean(input?.injectMemory ?? DEFAULT_SETTINGS.injectMemory),
+    memoryThreshold: Number.isFinite(memoryThreshold) && memoryThreshold >= 0
+      ? memoryThreshold
+      : DEFAULT_SETTINGS.memoryThreshold,
+    memoryLimit: Number.isFinite(memoryLimit) && memoryLimit >= 1
+      ? Math.floor(memoryLimit)
+      : DEFAULT_SETTINGS.memoryLimit,
   };
 }
 
@@ -307,14 +409,6 @@ export function getExtraInfoInjectionEnabled(): boolean {
 
 export function setExtraInfoInjectionEnabled(enabled: boolean): ExtraInfoInjectionSettings {
   return saveSettings({ masterEnabled: !!enabled });
-}
-
-export function normalizeHookPayload(input: unknown): Record<string, unknown> {
-  const record = input as { eventPayload?: Record<string, unknown> } | null;
-  if (record && record.eventPayload && typeof record.eventPayload === "object") {
-    return record.eventPayload as Record<string, unknown>;
-  }
-  return (record as Record<string, unknown>) || {};
 }
 
 function escapeXml(value: string): string {
@@ -385,7 +479,7 @@ function buildCombinedAttachmentFileName(timestampMs: number): string {
   const DateClass = Java.type("java.util.Date");
   const LocaleClass = Java.type("java.util.Locale");
   const locale = LocaleClass.getDefault();
-  const displayTime = new SimpleDateFormat("HH小时mm分钟ss秒dd天", locale).format(new DateClass(timestampMs));
+  const displayTime = new SimpleDateFormat("HH:mm dd/yyyy/M", locale).format(new DateClass(timestampMs));
   return `${COMBINED_ATTACHMENT_FILE_NAME_PREFIX}${displayTime}`;
 }
 
@@ -576,8 +670,165 @@ async function buildNotificationsContent(): Promise<string> {
   return lines.join("\n");
 }
 
+function formatDecimal(value: number): string {
+  if (!Number.isFinite(value)) {
+    return "0";
+  }
+  return value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function collapseInlineWhitespace(value: unknown, maxLength = 220): string {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "-";
+  }
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength)}...`;
+}
+
+function buildMemorySnapshotId(chatId?: string): string {
+  const normalized = String(chatId || "").trim();
+  if (!normalized) {
+    return "";
+  }
+  return normalized.slice(0, 6);
+}
+
+function expandHanKeywordSegment(segment: string): string[] {
+  const chars = Array.from(segment.trim());
+  if (chars.length < 2) {
+    return [];
+  }
+
+  const tokens = new Set<string>();
+  tokens.add(chars.join(""));
+
+  const maxGram = Math.min(chars.length, 4);
+  for (let size = 2; size <= maxGram; size += 1) {
+    for (let index = 0; index + size <= chars.length; index += 1) {
+      tokens.add(chars.slice(index, index + size).join(""));
+    }
+  }
+
+  return Array.from(tokens);
+}
+
+function buildMemorySearchQuery(messageText: string): string {
+  const normalized = String(messageText || "")
+    .replace(/<attachment\b[\s\S]*?<\/attachment>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/[|]+/g, " ")
+    .trim();
+
+  if (!normalized) {
+    return "";
+  }
+
+  const rawSegments =
+    normalized.match(/[\u3400-\u9FFF]+|[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*/g) || [];
+  const tokens = new Set<string>();
+
+  rawSegments.forEach(segment => {
+    if (/^[\u3400-\u9FFF]+$/.test(segment)) {
+      expandHanKeywordSegment(segment).forEach(token => {
+        if (token.length >= 2) {
+          tokens.add(token);
+        }
+      });
+      return;
+    }
+
+    const normalizedToken = segment.trim().toLowerCase();
+    if (normalizedToken.length >= 2) {
+      tokens.add(normalizedToken);
+    }
+
+    normalizedToken
+      .split(/[._-]+/)
+      .map(part => part.trim().toLowerCase())
+      .filter(part => part.length >= 2)
+      .forEach(part => tokens.add(part));
+  });
+
+  return Array.from(tokens).slice(0, 16).join("|");
+}
+
+async function buildMemoryContent(
+  messageText: string,
+  chatId?: string
+): Promise<string> {
+  const text = resolveExtraInfoI18n();
+  const settings = loadSettings();
+  const snapshotId = buildMemorySnapshotId(chatId);
+  if (!snapshotId) {
+    throw new Error(text.memorySnapshotUnavailable);
+  }
+
+  const searchQuery = buildMemorySearchQuery(messageText);
+  const lines = [
+    text.attachmentMemoryTitle,
+    `${text.memoryQueryLabel}: ${searchQuery || "-"}`,
+    `${text.memorySnapshotLabel}: ${snapshotId}`,
+    `${text.memoryThresholdLabel}: ${formatDecimal(settings.memoryThreshold)}`,
+    `${text.memoryLimitLabel}: ${settings.memoryLimit}`,
+  ];
+
+  if (!searchQuery) {
+    lines.push(
+      `${text.memoryResultCountLabel}: 0`,
+      text.memoryEmpty
+    );
+    return lines.join("\n");
+  }
+
+  const result = await toolCall("query_memory", {
+    query: searchQuery,
+    limit: settings.memoryLimit,
+    snapshot_id: snapshotId,
+    threshold: settings.memoryThreshold,
+  });
+
+  const memories = Array.isArray(result?.memories) ? result.memories : [];
+  lines.push(`${text.memoryResultCountLabel}: ${memories.length}`);
+
+  if (!memories.length) {
+    lines.push(text.memoryEmpty);
+    return lines.join("\n");
+  }
+
+  memories.forEach((memory: any, index: number) => {
+    const tags = Array.isArray(memory?.tags)
+      ? memory.tags.map((item: unknown) => collapseInlineWhitespace(item, 40)).filter(Boolean)
+      : [];
+
+    lines.push(
+      `#${index + 1}`,
+      `${text.memoryTitleLabel}: ${collapseInlineWhitespace(memory?.title, 80)}`,
+      `${text.memoryContentLabel}: ${collapseInlineWhitespace(memory?.content, 220)}`,
+      `${text.memorySourceLabel}: ${collapseInlineWhitespace(memory?.source, 60)}`,
+      `${text.memoryCreatedAtLabel}: ${collapseInlineWhitespace(memory?.createdAt, 40)}`
+    );
+
+    if (tags.length) {
+      lines.push(`${text.memoryTagsLabel}: ${tags.join(", ")}`);
+    }
+
+    if (String(memory?.chunkInfo || "").trim()) {
+      lines.push(
+        `${text.memoryChunkInfoLabel}: ${collapseInlineWhitespace(memory.chunkInfo, 80)}`
+      );
+    }
+  });
+
+  return lines.join("\n");
+}
+
 export async function buildExtraInfoAttachmentTags(
-  messageText: string
+  messageText: string,
+  chatId?: string
 ): Promise<string[]> {
   const settings = loadSettings();
   if (!settings.masterEnabled || containsExtraInfoAttachment(messageText)) {
@@ -627,6 +878,16 @@ export async function buildExtraInfoAttachmentTags(
       content = await buildNotificationsContent();
     } catch (error) {
       content = buildErrorContent(resolveExtraInfoI18n().attachmentNotificationsTitle, error);
+    }
+    contentBlocks.push(content);
+  }
+
+  if (settings.injectMemory) {
+    let content = "";
+    try {
+      content = await buildMemoryContent(messageText, chatId);
+    } catch (error) {
+      content = buildErrorContent(resolveExtraInfoI18n().attachmentMemoryTitle, error);
     }
     contentBlocks.push(content);
   }

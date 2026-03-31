@@ -120,11 +120,12 @@ object AIMessageManager {
         replyToMessage: ChatMessage? = null,
         enableDirectImageProcessing: Boolean = false,
         enableDirectAudioProcessing: Boolean = false,
-        enableDirectVideoProcessing: Boolean = false
+        enableDirectVideoProcessing: Boolean = false,
+        chatId: String? = null
     ): String {
         val totalStartTime = messageTimingNow()
         val promptInputStartTime = messageTimingNow()
-        val processedMessageText = InputProcessor.processUserInput(messageText)
+        val processedMessageText = InputProcessor.processUserInput(messageText, chatId)
         logMessageTiming(
             stage = "buildUserMessageContent.processUserInput",
             startTimeMs = promptInputStartTime,

@@ -46,24 +46,24 @@ val DarkTheme = EditorTheme(
     background = Color(0xFF1E1E1E),
     textColor = Color(0xFFD4D4D4),
     cursorColor = Color(0xFFAEAFAD),
-    selectionColor = Color(0x66569CD6), // VSCode 风格的蓝色选区
+    selectionColor = Color(0x80264F78),
 
-    keywordColor = Color(0xFF569CD6),
+    keywordColor = Color(0xFF6CB6FF),
     typeColor = Color(0xFF4EC9B0),
     stringColor = Color(0xFFCE9178),
     commentColor = Color(0xFF6A9955),
     numberColor = Color(0xFFB5CEA8),
     attributeColor = Color(0xFF9CDCFE),
     selectorColor = Color(0xFFD7BA7D),
-    processingColor = Color(0xFF808080),
+    processingColor = Color(0xFFC586C0),
     
     headingColor = Color(0xFF569CD6),
-    quoteColor = Color(0xFF6A9955),
+    quoteColor = Color(0xFF608B4E),
     listItemColor = Color(0xFFD7BA7D),
-    codeColor = Color(0xFF569CD6),
+    codeColor = Color(0xFFDCDCAA),
     
-    gutterBackground = Color(0xFF1E1E1E),
-    gutterBorder = Color(0xFF444444),
+    gutterBackground = Color(0xFF2A2D2E),
+    gutterBorder = Color(0xFF3A3D41),
     lineNumberColor = Color(0xFF858585),
     
     fontSize = 14.sp
@@ -74,27 +74,27 @@ val DarkTheme = EditorTheme(
  */
 val LightTheme = EditorTheme(
     background = Color(0xFFFFFFFF),
-    textColor = Color(0xFF000000),
-    cursorColor = Color(0xFF000000),
-    selectionColor = Color(0x660070C1), // VSCode 风格的蓝色选区
+    textColor = Color(0xFF1F2328),
+    cursorColor = Color(0xFF1F2328),
+    selectionColor = Color(0x66ADD6FF),
 
     keywordColor = Color(0xFF0000FF),
     typeColor = Color(0xFF267F99),
     stringColor = Color(0xFFA31515),
     commentColor = Color(0xFF008000),
     numberColor = Color(0xFF098658),
-    attributeColor = Color(0xFF0070C1),
+    attributeColor = Color(0xFF001080),
     selectorColor = Color(0xFF800000),
-    processingColor = Color(0xFF808080),
+    processingColor = Color(0xFFAF00DB),
     
     headingColor = Color(0xFF0000FF),
     quoteColor = Color(0xFF008000),
     listItemColor = Color(0xFF800000),
-    codeColor = Color(0xFF0000FF),
+    codeColor = Color(0xFF795E26),
     
-    gutterBackground = Color(0xFFF5F5F5),
-    gutterBorder = Color(0xFFE0E0E0),
-    lineNumberColor = Color(0xFF999999),
+    gutterBackground = Color(0xFFF8F8F8),
+    gutterBorder = Color(0xFFE5E5E5),
+    lineNumberColor = Color(0xFF8A8F98),
     
     fontSize = 14.sp
 )
@@ -103,6 +103,5 @@ val LightTheme = EditorTheme(
  * 根据语言获取适合的主题
  */
 fun getThemeForLanguage(_language: String): EditorTheme {
-    // 默认使用暗色主题
     return DarkTheme
-} 
+}

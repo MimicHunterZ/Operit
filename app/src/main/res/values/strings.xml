@@ -1719,6 +1719,8 @@
     <string name="workspace_project_type_web_description">适用于网页开发，支持 HTML/CSS/JavaScript，自动启动本地服务器</string>
     <string name="workspace_project_type_android_title">Android 项目</string>
     <string name="workspace_project_type_android_description">适用于 Android 工程开发，包含 Gradle 常用任务快捷按钮</string>
+    <string name="workspace_project_type_flutter_title">Flutter 项目</string>
+    <string name="workspace_project_type_flutter_description">适用于 Flutter 跨平台开发，内置当前稳定版应用模板和常用命令</string>
     <string name="workspace_project_type_node_title">Node.js 项目</string>
     <string name="workspace_project_type_node_description">适用于 Node.js 后端开发，提供 npm 命令快捷按钮</string>
     <string name="workspace_project_type_typescript_title">TypeScript 项目</string>
@@ -2482,6 +2484,7 @@
     <string name="speech_services_tts_type_simple">系统 TTS (简单)</string>
     <string name="speech_services_tts_type_http">HTTP API (远程)</string>
     <string name="speech_services_tts_type_siliconflow">硅基流动 TTS</string>
+    <string name="speech_services_tts_type_minimax">MiniMax TTS</string>
     <string name="speech_services_tts_type_openai_ws">OpenAI Realtime (WebSocket)</string>
     <string name="speech_services_tts_type_openai">OpenAI 语音 (HTTP)</string>
     
@@ -2539,6 +2542,19 @@
     <string name="speech_services_siliconflow_voice_id">音色 ID</string>
     <string name="speech_services_siliconflow_voice_id_placeholder">例如：charles 或 speech:kll:32w2b3aj5b:orvmnmpjkqchqalegwvi</string>
     <string name="speech_services_siliconflow_voice_id_hint">预设音色（alex/benjamin/charles等）或自定义音色（speech:开头的URI）</string>
+
+    <string name="speech_services_minimax_config">MiniMax TTS 配置</string>
+    <string name="speech_services_minimax_url">URL</string>
+    <string name="speech_services_minimax_url_placeholder">例如：https://api.minimaxi.com/v1/t2a_v2</string>
+    <string name="speech_services_minimax_url_hint">留空时默认使用官方 MiniMax TTS 接口；内部会固定按 output_format=url 并自动解析 data.audio。</string>
+    <string name="speech_services_minimax_api_key">API 密钥</string>
+    <string name="speech_services_minimax_api_key_placeholder">请输入您的 MiniMax API Key</string>
+    <string name="speech_services_minimax_model_name">model</string>
+    <string name="speech_services_minimax_model_name_placeholder">例如：speech-2.8-hd</string>
+    <string name="speech_services_minimax_model_name_hint">留空时默认使用 speech-2.8-hd。</string>
+    <string name="speech_services_minimax_voice_id">voice_id</string>
+    <string name="speech_services_minimax_voice_id_placeholder">例如：male-qn-qingse</string>
+    <string name="speech_services_minimax_voice_id_hint">留空时默认使用 male-qn-qingse；会按 MiniMax 的 voice_setting.voice_id 发送。</string>
 
     <string name="speech_services_openai_ws_config">OpenAI Realtime 配置</string>
     <string name="speech_services_openai_ws_url">Realtime WebSocket URL</string>
@@ -2996,6 +3012,8 @@
     <string name="workspace_project_office_description">用于文档编辑、文件处理和通用办公任务</string>
     <string name="workspace_project_android_title">Android 项目</string>
     <string name="workspace_project_android_description">适用于 Android 工程开发，提供 Gradle 常用任务快捷按钮</string>
+    <string name="workspace_project_flutter_title">Flutter 项目</string>
+    <string name="workspace_project_flutter_description">Flutter 跨平台应用模板，包含 Android、iOS、Web 和桌面端基础结构</string>
 
     <!-- Workspace UI -->
     <string name="workspace_preview">预览</string>
@@ -3023,7 +3041,7 @@
     <string name="workspace_cmd_java_gradle_jar">打包 JAR</string>
     <string name="workspace_cmd_java_gradle_clean">清理构建</string>
     <string name="workspace_cmd_java_gradle_tasks">查看所有任务</string>
-    <string name="workspace_cmd_android_setup_env">初始化 Android 构建环境</string>
+    <string name="workspace_cmd_android_setup_env">初始化环境</string>
     <string name="workspace_cmd_android_gradle_tasks">初始化 Gradle</string>
     <string name="workspace_cmd_android_assemble_debug">构建 Debug APK</string>
     <string name="workspace_cmd_android_assemble_release">构建 Release APK</string>
@@ -3031,6 +3049,14 @@
     <string name="workspace_cmd_android_share_release_apk">分享 Release APK</string>
     <string name="workspace_cmd_android_lint">运行 Lint</string>
     <string name="workspace_cmd_android_test">运行测试</string>
+    <string name="workspace_cmd_flutter_setup_env">初始化环境</string>
+    <string name="workspace_cmd_flutter_doctor">检查 Flutter 环境</string>
+    <string name="workspace_cmd_flutter_pub_get">获取依赖</string>
+    <string name="workspace_cmd_flutter_run_web">启动 Web 预览</string>
+    <string name="workspace_cmd_flutter_analyze">静态检查</string>
+    <string name="workspace_cmd_flutter_test">运行测试</string>
+    <string name="workspace_cmd_flutter_build_apk">构建 APK</string>
+    <string name="workspace_cmd_flutter_build_web">构建 Web</string>
 
     <string name="chat_added_files_count">已添加 %1$d 个文件</string>
     <string name="chat_process_shared_files_failed">处理分享文件失败: %1$s</string>
@@ -6692,6 +6718,14 @@
     <string name="openai_tts_error_voice_not_set">OpenAI TTS voice 未设置，请在设置中填写（例如 alloy）。</string>
     <string name="openai_tts_error_init_failed">初始化 OpenAI TTS 服务时发生意外错误</string>
     <string name="openai_tts_error_request_failed">请求 OpenAI TTS 失败</string>
+    <string name="minimax_tts_error_api_key_not_set">MiniMax API Key 未设置，请在设置中填写。</string>
+    <string name="minimax_tts_error_url_invalid_scheme">MiniMax TTS URL 必须以 http:// 或 https:// 开头。</string>
+    <string name="minimax_tts_error_init_failed">初始化 MiniMax TTS 服务时发生意外错误</string>
+    <string name="minimax_tts_error_request_failed">请求 MiniMax TTS 失败</string>
+    <string name="minimax_tts_error_parse_failed">解析 MiniMax TTS 响应失败</string>
+    <string name="minimax_tts_error_audio_url_missing">MiniMax TTS 响应中缺少 data.audio 下载地址</string>
+    <string name="minimax_tts_error_audio_download_failed">下载 MiniMax TTS 音频失败</string>
+    <string name="minimax_tts_error_audio_download_empty">MiniMax TTS 音频下载结果为空</string>
     <string name="openai_realtime_tts_error_url_not_set">OpenAI Realtime WebSocket URL 未设置，请填写完整接口地址（例如 wss://api.openai.com/v1/realtime）。</string>
     <string name="openai_realtime_tts_error_url_invalid_scheme">OpenAI Realtime WebSocket URL 必须以 ws:// 或 wss:// 开头。</string>
     <string name="openai_realtime_tts_error_api_key_not_set">OpenAI Realtime API Key 未设置，请在设置中填写。</string>

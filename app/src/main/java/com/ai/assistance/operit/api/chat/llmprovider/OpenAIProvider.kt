@@ -32,6 +32,7 @@ import java.io.IOException
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.UUID
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -1192,6 +1193,15 @@ open class OpenAIProvider(
         }
     }
 
+    private fun resolveRetryErrorText(context: Context, exception: Exception): String {
+        return when (exception) {
+            is SocketTimeoutException -> context.getString(R.string.openai_error_timeout)
+            is UnknownHostException -> context.getString(R.string.openai_error_cannot_resolve_host)
+            else -> exception.message?.takeIf { it.isNotBlank() }
+                ?: context.getString(R.string.openai_error_network_interrupted)
+        }
+    }
+
     /**
      * 处理可重试错误的统一逻辑
      */
@@ -1200,28 +1210,33 @@ open class OpenAIProvider(
         exception: Exception,
         retryCount: Int,
         maxRetries: Int,
-        errorType: String,
-        errorMessage: String,
-        noRetryMessage: String,
         enableRetry: Boolean,
         onNonFatalError: suspend (String) -> Unit,
-        buildRetryMessage: (Int) -> String
+        buildRetryMessage: (String, Int) -> String
     ): Int {
+        if (exception is UserCancellationException || exception is CancellationException) {
+            throw exception
+        }
         checkCancellation(context, exception)
 
+        val errorText = resolveRetryErrorText(context, exception)
+
         if (!enableRetry) {
-            throw IOException(noRetryMessage, exception)
+            throw IOException(errorText, exception)
         }
 
         val newRetryCount = retryCount + 1
         if (newRetryCount > maxRetries) {
-            AppLogger.e("AIService", "【发送消息】$errorType 且达到最大重试次数($maxRetries)", exception)
-            throw IOException(errorMessage, exception)
+            AppLogger.e("AIService", "【发送消息】$errorText 且达到最大重试次数($maxRetries)", exception)
+            throw IOException(
+                context.getString(R.string.openai_error_connection_timeout, maxRetries, errorText),
+                exception
+            )
         }
 
         val retryDelayMs = LlmRetryPolicy.nextDelayMs(newRetryCount)
-        AppLogger.w("AIService", "【发送消息】$errorType，将在 ${retryDelayMs}ms 后进行第 $newRetryCount 次重试...", exception)
-        onNonFatalError(buildRetryMessage(newRetryCount))
+        AppLogger.w("AIService", "【发送消息】$errorText，将在 ${retryDelayMs}ms 后进行第 $newRetryCount 次重试...", exception)
+        onNonFatalError(buildRetryMessage(errorText, newRetryCount))
         delay(retryDelayMs)
 
         return newRetryCount
@@ -2218,78 +2233,19 @@ open class OpenAIProvider(
                     "【发送消息】请求成功完成，输入token: ${tokenCacheManager.totalInputTokenCount}(缓存:${tokenCacheManager.cachedInputTokenCount})，输出token: ${tokenCacheManager.outputTokenCount}"
                 )
                 return@stream
-            } catch (e: NonRetriableException) {
+            } catch (e: Exception) {
                 lastException = e
                 emitter.emitRollback(requestSavepointId)
-                val errorText = e.message ?: context.getString(R.string.openai_error_network_interrupted)
                 retryCount = handleRetryableError(
                     context,
                     e,
                     retryCount,
                     maxRetries,
-                    errorText,
-                    errorText,
-                    errorText,
                     enableRetry,
                     onNonFatalError
-                ) { retryNumber ->
+                ) { errorText, retryNumber ->
                     "【${context.getString(R.string.openai_retry_with_count, errorText, retryNumber)}】"
                 }
-            } catch (e: SocketTimeoutException) {
-                lastException = e
-                emitter.emitRollback(requestSavepointId)
-                retryCount = handleRetryableError(
-                    context,
-                    e,
-                    retryCount,
-                    maxRetries,
-                    context.getString(R.string.openai_error_timeout),
-                    context.getString(R.string.openai_error_timeout_max_retries, e.message ?: ""),
-                    context.getString(R.string.openai_error_timeout),
-                    enableRetry,
-                    onNonFatalError
-                ) { retryNumber ->
-                    "【${context.getString(R.string.openai_retry_with_count, context.getString(R.string.openai_error_timeout), retryNumber)}】"
-                }
-            } catch (e: UnknownHostException) {
-                lastException = e
-                emitter.emitRollback(requestSavepointId)
-                retryCount = handleRetryableError(
-                    context,
-                    e,
-                    retryCount,
-                    maxRetries,
-                    context.getString(R.string.openai_error_cannot_resolve_host),
-                    context.getString(R.string.openai_error_cannot_connect),
-                    context.getString(R.string.openai_error_cannot_resolve_host),
-                    enableRetry,
-                    onNonFatalError
-                ) { retryNumber ->
-                    "【${context.getString(R.string.openai_retry_with_count, context.getString(R.string.openai_error_cannot_resolve_host), retryNumber)}】"
-                }
-            } catch (e: IOException) {
-                lastException = e
-                emitter.emitRollback(requestSavepointId)
-                val errorText = e.message ?: context.getString(R.string.openai_error_network_interrupted)
-                retryCount = handleRetryableError(
-                    context,
-                    e,
-                    retryCount,
-                    maxRetries,
-                    context.getString(R.string.openai_error_network_interrupted),
-                    context.getString(R.string.openai_error_max_retries, e.message ?: ""),
-                    errorText,
-                    enableRetry,
-                    onNonFatalError
-                ) { retryNumber ->
-                    "【${context.getString(R.string.openai_retry_with_count, context.getString(R.string.openai_error_network_interrupted), retryNumber)}】"
-                }
-            } catch (e: Exception) {
-                checkCancellation(context, e)
-                emitter.emitRollback(requestSavepointId)
-                // 其他未知异常，不应重试
-                AppLogger.e("AIService", "【发送消息】发生未知异常，停止重试", e)
-                throw IOException(context.getString(R.string.openai_error_response_failed, e.message ?: ""), e)
             }
             }
 
@@ -2304,7 +2260,13 @@ open class OpenAIProvider(
                 "AIService",
                 "【发送消息】重试失败，请检查网络连接，最大重试次数: $maxRetries"
             )
-            throw IOException(context.getString(R.string.openai_error_connection_timeout, maxRetries, lastException?.message ?: ""))
+            throw IOException(
+                context.getString(
+                    R.string.openai_error_connection_timeout,
+                    maxRetries,
+                    lastException?.message ?: context.getString(R.string.openai_error_network_interrupted)
+                )
+            )
         }
         return responseStream.withEventChannel(eventChannel)
     }

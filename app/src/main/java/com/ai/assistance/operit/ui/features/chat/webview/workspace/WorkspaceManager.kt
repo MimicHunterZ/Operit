@@ -33,6 +33,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -52,6 +53,7 @@ import com.ai.assistance.operit.core.tools.FileContentData
 import com.ai.assistance.operit.data.model.AITool
 import com.ai.assistance.operit.data.model.ChatHistory
 import com.ai.assistance.operit.data.model.ToolParameter
+import com.ai.assistance.operit.ui.common.markdown.StreamMarkdownRenderer
 import com.ai.assistance.operit.ui.common.rememberLocal
 import com.ai.assistance.operit.ui.features.chat.components.attachments.AudioAttachmentPlayer
 import com.ai.assistance.operit.ui.features.chat.components.attachments.VideoAttachmentPlayer
@@ -87,6 +89,48 @@ private fun WebView.releaseWorkspaceWebView() {
     stopLoading()
     removeAllViews()
     destroy()
+}
+
+@Composable
+private fun WorkspaceMarkdownPreview(
+    content: String,
+    modifier: Modifier = Modifier
+) {
+    val uriHandler = LocalUriHandler.current
+
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 960.dp),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 2.dp,
+                shadowElevation = 1.dp
+            ) {
+                StreamMarkdownRenderer(
+                    content = content,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 28.dp, vertical = 24.dp),
+                    textColor = MaterialTheme.colorScheme.onSurface,
+                    backgroundColor = MaterialTheme.colorScheme.surface,
+                    onLinkClick = { url -> uriHandler.openUri(url) }
+                )
+            }
+        }
+    }
 }
 
 /** VSCode风格的工作区管理器组件 集成了WebView预览和文件管理功能 */
@@ -188,6 +232,14 @@ fun WorkspaceManager(
     
     // 当前活动的编辑器引用
     var activeEditor by remember { mutableStateOf<com.ai.assistance.operit.ui.features.chat.webview.workspace.editor.NativeCodeEditor?>(null) }
+    val density = LocalDensity.current
+    val isImeVisible = WindowInsets.ime.getBottom(density) > 0
+
+    LaunchedEffect(isImeVisible) {
+        if (isImeVisible) {
+            isFabMenuExpanded = false
+        }
+    }
 
     // 监听WebView刷新计数器变化并触发刷新
     LaunchedEffect(webViewRefreshCounter) {
@@ -303,7 +355,7 @@ fun WorkspaceManager(
         }
     }
 
-    // 切换HTML文件预览状态
+    // 切换文件预览状态
     fun togglePreview(path: String) {
         filePreviewStates =
                 filePreviewStates.toMutableMap().apply { this[path] = !(this[path] ?: false) }
@@ -326,7 +378,7 @@ fun WorkspaceManager(
             // 初始化预览状态
             filePreviewStates =
                     filePreviewStates.toMutableMap().apply {
-                        // HTML文件默认预览, 其他文件默认不预览（即编辑模式）
+                        // HTML文件默认预览，Markdown保持默认编辑态，其他文件也默认编辑态
                         this[fileInfo.path] = fileInfo.isHtml
                     }
         }
@@ -406,7 +458,7 @@ fun WorkspaceManager(
                         }
                     }
 
-                    if (currentFile != null && currentFile.isHtml) {
+                    if (currentFile != null && (currentFile.isHtml || currentFile.isMarkdown)) {
                         val isPreview = filePreviewStates[currentFile.path] ?: false
                         IconButton(
                                 onClick = { togglePreview(currentFile.path) },
@@ -587,6 +639,12 @@ fun WorkspaceManager(
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
+                            fileInfo.isMarkdown && isPreviewMode -> {
+                                WorkspaceMarkdownPreview(
+                                    content = fileInfo.content,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
                             // HTML文件的预览模式：使用WebView
                             fileInfo.isHtml && isPreviewMode -> {
                                 AndroidView(
@@ -691,48 +749,50 @@ fun WorkspaceManager(
             }
         }
         
-        // 可展开的悬浮操作按钮菜单
-        ExpandableFabMenu(
-            isExpanded = isFabMenuExpanded,
-            onToggle = { isFabMenuExpanded = !isFabMenuExpanded },
-            exportEnabled = workspaceConfig.export.enabled && !isSafEnv,
-            onExportClick = {
-                if (!isSafEnv) {
-                    onExportClick(File(workspacePath))
-                }
-            },
-            onFileManagerClick = { showFileManager = true },
-            onUndoClick = { activeEditor?.undo() },
-            onRedoClick = { activeEditor?.redo() },
-            onFormatClick = {
-                // 格式化当前文件
-                val currentFile = openFiles.getOrNull(currentFileIndex)
-                if (currentFile != null) {
-                    val language = LanguageDetector.detectLanguage(currentFile.name)
-                    val formattedCode = CodeFormatter.format(currentFile.content, language)
-                    
-                    // 更新文件内容
-                    val updatedFiles = openFiles.toMutableList()
-                    updatedFiles[currentFileIndex] = currentFile.copy(content = formattedCode)
-                    openFiles = updatedFiles
-                    
-                    // 更新编辑器显示
-                    activeEditor?.replaceAllText(formattedCode)
-                    
-                    // 标记为未保存
-                    unsavedFiles = unsavedFiles + currentFile.path
-                }
-                isFabMenuExpanded = false
-            },
-            onUnbindClick = { 
-                showUnbindConfirmDialog = true
-                isFabMenuExpanded = false
-            },
-            canFormat = openFiles.getOrNull(currentFileIndex)?.let { file ->
-                val language = LanguageDetector.detectLanguage(file.name).lowercase()
-                language in listOf("javascript", "js", "css", "html", "htm")
-            } ?: false
-        )
+        // 键盘弹起时隐藏工作区悬浮菜单，避免遮挡编辑区与输入区域
+        if (!isImeVisible) {
+            ExpandableFabMenu(
+                isExpanded = isFabMenuExpanded,
+                onToggle = { isFabMenuExpanded = !isFabMenuExpanded },
+                exportEnabled = workspaceConfig.export.enabled && !isSafEnv,
+                onExportClick = {
+                    if (!isSafEnv) {
+                        onExportClick(File(workspacePath))
+                    }
+                },
+                onFileManagerClick = { showFileManager = true },
+                onUndoClick = { activeEditor?.undo() },
+                onRedoClick = { activeEditor?.redo() },
+                onFormatClick = {
+                    // 格式化当前文件
+                    val currentFile = openFiles.getOrNull(currentFileIndex)
+                    if (currentFile != null) {
+                        val language = LanguageDetector.detectLanguage(currentFile.name)
+                        val formattedCode = CodeFormatter.format(currentFile.content, language)
+                        
+                        // 更新文件内容
+                        val updatedFiles = openFiles.toMutableList()
+                        updatedFiles[currentFileIndex] = currentFile.copy(content = formattedCode)
+                        openFiles = updatedFiles
+                        
+                        // 更新编辑器显示
+                        activeEditor?.replaceAllText(formattedCode)
+                        
+                        // 标记为未保存
+                        unsavedFiles = unsavedFiles + currentFile.path
+                    }
+                    isFabMenuExpanded = false
+                },
+                onUnbindClick = { 
+                    showUnbindConfirmDialog = true
+                    isFabMenuExpanded = false
+                },
+                canFormat = openFiles.getOrNull(currentFileIndex)?.let { file ->
+                    val language = LanguageDetector.detectLanguage(file.name).lowercase()
+                    language in listOf("javascript", "js", "css", "html", "htm")
+                } ?: false
+            )
+        }
         
         // 解绑确认对话框
         if (showUnbindConfirmDialog) {
