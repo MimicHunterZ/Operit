@@ -52,20 +52,27 @@ export interface ToolResultMap {
     // Network operations
     'http_request': HttpResponseData;
     'visit_web': VisitWebResultData;
-    'start_browser': StringResultData;
-    'stop_browser': StringResultData;
-    'browser_navigate': StringResultData;
-    'browser_eval': StringResultData;
     'browser_click': StringResultData;
-    'browser_fill': StringResultData;
+    'browser_close': StringResultData;
+    'browser_console_messages': StringResultData;
+    'browser_drag': StringResultData;
+    'browser_evaluate': StringResultData;
+    'browser_file_upload': StringResultData;
+    'browser_fill_form': StringResultData;
+    'browser_handle_dialog': StringResultData;
+    'browser_hover': StringResultData;
+    'browser_navigate': StringResultData;
+    'browser_navigate_back': StringResultData;
+    'browser_network_requests': StringResultData;
+    'browser_press_key': StringResultData;
+    'browser_resize': StringResultData;
+    'browser_run_code': StringResultData;
+    'browser_select_option': StringResultData;
     'browser_wait_for': StringResultData;
     'browser_snapshot': StringResultData;
-    'browser_file_upload': StringResultData;
-    'browser_userscript_list': StringResultData;
-    'browser_userscript_install': StringResultData;
-    'browser_userscript_start': StringResultData;
-    'browser_userscript_stop': StringResultData;
-    'browser_userscript_uninstall': StringResultData;
+    'browser_take_screenshot': StringResultData;
+    'browser_type': StringResultData;
+    'browser_tabs': StringResultData;
     'multipart_request': HttpResponseData;
     'manage_cookies': HttpResponseData;
 

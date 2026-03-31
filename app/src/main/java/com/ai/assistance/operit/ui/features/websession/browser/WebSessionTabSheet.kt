@@ -9,7 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
@@ -52,7 +52,7 @@ internal fun WebSessionTabSheet(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
                 contentPadding = PaddingValues(vertical = 2.dp)
             ) {
-                items(items = tabs, key = { it.sessionId }) { tab ->
+                itemsIndexed(items = tabs, key = { _, tab -> tab.sessionId }) { index, tab ->
                     WebSessionItemCard(
                         highlighted = tab.isActive,
                         onClick = { onSelectTab(tab.sessionId) }
@@ -81,7 +81,7 @@ internal fun WebSessionTabSheet(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
-                                        text = tabs.indexOf(tab).plus(1).toString(),
+                                        text = index.plus(1).toString(),
                                         style = MaterialTheme.typography.titleSmall,
                                         fontWeight = FontWeight.SemiBold
                                     )

@@ -816,6 +816,15 @@ class ChatViewModel(private val context: Context) : ViewModel() {
                 
                 // 清除输入处理状态
                 messageProcessingDelegate.setInputProcessingStateForChat(currentChatId, InputProcessingState.Idle)
+            } catch (e: CancellationException) {
+                AppLogger.d(TAG, "插入总结已取消")
+                val currentChatId = chatHistoryDelegate.currentChatId.value
+                if (currentChatId != null) {
+                    messageProcessingDelegate.setInputProcessingStateForChat(
+                        currentChatId,
+                        InputProcessingState.Idle
+                    )
+                }
             } catch (e: Exception) {
                 AppLogger.e(TAG, "插入总结时发生错误", e)
                 uiStateDelegate.showToast(context.getString(R.string.chat_insert_summary_failed, e.message ?: ""))

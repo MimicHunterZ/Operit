@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.dp
 internal fun WebSessionBottomToolbar(
     canGoBack: Boolean,
     canGoForward: Boolean,
-    tabCount: Int,
+    currentTabNumber: Int,
     onBack: () -> Unit,
     onForward: () -> Unit,
     onNewTab: () -> Unit,
@@ -87,7 +87,7 @@ internal fun WebSessionBottomToolbar(
                     )
                 }
             )
-            BrowserToolbarTabAction(tabCount = tabCount, onClick = onTabs)
+            BrowserToolbarTabAction(currentTabNumber = currentTabNumber, onClick = onTabs)
             BrowserToolbarAction(
                 onClick = onMenu,
                 icon = {
@@ -165,7 +165,7 @@ private fun RowScope.BrowserToolbarPrimaryAction(
 
 @Composable
 private fun RowScope.BrowserToolbarTabAction(
-    tabCount: Int,
+    currentTabNumber: Int,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -191,7 +191,7 @@ private fun RowScope.BrowserToolbarTabAction(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = tabCount.coerceAtLeast(1).toString(),
+                    text = currentTabNumber.coerceAtLeast(0).toString(),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold
                 )

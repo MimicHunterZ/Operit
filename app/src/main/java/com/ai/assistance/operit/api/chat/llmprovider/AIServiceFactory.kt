@@ -318,7 +318,7 @@ object AIServiceFactory {
                     enableToolCall = enableToolCall
                 )
             ApiProviderType.OPENROUTER ->
-                OpenAIProvider(
+                OpenRouterProvider(
                     apiEndpoint = config.apiEndpoint,
                     apiKeyProvider = apiKeyProvider,
                     modelName = config.modelName,

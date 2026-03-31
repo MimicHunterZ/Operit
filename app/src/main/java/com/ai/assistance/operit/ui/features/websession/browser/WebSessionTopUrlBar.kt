@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -28,14 +29,11 @@ import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -49,7 +47,6 @@ internal fun WebSessionTopUrlBar(
     isEditing: Boolean,
     urlDraft: String,
     isBookmarked: Boolean,
-    tabCount: Int,
     onStartEditing: () -> Unit,
     onUrlDraftChange: (String) -> Unit,
     onSubmitUrl: () -> Unit,
@@ -74,31 +71,12 @@ internal fun WebSessionTopUrlBar(
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (isEditing) 0.dp else 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    modifier = Modifier.size(36.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                    border =
-                        BorderStroke(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
-                        )
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = tabCount.coerceAtLeast(1).toString(),
-                            style = MaterialTheme.typography.titleSmall,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(20.dp),
+                    modifier = if (isEditing) Modifier.fillMaxWidth() else Modifier.weight(1f),
+                    shape = RoundedCornerShape(if (isEditing) 18.dp else 20.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerHighest,
                     border =
                         BorderStroke(
@@ -112,46 +90,71 @@ internal fun WebSessionTopUrlBar(
                         )
                 ) {
                     if (isEditing) {
-                        OutlinedTextField(
-                            value = urlDraft,
-                            onValueChange = onUrlDraftChange,
+                        Row(
                             modifier =
                                 Modifier
                                     .fillMaxWidth()
-                                    .height(44.dp),
-                            singleLine = true,
-                            shape = RoundedCornerShape(20.dp),
-                            textStyle = MaterialTheme.typography.bodyLarge,
-                            placeholder = {
-                                Text(
-                                    text = url,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            },
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                            keyboardActions =
-                                KeyboardActions(
-                                    onGo = {
-                                        onSubmitUrl()
-                                    }
-                                ),
-                            colors =
-                                OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = Color.Transparent,
-                                    unfocusedBorderColor = Color.Transparent,
-                                    focusedContainerColor = Color.Transparent,
-                                    unfocusedContainerColor = Color.Transparent
-                                ),
-                            trailingIcon = {
-                                IconButton(onClick = onSubmitUrl) {
-                                    Icon(
-                                        imageVector = Icons.Filled.ArrowForward,
-                                        contentDescription = null
+                                    .height(42.dp)
+                                    .padding(start = 10.dp, end = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector =
+                                    if (urlDraft.startsWith("https://") || url.startsWith("https://")) {
+                                        Icons.Filled.Lock
+                                    } else {
+                                        Icons.Filled.Language
+                                    },
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            Box(
+                                modifier =
+                                    Modifier
+                                        .weight(1f)
+                                        .padding(vertical = 8.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                if (urlDraft.isBlank()) {
+                                    Text(
+                                        text = url,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
+                                BasicTextField(
+                                    value = urlDraft,
+                                    onValueChange = onUrlDraftChange,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    textStyle =
+                                        MaterialTheme.typography.bodyMedium.copy(
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        ),
+                                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                                    keyboardActions =
+                                        KeyboardActions(
+                                            onGo = {
+                                                onSubmitUrl()
+                                            }
+                                        )
+                                )
                             }
-                        )
+
+                            IconButton(
+                                modifier = Modifier.size(28.dp),
+                                onClick = onSubmitUrl
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.ArrowForward,
+                                    contentDescription = null
+                                )
+                            }
+                        }
                     } else {
                         Row(
                             modifier =
@@ -209,44 +212,46 @@ internal fun WebSessionTopUrlBar(
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Surface(
-                        modifier = Modifier.size(36.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surface,
-                        border =
-                            BorderStroke(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
-                            )
-                    ) {
-                        IconButton(onClick = onRefreshOrStop) {
-                            Icon(
-                                imageVector =
-                                    if (isLoading) {
-                                        Icons.Filled.Close
-                                    } else {
-                                        Icons.Filled.Refresh
-                                    },
-                                contentDescription = null
-                            )
+                if (!isEditing) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Surface(
+                            modifier = Modifier.size(36.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface,
+                            border =
+                                BorderStroke(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                                )
+                        ) {
+                            IconButton(onClick = onRefreshOrStop) {
+                                Icon(
+                                    imageVector =
+                                        if (isLoading) {
+                                            Icons.Filled.Close
+                                        } else {
+                                            Icons.Filled.Refresh
+                                        },
+                                    contentDescription = null
+                                )
+                            }
                         }
-                    }
-                    Surface(
-                        modifier = Modifier.size(36.dp),
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surface,
-                        border =
-                            BorderStroke(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
-                            )
-                    ) {
-                        IconButton(onClick = onMinimize) {
-                            Icon(
-                                imageVector = Icons.Filled.Remove,
-                                contentDescription = null
-                            )
+                        Surface(
+                            modifier = Modifier.size(36.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surface,
+                            border =
+                                BorderStroke(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)
+                                )
+                        ) {
+                            IconButton(onClick = onMinimize) {
+                                Icon(
+                                    imageVector = Icons.Filled.Remove,
+                                    contentDescription = null
+                                )
+                            }
                         }
                     }
                 }
@@ -255,14 +260,23 @@ internal fun WebSessionTopUrlBar(
             if (isLoading) {
                 Box(
                     modifier =
-                        Modifier
-                            .padding(start = 44.dp)
-                            .width(72.dp)
-                            .height(2.dp)
-                            .background(
-                                color = MaterialTheme.colorScheme.primary,
-                                shape = RoundedCornerShape(999.dp)
-                            )
+                        if (isEditing) {
+                            Modifier
+                                .fillMaxWidth()
+                                .height(2.dp)
+                                .background(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = RoundedCornerShape(999.dp)
+                                )
+                        } else {
+                            Modifier
+                                .width(72.dp)
+                                .height(2.dp)
+                                .background(
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = RoundedCornerShape(999.dp)
+                                )
+                        }
                 )
             }
         }

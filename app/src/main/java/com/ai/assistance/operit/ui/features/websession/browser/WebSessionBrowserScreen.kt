@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,6 +23,7 @@ import androidx.compose.material.icons.filled.Language
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -47,7 +49,7 @@ internal fun WebSessionBrowserScreen(
     globalHistory: List<WebSessionHistoryEntry>,
     userscriptUiState: WebSessionUserscriptUiState,
     webViewHost: WebSessionWebViewHost,
-    onHostStateChange: (WebSessionBrowserHostState) -> Unit,
+    onHostStateChange: ((WebSessionBrowserHostState) -> WebSessionBrowserHostState) -> Unit,
     onNavigate: (String) -> Unit,
     onBack: () -> Unit,
     onForward: () -> Unit,
@@ -73,16 +75,32 @@ internal fun WebSessionBrowserScreen(
     onDeleteUserscript: (Long) -> Unit,
     onCheckUserscriptUpdate: (Long) -> Unit,
     onInvokeUserscriptMenu: (String) -> Unit,
+    onPauseDownload: (String) -> Unit,
+    onResumeDownload: (String) -> Unit,
+    onCancelDownload: (String) -> Unit,
+    onRetryDownload: (String) -> Unit,
+    onDeleteDownload: (String, Boolean) -> Unit,
+    onOpenDownloadedFile: (String) -> Unit,
+    onOpenDownloadLocation: (String) -> Unit,
+    onConfirmExternalOpen: (String) -> Unit,
+    onCancelExternalOpen: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val browserState = hostState.browserState
+    val currentTabNumber =
+        browserState.tabs.indexOfFirst { it.isActive }
+            .takeIf { it >= 0 }
+            ?.plus(1)
+            ?: 0
     val isBookmarked =
         remember(browserState.currentUrl, bookmarks) {
             val normalizedUrl = normalizeLookupUrl(browserState.currentUrl)
             normalizedUrl != null && bookmarks.any { it.url == normalizedUrl }
         }
     val dismissSheet = {
-        onHostStateChange(hostState.copy(sheetRoute = WebSessionBrowserSheetRoute.NONE))
+        onHostStateChange { current ->
+            current.copy(sheetRoute = WebSessionBrowserSheetRoute.NONE)
+        }
     }
     val activeSheetRoute = hostState.sheetRoute
 
@@ -100,35 +118,36 @@ internal fun WebSessionBrowserScreen(
                 isEditing = hostState.isEditingUrl,
                 urlDraft = hostState.urlDraft,
                 isBookmarked = isBookmarked,
-                tabCount = browserState.tabs.size,
                 onStartEditing = {
-                    onHostStateChange(
-                        hostState.copy(
+                    onHostStateChange { current ->
+                        current.copy(
                             isEditingUrl = true,
                             urlDraft = browserState.currentUrl.ifBlank { "about:blank" }
                         )
-                    )
+                    }
                 },
                 onUrlDraftChange = { draft ->
-                    onHostStateChange(hostState.copy(urlDraft = draft))
+                    onHostStateChange { current ->
+                        current.copy(urlDraft = draft)
+                    }
                 },
                 onSubmitUrl = {
                     val target = normalizeNavigationUrl(hostState.urlDraft)
                     onNavigate(target)
-                    onHostStateChange(
-                        hostState.copy(
+                    onHostStateChange { current ->
+                        current.copy(
                             isEditingUrl = false,
                             urlDraft = target
                         )
-                    )
+                    }
                 },
                 onStopEditing = {
-                    onHostStateChange(
-                        hostState.copy(
+                    onHostStateChange { current ->
+                        current.copy(
                             isEditingUrl = false,
                             urlDraft = browserState.currentUrl
                         )
-                    )
+                    }
                 },
                 onToggleBookmark = {
                     onToggleBookmark(browserState.currentUrl, browserState.pageTitle)
@@ -137,6 +156,27 @@ internal fun WebSessionBrowserScreen(
                 onMinimize = onMinimize,
                 modifier = Modifier.statusBarsPadding()
             )
+
+            hostState.externalOpenPrompt?.let { prompt ->
+                ExternalOpenPromptBar(
+                    title = prompt.title,
+                    target = prompt.target,
+                    onConfirm = { onConfirmExternalOpen(prompt.requestId) },
+                    onCancel = { onCancelExternalOpen(prompt.requestId) }
+                )
+            }
+
+            if (browserState.activeDownloadCount > 0) {
+                BrowserDownloadSummaryBar(
+                    activeCount = browserState.activeDownloadCount,
+                    overallProgress = browserState.overallDownloadProgress,
+                    onClick = {
+                        onHostStateChange { current ->
+                            current.copy(sheetRoute = WebSessionBrowserSheetRoute.DOWNLOADS)
+                        }
+                    }
+                )
+            }
 
             Spacer(
                 modifier =
@@ -220,19 +260,19 @@ internal fun WebSessionBrowserScreen(
             WebSessionBottomToolbar(
                 canGoBack = browserState.canGoBack,
                 canGoForward = browserState.canGoForward,
-                tabCount = browserState.tabs.size,
+                currentTabNumber = currentTabNumber,
                 onBack = onBack,
                 onForward = onForward,
                 onNewTab = onNewTab,
                 onTabs = {
-                    onHostStateChange(
-                        hostState.copy(sheetRoute = WebSessionBrowserSheetRoute.TABS)
-                    )
+                    onHostStateChange { current ->
+                        current.copy(sheetRoute = WebSessionBrowserSheetRoute.TABS)
+                    }
                 },
                 onMenu = {
-                    onHostStateChange(
-                        hostState.copy(sheetRoute = WebSessionBrowserSheetRoute.MENU)
-                    )
+                    onHostStateChange { current ->
+                        current.copy(sheetRoute = WebSessionBrowserSheetRoute.MENU)
+                    }
                 },
                 modifier = Modifier.navigationBarsPadding()
             )
@@ -296,7 +336,14 @@ internal fun WebSessionBrowserScreen(
                     onSetUserscriptEnabled = onSetUserscriptEnabled,
                     onDeleteUserscript = onDeleteUserscript,
                     onCheckUserscriptUpdate = onCheckUserscriptUpdate,
-                    onInvokeUserscriptMenu = onInvokeUserscriptMenu
+                    onInvokeUserscriptMenu = onInvokeUserscriptMenu,
+                    onPauseDownload = onPauseDownload,
+                    onResumeDownload = onResumeDownload,
+                    onCancelDownload = onCancelDownload,
+                    onRetryDownload = onRetryDownload,
+                    onDeleteDownload = onDeleteDownload,
+                    onOpenDownloadedFile = onOpenDownloadedFile,
+                    onOpenDownloadLocation = onOpenDownloadLocation
                 )
             }
         }
@@ -321,7 +368,7 @@ private fun WebSessionOverlaySheetContent(
     onOpenUrl: (String) -> Unit,
     onClearHistory: () -> Unit,
     onToggleDesktopMode: () -> Unit,
-    onHostStateChange: (WebSessionBrowserHostState) -> Unit,
+    onHostStateChange: ((WebSessionBrowserHostState) -> WebSessionBrowserHostState) -> Unit,
     hostState: WebSessionBrowserHostState,
     onOpenUserscripts: () -> Unit,
     onImportUserscript: () -> Unit,
@@ -331,7 +378,14 @@ private fun WebSessionOverlaySheetContent(
     onSetUserscriptEnabled: (Long, Boolean) -> Unit,
     onDeleteUserscript: (Long) -> Unit,
     onCheckUserscriptUpdate: (Long) -> Unit,
-    onInvokeUserscriptMenu: (String) -> Unit
+    onInvokeUserscriptMenu: (String) -> Unit,
+    onPauseDownload: (String) -> Unit,
+    onResumeDownload: (String) -> Unit,
+    onCancelDownload: (String) -> Unit,
+    onRetryDownload: (String) -> Unit,
+    onDeleteDownload: (String, Boolean) -> Unit,
+    onOpenDownloadedFile: (String) -> Unit,
+    onOpenDownloadLocation: (String) -> Unit
 ) {
     when (sheetRoute) {
         WebSessionBrowserSheetRoute.TABS ->
@@ -351,20 +405,31 @@ private fun WebSessionOverlaySheetContent(
         WebSessionBrowserSheetRoute.MENU ->
             WebSessionMenuSheet(
                 isDesktopMode = browserState.isDesktopMode,
+                downloadSummary =
+                    stringResource(
+                        R.string.web_session_downloads_summary,
+                        browserState.activeDownloadCount,
+                        browserState.failedDownloadCount
+                    ),
                 onOpenHistory = {
-                    onHostStateChange(
-                        hostState.copy(sheetRoute = WebSessionBrowserSheetRoute.HISTORY)
-                    )
+                    onHostStateChange { current ->
+                        current.copy(sheetRoute = WebSessionBrowserSheetRoute.HISTORY)
+                    }
+                },
+                onOpenDownloads = {
+                    onHostStateChange { current ->
+                        current.copy(sheetRoute = WebSessionBrowserSheetRoute.DOWNLOADS)
+                    }
                 },
                 onOpenBookmarks = {
-                    onHostStateChange(
-                        hostState.copy(sheetRoute = WebSessionBrowserSheetRoute.BOOKMARKS)
-                    )
+                    onHostStateChange { current ->
+                        current.copy(sheetRoute = WebSessionBrowserSheetRoute.BOOKMARKS)
+                    }
                 },
                 onOpenUserscripts = {
-                    onHostStateChange(
-                        hostState.copy(sheetRoute = WebSessionBrowserSheetRoute.USERSCRIPTS)
-                    )
+                    onHostStateChange { current ->
+                        current.copy(sheetRoute = WebSessionBrowserSheetRoute.USERSCRIPTS)
+                    }
                     onOpenUserscripts()
                 },
                 userscriptMenuCommands = browserState.userscriptMenuCommands,
@@ -384,6 +449,26 @@ private fun WebSessionOverlaySheetContent(
                     onDismiss()
                     onCloseAllTabs()
                 }
+            )
+
+        WebSessionBrowserSheetRoute.DOWNLOADS ->
+            WebSessionDownloadSheet(
+                uiState = hostState.downloadUiState,
+                onFilterChange = { filter ->
+                    onHostStateChange { current ->
+                        current.copy(
+                            downloadUiState =
+                                current.downloadUiState.copy(selectedFilter = filter)
+                        )
+                    }
+                },
+                onPauseDownload = onPauseDownload,
+                onResumeDownload = onResumeDownload,
+                onCancelDownload = onCancelDownload,
+                onRetryDownload = onRetryDownload,
+                onDeleteDownload = onDeleteDownload,
+                onOpenDownloadedFile = onOpenDownloadedFile,
+                onOpenDownloadLocation = onOpenDownloadLocation
             )
 
         WebSessionBrowserSheetRoute.HISTORY ->
@@ -426,6 +511,90 @@ private fun WebSessionOverlaySheetContent(
             )
 
         WebSessionBrowserSheetRoute.NONE -> Unit
+    }
+}
+
+@Composable
+private fun ExternalOpenPromptBar(
+    title: String,
+    target: String,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Text(
+                text = target,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(onClick = onCancel) {
+                    Text(text = stringResource(R.string.web_session_external_open_cancel))
+                }
+                TextButton(onClick = onConfirm) {
+                    Text(text = stringResource(R.string.web_session_external_open_allow_once))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BrowserDownloadSummaryBar(
+    activeCount: Int,
+    overallProgress: Float?,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
+    ) {
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onClick)
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.web_session_downloads_active_bar, activeCount),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Text(
+                text =
+                    overallProgress?.let { progress ->
+                        "${(progress * 100f).toInt()}%"
+                    } ?: stringResource(R.string.web_session_downloads_active_unknown),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+        }
     }
 }
 

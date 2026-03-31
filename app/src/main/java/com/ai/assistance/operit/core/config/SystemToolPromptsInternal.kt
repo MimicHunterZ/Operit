@@ -143,391 +143,192 @@ object SystemToolPromptsInternal {
                                 )
                         ),
                         ToolPrompt(
-                            name = "start_browser",
-                            description = "Start a persistent browser session and open a floating browser window.",
-                            parametersStructured =
-                                listOf(
-                                    ToolParameterSchema(
-                                        name = "url",
-                                        type = "string",
-                                        description = "optional, initial URL to open",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "headers",
-                                        type = "string",
-                                        description = "optional, JSON object string for request headers",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "user_agent",
-                                        type = "string",
-                                        description = "optional, custom user agent",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "session_name",
-                                        type = "string",
-                                        description = "optional, label shown in the floating window title",
-                                        required = false
-                                    )
-                                )
-                        ),
-                        ToolPrompt(
-                            name = "stop_browser",
-                            description = "Stop one browser session or all browser sessions.",
-                            parametersStructured =
-                                listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "optional when close_all=true, browser session id",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "close_all",
-                                        type = "boolean",
-                                        description = "optional, stop all sessions when true",
-                                        required = false,
-                                        default = "false"
-                                    )
-                                )
-                        ),
-                        ToolPrompt(
-                            name = "browser_navigate",
-                            description = "Navigate a browser session to a URL.",
-                            parametersStructured =
-                                listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "browser session id",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "url",
-                                        type = "string",
-                                        description = "target URL",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "headers",
-                                        type = "string",
-                                        description = "optional, JSON object string for request headers",
-                                        required = false
-                                    )
-                                )
-                        ),
-                        ToolPrompt(
-                            name = "browser_eval",
-                            description = "Run JavaScript in a browser session.",
-                            parametersStructured =
-                                listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "browser session id",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "script",
-                                        type = "string",
-                                        description = "JavaScript source code",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "timeout_ms",
-                                        type = "integer",
-                                        description = "optional, script timeout in milliseconds",
-                                        required = false,
-                                        default = "10000"
-                                    )
-                                )
-                        ),
-                        ToolPrompt(
                             name = "browser_click",
-                            description = "Click an element by snapshot ref. If the click triggers a file download, the result will include download details.",
+                            description = "Click an element on the current page by snapshot ref.",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "optional, browser session id",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "ref",
-                                        type = "string",
-                                        description = "required, exact target element ref from browser_snapshot output",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "element",
-                                        type = "string",
-                                        description = "optional, human-readable element description",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "button",
-                                        type = "string",
-                                        description = "optional, left/right/middle",
-                                        required = false,
-                                        default = "left"
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "modifiers",
-                                        type = "string",
-                                        description = "optional JSON array, only Alt/Control/ControlOrMeta/Meta/Shift",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "doubleClick",
-                                        type = "boolean",
-                                        description = "optional, perform double click",
-                                        required = false,
-                                        default = "false"
-                                    )
+                                    ToolParameterSchema(name = "ref", type = "string", description = "target element ref from browser_snapshot output", required = true),
+                                    ToolParameterSchema(name = "element", type = "string", description = "optional, human-readable element description", required = false),
+                                    ToolParameterSchema(name = "doubleClick", type = "boolean", description = "optional, perform a double click instead of a single click", required = false, default = "false"),
+                                    ToolParameterSchema(name = "button", type = "string", description = "optional mouse button: left/right/middle", required = false, default = "left"),
+                                    ToolParameterSchema(name = "modifiers", type = "array", description = "optional modifier keys array: Alt/Control/ControlOrMeta/Meta/Shift", required = false)
                                 )
                         ),
                         ToolPrompt(
-                            name = "browser_fill",
-                            description = "Fill an input element by CSS selector.",
+                            name = "browser_close",
+                            description = "Close the current browser tab. Closing the last tab also closes the browser overlay.",
+                            parametersStructured = emptyList()
+                        ),
+                        ToolPrompt(
+                            name = "browser_console_messages",
+                            description = "Read browser console messages for the current page.",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "browser session id",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "selector",
-                                        type = "string",
-                                        description = "CSS selector",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "value",
-                                        type = "string",
-                                        description = "value to set",
-                                        required = true
-                                    )
+                                    ToolParameterSchema(name = "level", type = "string", description = "optional console level: error/warning/info/debug", required = false, default = "info"),
+                                    ToolParameterSchema(name = "filename", type = "string", description = "optional output file name for large results", required = false)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_drag",
+                            description = "Perform drag and drop between two page elements.",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "startElement", type = "string", description = "human-readable source element description", required = true),
+                                    ToolParameterSchema(name = "startRef", type = "string", description = "source element ref from browser_snapshot output", required = true),
+                                    ToolParameterSchema(name = "endElement", type = "string", description = "human-readable target element description", required = true),
+                                    ToolParameterSchema(name = "endRef", type = "string", description = "target element ref from browser_snapshot output", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_evaluate",
+                            description = "Evaluate a JavaScript function on the page or on a target element.",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "function", type = "string", description = "() => { ... } or (element) => { ... }", required = true),
+                                    ToolParameterSchema(name = "element", type = "string", description = "optional, human-readable element description", required = false),
+                                    ToolParameterSchema(name = "ref", type = "string", description = "optional target element ref; required when element is provided", required = false)
                                 )
                         ),
                         ToolPrompt(
                             name = "browser_file_upload",
-                            description = "Upload one or multiple files to an active file chooser in a browser session. `paths` is optional; omit it to cancel the file chooser.",
+                            description = "Upload one or multiple files to the active file chooser. Omit paths to cancel the chooser.",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "optional, browser session id",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "paths",
-                                        type = "string",
-                                        description = "optional JSON array of absolute file paths, e.g. [\"/sdcard/Download/a.txt\"]",
-                                        required = false
-                                    )
+                                    ToolParameterSchema(name = "paths", type = "array", description = "optional absolute file paths", required = false)
                                 )
                         ),
                         ToolPrompt(
-                            name = "browser_wait_for",
-                            description = "Wait for page ready or selector appearance in a browser session.",
+                            name = "browser_fill_form",
+                            description = "Fill multiple form fields on the current page.",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "browser session id",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "selector",
-                                        type = "string",
-                                        description = "optional, CSS selector to wait for",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "timeout_ms",
-                                        type = "integer",
-                                        description = "optional, wait timeout in milliseconds",
-                                        required = false,
-                                        default = "10000"
-                                    )
+                                    ToolParameterSchema(name = "fields", type = "array", description = "array of field objects with name/type/value plus ref or selector", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_handle_dialog",
+                            description = "Accept or dismiss the currently open dialog.",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "accept", type = "boolean", description = "true to accept, false to dismiss", required = true),
+                                    ToolParameterSchema(name = "promptText", type = "string", description = "optional prompt text when handling a prompt dialog", required = false)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_hover",
+                            description = "Hover over an element on the current page.",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "element", type = "string", description = "optional, human-readable element description", required = false),
+                                    ToolParameterSchema(name = "ref", type = "string", description = "target element ref from browser_snapshot output", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_navigate",
+                            description = "Navigate the active browser tab to a URL. If no tab exists yet, the first tab is created automatically.",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "url", type = "string", description = "target URL", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_navigate_back",
+                            description = "Go back in the current tab history.",
+                            parametersStructured = emptyList()
+                        ),
+                        ToolPrompt(
+                            name = "browser_network_requests",
+                            description = "Read network requests recorded for the current page.",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "includeStatic", type = "boolean", description = "optional, include static asset requests", required = false, default = "false"),
+                                    ToolParameterSchema(name = "filename", type = "string", description = "optional output file name for large results", required = false)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_press_key",
+                            description = "Press a keyboard key in the current page.",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "key", type = "string", description = "key name, for example ArrowLeft or a", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_resize",
+                            description = "Resize the browser viewport.",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "width", type = "number", description = "viewport width", required = true),
+                                    ToolParameterSchema(name = "height", type = "number", description = "viewport height", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_run_code",
+                            description = "Run a Playwright-style code snippet against the current tab.",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "code", type = "string", description = "Playwright-style JavaScript snippet", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_select_option",
+                            description = "Select option values in a dropdown element.",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "element", type = "string", description = "optional, human-readable element description", required = false),
+                                    ToolParameterSchema(name = "ref", type = "string", description = "target select element ref from browser_snapshot output", required = true),
+                                    ToolParameterSchema(name = "values", type = "array", description = "option values or visible texts to select", required = true)
                                 )
                         ),
                         ToolPrompt(
                             name = "browser_snapshot",
-                            description = "Capture current page snapshot text from a browser session.",
+                            description = "Capture a structured accessibility-style snapshot of the current page.",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "browser session id",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "include_links",
-                                        type = "boolean",
-                                        description = "optional, include link list",
-                                        required = false,
-                                        default = "true"
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "include_images",
-                                        type = "boolean",
-                                        description = "optional, include image list",
-                                        required = false,
-                                        default = "false"
-                                    )
+                                    ToolParameterSchema(name = "filename", type = "string", description = "optional output markdown file name", required = false)
                                 )
                         ),
                         ToolPrompt(
-                            name = "browser_userscript_list",
-                            description = "List installed browser session userscripts.",
+                            name = "browser_take_screenshot",
+                            description = "Take a screenshot of the current page or of a specific element.",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "include_disabled",
-                                        type = "boolean",
-                                        description = "optional, include disabled userscripts",
-                                        required = false,
-                                        default = "true"
-                                    )
+                                    ToolParameterSchema(name = "type", type = "string", description = "optional image type: png or jpeg", required = false, default = "png"),
+                                    ToolParameterSchema(name = "filename", type = "string", description = "optional output file name", required = false),
+                                    ToolParameterSchema(name = "element", type = "string", description = "optional element description; when present ref is required", required = false),
+                                    ToolParameterSchema(name = "ref", type = "string", description = "optional element ref; when present element is required", required = false),
+                                    ToolParameterSchema(name = "fullPage", type = "boolean", description = "optional full-page capture; cannot be used with element screenshots", required = false, default = "false")
                                 )
                         ),
                         ToolPrompt(
-                            name = "browser_userscript_install",
-                            description = "Install a browser session userscript from a URL, a local file path, or inline source text.",
+                            name = "browser_type",
+                            description = "Type text into an editable element.",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "url",
-                                        type = "string",
-                                        description = "optional, remote userscript URL; exactly one of url/path/source is required",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "path",
-                                        type = "string",
-                                        description = "optional, absolute local .user.js file path; exactly one of url/path/source is required",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "source",
-                                        type = "string",
-                                        description = "optional, raw userscript source text; exactly one of url/path/source is required",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "source_url",
-                                        type = "string",
-                                        description = "optional, canonical source URL stored for inline/local installs",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "source_display",
-                                        type = "string",
-                                        description = "optional, source label shown in userscript library",
-                                        required = false
-                                    )
+                                    ToolParameterSchema(name = "element", type = "string", description = "optional, human-readable element description", required = false),
+                                    ToolParameterSchema(name = "ref", type = "string", description = "target element ref from browser_snapshot output", required = true),
+                                    ToolParameterSchema(name = "text", type = "string", description = "text to type", required = true),
+                                    ToolParameterSchema(name = "submit", type = "boolean", description = "optional, press Enter after typing", required = false, default = "false"),
+                                    ToolParameterSchema(name = "slowly", type = "boolean", description = "optional, type character by character", required = false, default = "false")
                                 )
                         ),
                         ToolPrompt(
-                            name = "browser_userscript_start",
-                            description = "Enable an installed browser session userscript.",
+                            name = "browser_wait_for",
+                            description = "Wait for text to appear, disappear, or for a duration to pass.",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "script_id",
-                                        type = "integer",
-                                        description = "optional, installed userscript id; preferred when known",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "name",
-                                        type = "string",
-                                        description = "optional, userscript name when script_id is omitted",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "namespace",
-                                        type = "string",
-                                        description = "optional, userscript namespace used to disambiguate name lookups",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "source_url",
-                                        type = "string",
-                                        description = "optional, source URL used to disambiguate duplicate names",
-                                        required = false
-                                    )
+                                    ToolParameterSchema(name = "time", type = "number", description = "optional wait duration in seconds", required = false),
+                                    ToolParameterSchema(name = "text", type = "string", description = "optional text that must appear", required = false),
+                                    ToolParameterSchema(name = "textGone", type = "string", description = "optional text that must disappear", required = false)
                                 )
                         ),
                         ToolPrompt(
-                            name = "browser_userscript_stop",
-                            description = "Disable an installed browser session userscript.",
+                            name = "browser_tabs",
+                            description = "List, create, select, or close browser tabs using 0-based indexes.",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "script_id",
-                                        type = "integer",
-                                        description = "optional, installed userscript id; preferred when known",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "name",
-                                        type = "string",
-                                        description = "optional, userscript name when script_id is omitted",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "namespace",
-                                        type = "string",
-                                        description = "optional, userscript namespace used to disambiguate name lookups",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "source_url",
-                                        type = "string",
-                                        description = "optional, source URL used to disambiguate duplicate names",
-                                        required = false
-                                    )
-                                )
-                        ),
-                        ToolPrompt(
-                            name = "browser_userscript_uninstall",
-                            description = "Uninstall a browser session userscript from the local library.",
-                            parametersStructured =
-                                listOf(
-                                    ToolParameterSchema(
-                                        name = "script_id",
-                                        type = "integer",
-                                        description = "optional, installed userscript id; preferred when known",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "name",
-                                        type = "string",
-                                        description = "optional, userscript name when script_id is omitted",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "namespace",
-                                        type = "string",
-                                        description = "optional, userscript namespace used to disambiguate name lookups",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "source_url",
-                                        type = "string",
-                                        description = "optional, source URL used to disambiguate duplicate names",
-                                        required = false
-                                    )
+                                    ToolParameterSchema(name = "action", type = "string", description = "one of: list, create, select, close", required = true),
+                                    ToolParameterSchema(name = "index", type = "integer", description = "optional tab index used by select or close", required = false)
                                 )
                         ),
                         ToolPrompt(
@@ -2961,411 +2762,192 @@ object SystemToolPromptsInternal {
                                 )
                         ),
                         ToolPrompt(
-                            name = "start_browser",
-                            description = "启动持久化浏览器会话并打开悬浮浏览窗口。",
-                            parametersStructured =
-                                listOf(
-                                    ToolParameterSchema(
-                                        name = "url",
-                                        type = "string",
-                                        description = "可选，初始打开的 URL",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "headers",
-                                        type = "string",
-                                        description = "可选，请求头 JSON 对象字符串",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "user_agent",
-                                        type = "string",
-                                        description = "可选，自定义 User-Agent",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "session_name",
-                                        type = "string",
-                                        description = "可选，会话显示名称",
-                                        required = false
-                                    )
-                                )
-                        ),
-                        ToolPrompt(
-                            name = "stop_browser",
-                            description = "停止一个浏览器会话或全部浏览器会话。",
-                            parametersStructured =
-                                listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "可选，close_all=true 时可省略",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "close_all",
-                                        type = "boolean",
-                                        description = "可选，为 true 时停止全部会话",
-                                        required = false,
-                                        default = "false"
-                                    )
-                                )
-                        ),
-                        ToolPrompt(
-                            name = "browser_navigate",
-                            description = "让浏览器会话跳转到指定 URL。",
-                            parametersStructured =
-                                listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "浏览器会话 ID",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "url",
-                                        type = "string",
-                                        description = "目标 URL",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "headers",
-                                        type = "string",
-                                        description = "可选，请求头 JSON 对象字符串",
-                                        required = false
-                                    )
-                                )
-                        ),
-                        ToolPrompt(
-                            name = "browser_eval",
-                            description = "在浏览器会话中执行 JavaScript。",
-                            parametersStructured =
-                                listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "浏览器会话 ID",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "script",
-                                        type = "string",
-                                        description = "JavaScript 脚本",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "timeout_ms",
-                                        type = "integer",
-                                        description = "可选，超时时间（毫秒）",
-                                        required = false,
-                                        default = "10000"
-                                    )
-                                )
-                        ),
-                        ToolPrompt(
                             name = "browser_click",
-                            description = "按快照 ref 或 CSS 选择器点击元素；如果点击触发文件下载，返回结果会包含下载信息。",
+                            description = "按快照 ref 点击当前页面元素。",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "可选，浏览器会话 ID",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "ref",
-                                        type = "string",
-                                        description = "可选，来自 browser_snapshot 输出的元素引用",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "element",
-                                        type = "string",
-                                        description = "可选，人类可读元素描述",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "selector",
-                                        type = "string",
-                                        description = "可选，CSS 选择器（提供 ref 时可省略）",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "index",
-                                        type = "integer",
-                                        description = "可选，匹配元素中的 0 基索引",
-                                        required = false,
-                                        default = "0"
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "button",
-                                        type = "string",
-                                        description = "可选，left/right/middle",
-                                        required = false,
-                                        default = "left"
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "modifiers",
-                                        type = "string",
-                                        description = "可选，修饰键 JSON 数组：Alt/Control/ControlOrMeta/Meta/Shift",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "double_click",
-                                        type = "boolean",
-                                        description = "可选，是否双击",
-                                        required = false,
-                                        default = "false"
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "timeout_ms",
-                                        type = "integer",
-                                        description = "可选，动作可交互检查超时（毫秒）",
-                                        required = false,
-                                        default = "10000"
-                                    )
+                                    ToolParameterSchema(name = "ref", type = "string", description = "来自 browser_snapshot 输出的目标元素 ref", required = true),
+                                    ToolParameterSchema(name = "element", type = "string", description = "可选，人类可读元素描述", required = false),
+                                    ToolParameterSchema(name = "doubleClick", type = "boolean", description = "可选，是否双击", required = false, default = "false"),
+                                    ToolParameterSchema(name = "button", type = "string", description = "可选鼠标按键：left/right/middle", required = false, default = "left"),
+                                    ToolParameterSchema(name = "modifiers", type = "array", description = "可选修饰键数组：Alt/Control/ControlOrMeta/Meta/Shift", required = false)
                                 )
                         ),
                         ToolPrompt(
-                            name = "browser_fill",
-                            description = "按 CSS 选择器填写输入框。",
+                            name = "browser_close",
+                            description = "关闭当前浏览器 tab。关闭最后一个 tab 时也会关闭浏览器浮窗。",
+                            parametersStructured = emptyList()
+                        ),
+                        ToolPrompt(
+                            name = "browser_console_messages",
+                            description = "读取当前页面的浏览器控制台消息。",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "浏览器会话 ID",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "selector",
-                                        type = "string",
-                                        description = "CSS 选择器",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "value",
-                                        type = "string",
-                                        description = "要写入的值",
-                                        required = true
-                                    )
+                                    ToolParameterSchema(name = "level", type = "string", description = "可选，控制台级别：error/warning/info/debug", required = false, default = "info"),
+                                    ToolParameterSchema(name = "filename", type = "string", description = "可选，大结果输出文件名", required = false)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_drag",
+                            description = "在两个页面元素之间执行拖拽。",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "startElement", type = "string", description = "源元素的人类可读描述", required = true),
+                                    ToolParameterSchema(name = "startRef", type = "string", description = "源元素 ref", required = true),
+                                    ToolParameterSchema(name = "endElement", type = "string", description = "目标元素的人类可读描述", required = true),
+                                    ToolParameterSchema(name = "endRef", type = "string", description = "目标元素 ref", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_evaluate",
+                            description = "在页面上或目标元素上执行 JavaScript 函数。",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "function", type = "string", description = "() => { ... } 或 (element) => { ... }", required = true),
+                                    ToolParameterSchema(name = "element", type = "string", description = "可选，人类可读元素描述", required = false),
+                                    ToolParameterSchema(name = "ref", type = "string", description = "可选，目标元素 ref；提供 element 时必须同时提供", required = false)
                                 )
                         ),
                         ToolPrompt(
                             name = "browser_file_upload",
-                            description = "向浏览器会话中的文件选择器上传一个或多个文件。`paths` 为可选，不传时会取消 file chooser。",
+                            description = "向当前 file chooser 上传一个或多个文件。不传 paths 时取消选择器。",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "可选，浏览器会话 ID",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "paths",
-                                        type = "string",
-                                        description = "可选，绝对路径数组的 JSON 字符串，例如 [\"/sdcard/Download/a.txt\"]",
-                                        required = false
-                                    )
+                                    ToolParameterSchema(name = "paths", type = "array", description = "可选，绝对文件路径数组", required = false)
                                 )
                         ),
                         ToolPrompt(
-                            name = "browser_wait_for",
-                            description = "等待页面就绪或等待元素出现。",
+                            name = "browser_fill_form",
+                            description = "批量填写当前页面的多个表单字段。",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "浏览器会话 ID",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "selector",
-                                        type = "string",
-                                        description = "可选，等待出现的 CSS 选择器",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "timeout_ms",
-                                        type = "integer",
-                                        description = "可选，超时时间（毫秒）",
-                                        required = false,
-                                        default = "10000"
-                                    )
+                                    ToolParameterSchema(name = "fields", type = "array", description = "字段对象数组，每项包含 name/type/value 以及 ref 或 selector", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_handle_dialog",
+                            description = "接受或取消当前打开的对话框。",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "accept", type = "boolean", description = "true 表示接受，false 表示取消", required = true),
+                                    ToolParameterSchema(name = "promptText", type = "string", description = "可选，处理 prompt 时输入的文本", required = false)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_hover",
+                            description = "悬停到当前页面的目标元素上。",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "element", type = "string", description = "可选，人类可读元素描述", required = false),
+                                    ToolParameterSchema(name = "ref", type = "string", description = "目标元素 ref", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_navigate",
+                            description = "让当前活动 tab 跳转到指定 URL。若当前没有 tab，会自动创建首个 tab。",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "url", type = "string", description = "目标 URL", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_navigate_back",
+                            description = "在当前 tab 历史中后退。",
+                            parametersStructured = emptyList()
+                        ),
+                        ToolPrompt(
+                            name = "browser_network_requests",
+                            description = "读取当前页面记录到的网络请求。",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "includeStatic", type = "boolean", description = "可选，是否包含静态资源请求", required = false, default = "false"),
+                                    ToolParameterSchema(name = "filename", type = "string", description = "可选，大结果输出文件名", required = false)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_press_key",
+                            description = "在当前页面按下一个键盘按键。",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "key", type = "string", description = "按键名，例如 ArrowLeft 或 a", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_resize",
+                            description = "调整浏览器视口大小。",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "width", type = "number", description = "视口宽度", required = true),
+                                    ToolParameterSchema(name = "height", type = "number", description = "视口高度", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_run_code",
+                            description = "运行 Playwright 风格的代码片段。",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "code", type = "string", description = "Playwright 风格 JavaScript 代码片段", required = true)
+                                )
+                        ),
+                        ToolPrompt(
+                            name = "browser_select_option",
+                            description = "在下拉元素中选择一个或多个选项值。",
+                            parametersStructured =
+                                listOf(
+                                    ToolParameterSchema(name = "element", type = "string", description = "可选，人类可读元素描述", required = false),
+                                    ToolParameterSchema(name = "ref", type = "string", description = "来自 browser_snapshot 输出的目标下拉元素 ref", required = true),
+                                    ToolParameterSchema(name = "values", type = "array", description = "要选择的值或可见文本数组", required = true)
                                 )
                         ),
                         ToolPrompt(
                             name = "browser_snapshot",
-                            description = "抓取当前浏览器页面快照文本。",
+                            description = "抓取当前页面的结构化无障碍风格快照。",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "session_id",
-                                        type = "string",
-                                        description = "浏览器会话 ID",
-                                        required = true
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "include_links",
-                                        type = "boolean",
-                                        description = "可选，是否包含链接列表",
-                                        required = false,
-                                        default = "true"
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "include_images",
-                                        type = "boolean",
-                                        description = "可选，是否包含图片列表",
-                                        required = false,
-                                        default = "false"
-                                    )
+                                    ToolParameterSchema(name = "filename", type = "string", description = "可选，输出 markdown 文件名", required = false)
                                 )
                         ),
                         ToolPrompt(
-                            name = "browser_userscript_list",
-                            description = "列出已安装的浏览器会话油猴脚本。",
+                            name = "browser_take_screenshot",
+                            description = "截取当前页面或特定元素的截图。",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "include_disabled",
-                                        type = "boolean",
-                                        description = "可选，是否包含已禁用脚本",
-                                        required = false,
-                                        default = "true"
-                                    )
+                                    ToolParameterSchema(name = "type", type = "string", description = "可选，图片类型：png 或 jpeg", required = false, default = "png"),
+                                    ToolParameterSchema(name = "filename", type = "string", description = "可选，输出文件名", required = false),
+                                    ToolParameterSchema(name = "element", type = "string", description = "可选，元素描述；提供时必须同时提供 ref", required = false),
+                                    ToolParameterSchema(name = "ref", type = "string", description = "可选，元素 ref；提供时必须同时提供 element", required = false),
+                                    ToolParameterSchema(name = "fullPage", type = "boolean", description = "可选，是否整页截图；元素截图时不可使用", required = false, default = "false")
                                 )
                         ),
                         ToolPrompt(
-                            name = "browser_userscript_install",
-                            description = "从 URL、本地文件路径或内联源码安装浏览器会话油猴脚本。",
+                            name = "browser_type",
+                            description = "向可编辑元素输入文本。",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "url",
-                                        type = "string",
-                                        description = "可选，远程脚本 URL；url/path/source 三者必须且只能传一个",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "path",
-                                        type = "string",
-                                        description = "可选，绝对本地 .user.js 文件路径；url/path/source 三者必须且只能传一个",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "source",
-                                        type = "string",
-                                        description = "可选，原始 userscript 源码；url/path/source 三者必须且只能传一个",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "source_url",
-                                        type = "string",
-                                        description = "可选，为本地或内联安装补充记录的源地址",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "source_display",
-                                        type = "string",
-                                        description = "可选，在脚本库中显示的来源标签",
-                                        required = false
-                                    )
+                                    ToolParameterSchema(name = "element", type = "string", description = "可选，人类可读元素描述", required = false),
+                                    ToolParameterSchema(name = "ref", type = "string", description = "来自 browser_snapshot 输出的目标元素 ref", required = true),
+                                    ToolParameterSchema(name = "text", type = "string", description = "要输入的文本", required = true),
+                                    ToolParameterSchema(name = "submit", type = "boolean", description = "可选，输入后是否按 Enter 提交", required = false, default = "false"),
+                                    ToolParameterSchema(name = "slowly", type = "boolean", description = "可选，是否逐字符输入", required = false, default = "false")
                                 )
                         ),
                         ToolPrompt(
-                            name = "browser_userscript_start",
-                            description = "启用一个已安装的浏览器会话油猴脚本。",
+                            name = "browser_wait_for",
+                            description = "等待文本出现、消失，或等待指定时长。",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "script_id",
-                                        type = "integer",
-                                        description = "可选，已安装脚本 ID；已知时优先传这个",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "name",
-                                        type = "string",
-                                        description = "可选，不传 script_id 时按脚本名查找",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "namespace",
-                                        type = "string",
-                                        description = "可选，用于在按名称查找时消歧",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "source_url",
-                                        type = "string",
-                                        description = "可选，用于在重名脚本间进一步消歧",
-                                        required = false
-                                    )
+                                    ToolParameterSchema(name = "time", type = "number", description = "可选，等待秒数", required = false),
+                                    ToolParameterSchema(name = "text", type = "string", description = "可选，等待出现的文本", required = false),
+                                    ToolParameterSchema(name = "textGone", type = "string", description = "可选，等待消失的文本", required = false)
                                 )
                         ),
                         ToolPrompt(
-                            name = "browser_userscript_stop",
-                            description = "禁用一个已安装的浏览器会话油猴脚本。",
+                            name = "browser_tabs",
+                            description = "使用 0-based 索引列出、创建、切换或关闭浏览器 tab。",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(
-                                        name = "script_id",
-                                        type = "integer",
-                                        description = "可选，已安装脚本 ID；已知时优先传这个",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "name",
-                                        type = "string",
-                                        description = "可选，不传 script_id 时按脚本名查找",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "namespace",
-                                        type = "string",
-                                        description = "可选，用于在按名称查找时消歧",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "source_url",
-                                        type = "string",
-                                        description = "可选，用于在重名脚本间进一步消歧",
-                                        required = false
-                                    )
-                                )
-                        ),
-                        ToolPrompt(
-                            name = "browser_userscript_uninstall",
-                            description = "从本地脚本库卸载一个浏览器会话油猴脚本。",
-                            parametersStructured =
-                                listOf(
-                                    ToolParameterSchema(
-                                        name = "script_id",
-                                        type = "integer",
-                                        description = "可选，已安装脚本 ID；已知时优先传这个",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "name",
-                                        type = "string",
-                                        description = "可选，不传 script_id 时按脚本名查找",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "namespace",
-                                        type = "string",
-                                        description = "可选，用于在按名称查找时消歧",
-                                        required = false
-                                    ),
-                                    ToolParameterSchema(
-                                        name = "source_url",
-                                        type = "string",
-                                        description = "可选，用于在重名脚本间进一步消歧",
-                                        required = false
-                                    )
+                                    ToolParameterSchema(name = "action", type = "string", description = "list/create/select/close 之一", required = true),
+                                    ToolParameterSchema(name = "index", type = "integer", description = "可选，select 或 close 使用的 tab 索引", required = false)
                                 )
                         ),
                         ToolPrompt(

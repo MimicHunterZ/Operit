@@ -16,6 +16,7 @@ import com.ai.assistance.operit.data.model.ChatMessage
 import com.ai.assistance.operit.data.model.InputProcessingState
 import com.ai.assistance.operit.data.model.CharacterCardChatModelBindingMode
 import com.ai.assistance.operit.data.model.ActivePrompt
+import com.ai.assistance.operit.core.tools.ToolProgressBus
 import com.ai.assistance.operit.ui.features.chat.viewmodel.UiStateDelegate
 import com.ai.assistance.operit.data.preferences.CharacterCardManager
 import com.ai.assistance.operit.data.preferences.CharacterGroupCardManager
@@ -959,18 +960,37 @@ class MessageCoordinationDelegate(
         }
     }
 
+    private suspend fun cancelSummaryStreamingInternal() {
+        runCatching {
+            getEnhancedAiService()
+                ?.getAIServiceForFunction(FunctionType.SUMMARY)
+                ?.cancelStreaming()
+        }.onFailure { throwable ->
+            AppLogger.w(TAG, "取消 SUMMARY 流失败: ${throwable.message}")
+        }
+        ToolProgressBus.clear()
+    }
+
     /**
      * 取消正在进行的总结操作
      */
     private suspend fun cancelSummaryInternal(targetChatId: String? = null) {
+        val currentChatId = targetChatId ?: chatHistoryDelegate.currentChatId.value
         val shouldCancelSummary =
             _isSummarizing.value &&
                 (targetChatId == null || _summarizingChatId.value == targetChatId)
         val shouldCancelAsyncSummary =
             _isSendTriggeredSummarizing.value &&
                 (targetChatId == null || _sendTriggeredSummarizingChatId.value == targetChatId)
+        val shouldCancelCurrentSummarizingUi =
+            currentChatId != null &&
+                messageProcessingDelegate.inputProcessingStateByChatId.value[currentChatId] is InputProcessingState.Summarizing
 
-        if (!shouldCancelSummary && !shouldCancelAsyncSummary) {
+        if (!shouldCancelSummary && !shouldCancelAsyncSummary && !shouldCancelCurrentSummarizingUi) {
+            if (targetChatId == null) {
+                // 兜住尚未被协调层标记，但底层 SUMMARY 请求仍在执行的场景。
+                cancelSummaryStreamingInternal()
+            }
             return
         }
 
@@ -994,6 +1014,13 @@ class MessageCoordinationDelegate(
             _isSendTriggeredSummarizing.value = false
             _sendTriggeredSummarizingChatId.value = null
         }
+
+        if (shouldCancelCurrentSummarizingUi) {
+            currentChatId?.let { affectedChatIds.add(it) }
+        }
+
+        // 先真正取消 SUMMARY 模型请求，再取消协程/清理 UI，避免进度继续推进。
+        cancelSummaryStreamingInternal()
 
         jobsToCancel.forEach { job -> job.cancel() }
         jobsToCancel.forEach { job ->

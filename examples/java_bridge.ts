@@ -330,7 +330,7 @@ const BRIDGE_CASES: BridgeCaseDefinition[] = [
     { name: "android_bridge_direct", handler: caseAndroidBridgeDirect }
 ];
 
-async function main(params: BridgeTestParams = {}): Promise<void> {
+async function bridgeMain(params: BridgeTestParams = {}): Promise<void> {
     const startedAt = new Date().toISOString();
     const startedMs = Date.now();
 
@@ -379,5 +379,5 @@ async function main(params: BridgeTestParams = {}): Promise<void> {
     complete(suiteResult);
 }
 
-exports.main = main;
-exports.runCase = main;
+exports.main = bridgeMain;
+exports.runCase = bridgeMain;

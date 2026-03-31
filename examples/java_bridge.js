@@ -251,7 +251,7 @@ const BRIDGE_CASES = [
     { name: "native_low_level", handler: caseNativeLowLevel },
     { name: "android_bridge_direct", handler: caseAndroidBridgeDirect }
 ];
-async function main(params = {}) {
+async function bridgeMain(params = {}) {
     const startedAt = new Date().toISOString();
     const startedMs = Date.now();
     const requestedName = String(params.caseName || "").trim();
@@ -291,5 +291,5 @@ async function main(params = {}) {
     };
     complete(suiteResult);
 }
-exports.main = main;
-exports.runCase = main;
+exports.main = bridgeMain;
+exports.runCase = bridgeMain;

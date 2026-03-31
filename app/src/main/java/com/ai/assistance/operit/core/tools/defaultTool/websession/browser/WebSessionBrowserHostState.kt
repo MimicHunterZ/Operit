@@ -8,6 +8,7 @@ internal enum class WebSessionBrowserSheetRoute {
     NONE,
     TABS,
     MENU,
+    DOWNLOADS,
     HISTORY,
     BOOKMARKS,
     USERSCRIPTS
@@ -40,9 +41,55 @@ internal data class WebSessionBrowserState(
     val isLoading: Boolean = false,
     val hasSslError: Boolean = false,
     val isDesktopMode: Boolean = true,
+    val activeDownloadCount: Int = 0,
+    val hasFailedDownloads: Boolean = false,
+    val failedDownloadCount: Int = 0,
+    val latestCompletedDownloadName: String? = null,
+    val overallDownloadProgress: Float? = null,
     val tabs: List<WebSessionBrowserTab> = emptyList(),
     val sessionHistory: List<WebSessionSessionHistoryItem> = emptyList(),
     val userscriptMenuCommands: List<UserscriptPageMenuCommand> = emptyList()
+)
+
+internal enum class BrowserDownloadFilter {
+    IN_PROGRESS,
+    COMPLETED,
+    FAILED
+}
+
+@Immutable
+internal data class BrowserDownloadItem(
+    val id: String,
+    val fileName: String,
+    val status: String,
+    val type: String,
+    val progress: Float?,
+    val downloadedBytes: Long,
+    val totalBytes: Long,
+    val speedBytesPerSecond: Long,
+    val destinationPath: String,
+    val errorMessage: String?,
+    val canPause: Boolean,
+    val canResume: Boolean,
+    val canCancel: Boolean,
+    val canRetry: Boolean,
+    val canDelete: Boolean,
+    val canDeleteFile: Boolean,
+    val canOpenFile: Boolean,
+    val canOpenLocation: Boolean
+)
+
+@Immutable
+internal data class BrowserDownloadUiState(
+    val tasks: List<BrowserDownloadItem> = emptyList(),
+    val selectedFilter: BrowserDownloadFilter = BrowserDownloadFilter.IN_PROGRESS
+)
+
+@Immutable
+internal data class ExternalOpenPromptState(
+    val requestId: String,
+    val title: String,
+    val target: String
 )
 
 @Immutable
@@ -50,7 +97,9 @@ internal data class WebSessionBrowserHostState(
     val browserState: WebSessionBrowserState = WebSessionBrowserState(),
     val sheetRoute: WebSessionBrowserSheetRoute = WebSessionBrowserSheetRoute.NONE,
     val isEditingUrl: Boolean = false,
-    val urlDraft: String = WebSessionBrowserState().currentUrl
+    val urlDraft: String = WebSessionBrowserState().currentUrl,
+    val externalOpenPrompt: ExternalOpenPromptState? = null,
+    val downloadUiState: BrowserDownloadUiState = BrowserDownloadUiState()
 )
 
 @Serializable

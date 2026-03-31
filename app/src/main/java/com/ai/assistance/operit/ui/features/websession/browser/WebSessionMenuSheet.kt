@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DesktopWindows
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Smartphone
@@ -30,7 +31,9 @@ import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.Use
 @Composable
 internal fun WebSessionMenuSheet(
     isDesktopMode: Boolean,
+    downloadSummary: String?,
     onOpenHistory: () -> Unit,
+    onOpenDownloads: () -> Unit,
     onOpenBookmarks: () -> Unit,
     onOpenUserscripts: () -> Unit,
     userscriptMenuCommands: List<UserscriptPageMenuCommand>,
@@ -64,6 +67,12 @@ internal fun WebSessionMenuSheet(
             title = stringResource(R.string.web_session_bookmarks),
             icon = Icons.Filled.Bookmark,
             onClick = onOpenBookmarks
+        )
+        MenuActionCard(
+            title = stringResource(R.string.web_session_downloads),
+            subtitle = downloadSummary,
+            icon = Icons.Filled.Download,
+            onClick = onOpenDownloads
         )
         MenuActionCard(
             title = stringResource(R.string.web_session_userscripts),

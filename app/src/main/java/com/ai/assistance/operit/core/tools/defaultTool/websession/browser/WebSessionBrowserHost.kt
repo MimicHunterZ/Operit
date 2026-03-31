@@ -68,6 +68,15 @@ internal class WebSessionBrowserHost(
         fun onDeleteUserscript(scriptId: Long)
         fun onCheckUserscriptUpdate(scriptId: Long)
         fun onInvokeUserscriptMenu(commandId: String)
+        fun onPauseDownload(taskId: String)
+        fun onResumeDownload(taskId: String)
+        fun onCancelDownload(taskId: String)
+        fun onRetryDownload(taskId: String)
+        fun onDeleteDownload(taskId: String, deleteFile: Boolean)
+        fun onOpenDownloadedFile(taskId: String)
+        fun onOpenDownloadLocation(taskId: String)
+        fun onConfirmExternalOpen(requestId: String)
+        fun onCancelExternalOpen(requestId: String)
     }
 
     private val windowManager = appContext.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -84,6 +93,8 @@ internal class WebSessionBrowserHost(
 
     private var isExpanded: Boolean = true
     private var hostState by mutableStateOf(WebSessionBrowserHostState())
+    private var expandedWidthPx: Int? = null
+    private var expandedHeightPx: Int? = null
 
     fun ensureCreated(initialExpanded: Boolean = true) {
         if (rootView != null) {
@@ -125,7 +136,9 @@ internal class WebSessionBrowserHost(
                             globalHistory = history,
                             userscriptUiState = userscriptUiState,
                             webViewHost = webViewHost,
-                            onHostStateChange = { hostState = it },
+                            onHostStateChange = { transform ->
+                                hostState = transform(hostState)
+                            },
                             onNavigate = callbacks::onNavigate,
                             onBack = callbacks::onBack,
                             onForward = callbacks::onForward,
@@ -150,7 +163,16 @@ internal class WebSessionBrowserHost(
                             onSetUserscriptEnabled = callbacks::onSetUserscriptEnabled,
                             onDeleteUserscript = callbacks::onDeleteUserscript,
                             onCheckUserscriptUpdate = callbacks::onCheckUserscriptUpdate,
-                            onInvokeUserscriptMenu = callbacks::onInvokeUserscriptMenu
+                            onInvokeUserscriptMenu = callbacks::onInvokeUserscriptMenu,
+                            onPauseDownload = callbacks::onPauseDownload,
+                            onResumeDownload = callbacks::onResumeDownload,
+                            onCancelDownload = callbacks::onCancelDownload,
+                            onRetryDownload = callbacks::onRetryDownload,
+                            onDeleteDownload = callbacks::onDeleteDownload,
+                            onOpenDownloadedFile = callbacks::onOpenDownloadedFile,
+                            onOpenDownloadLocation = callbacks::onOpenDownloadLocation,
+                            onConfirmExternalOpen = callbacks::onConfirmExternalOpen,
+                            onCancelExternalOpen = callbacks::onCancelExternalOpen
                         )
                     }
                 }
@@ -193,10 +215,19 @@ internal class WebSessionBrowserHost(
         webViewHost.clear()
     }
 
-    fun updateBrowserState(browserState: WebSessionBrowserState) {
+    fun updateHostProjection(
+        browserState: WebSessionBrowserState,
+        downloadUiState: BrowserDownloadUiState,
+        externalOpenPrompt: ExternalOpenPromptState?
+    ) {
         hostState =
             hostState.copy(
                 browserState = browserState,
+                downloadUiState =
+                    downloadUiState.copy(
+                        selectedFilter = hostState.downloadUiState.selectedFilter
+                    ),
+                externalOpenPrompt = externalOpenPrompt,
                 urlDraft =
                     if (hostState.isEditingUrl) {
                         hostState.urlDraft
@@ -204,10 +235,67 @@ internal class WebSessionBrowserHost(
                         browserState.currentUrl
                     }
             )
+        updateIndicatorLayoutForCurrentState()
     }
 
     fun attachActiveWebView(webView: WebView?) {
         webViewHost.setActiveWebView(webView)
+    }
+
+    fun isExpanded(): Boolean = isExpanded
+
+    fun setViewportSize(width: Int, height: Int) {
+        expandedWidthPx = width.coerceAtLeast(dp(240))
+        expandedHeightPx = height.coerceAtLeast(dp(320))
+        if (isExpanded) {
+            rootView?.let { root ->
+                overlayParams?.let { params ->
+                    applyExpandedLayoutParams(params)
+                    overlayParams = params
+                    if (root.windowToken != null) {
+                        windowManager.updateViewLayout(root, params)
+                    }
+                }
+            }
+        }
+    }
+
+    fun clearViewportSizeOverride() {
+        expandedWidthPx = null
+        expandedHeightPx = null
+        if (isExpanded) {
+            rootView?.let { root ->
+                overlayParams?.let { params ->
+                    applyExpandedLayoutParams(params)
+                    overlayParams = params
+                    if (root.windowToken != null) {
+                        windowManager.updateViewLayout(root, params)
+                    }
+                }
+            }
+        }
+    }
+
+    fun currentViewportSize(): Pair<Int, Int> {
+        val params = overlayParams
+        val metrics = appContext.resources.displayMetrics
+        val width =
+            if (isExpanded) {
+                params?.width?.takeIf { it != WindowManager.LayoutParams.MATCH_PARENT }
+                    ?: expandedWidthPx
+                    ?: metrics.widthPixels
+            } else {
+                metrics.widthPixels
+            }
+        val height =
+            if (isExpanded) {
+                params?.height?.takeIf { it != WindowManager.LayoutParams.MATCH_PARENT }
+                    ?: expandedHeightPx
+                    ?: metrics.heightPixels
+            } else {
+                metrics.heightPixels
+            }
+        return width to height
     }
 
     fun setExpanded(expanded: Boolean) {
@@ -233,13 +321,7 @@ internal class WebSessionBrowserHost(
             root.setBackgroundColor(AndroidColor.TRANSPARENT)
             compose.alpha = 1f
 
-            params.width = WindowManager.LayoutParams.MATCH_PARENT
-            params.height = WindowManager.LayoutParams.MATCH_PARENT
-            params.gravity = Gravity.CENTER
-            params.x = 0
-            params.y = 0
-            params.flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-            params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
+            applyExpandedLayoutParams(params)
             hideIndicator()
         } else {
             if (indicatorView == null) {
@@ -274,6 +356,17 @@ internal class WebSessionBrowserHost(
         if (root.windowToken != null) {
             windowManager.updateViewLayout(root, params)
         }
+        updateIndicatorLayoutForCurrentState()
+    }
+
+    private fun applyExpandedLayoutParams(params: WindowManager.LayoutParams) {
+        params.width = expandedWidthPx ?: WindowManager.LayoutParams.MATCH_PARENT
+        params.height = expandedHeightPx ?: WindowManager.LayoutParams.MATCH_PARENT
+        params.gravity = Gravity.CENTER
+        params.x = 0
+        params.y = 0
+        params.flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        params.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
     }
 
     fun showSheet(route: WebSessionBrowserSheetRoute) {
@@ -321,8 +414,13 @@ internal class WebSessionBrowserHost(
                         WebSessionMinimizedIndicator(
                             contentDescription =
                                 appContext.getString(R.string.web_session_accessibility_minimized_indicator),
+                            activeDownloadCount = hostState.browserState.activeDownloadCount,
+                            hasFailedDownloads = hostState.browserState.hasFailedDownloads,
+                            externalOpenPrompt = hostState.externalOpenPrompt,
                             onToggleFullscreen = { setExpanded(true) },
-                            onDragBy = { dx, dy -> moveIndicatorBy(dx, dy) }
+                            onDragBy = { dx, dy -> moveIndicatorBy(dx, dy) },
+                            onConfirmExternalOpen = callbacks::onConfirmExternalOpen,
+                            onCancelExternalOpen = callbacks::onCancelExternalOpen
                         )
                     }
                 }
@@ -356,6 +454,26 @@ internal class WebSessionBrowserHost(
         params.y = (params.y + dy).coerceIn(0, maxY)
         indicatorParams = params
         windowManager.updateViewLayout(indicator, params)
+        syncIndicatorWithMinimizedWindow()
+    }
+
+    private fun updateIndicatorLayoutForCurrentState() {
+        if (isExpanded) {
+            return
+        }
+        val indicator = indicatorView ?: return
+        val params = indicatorParams ?: return
+        val newWidth = indicatorWidthPx()
+        val newHeight = indicatorHeightPx()
+        if (params.width == newWidth && params.height == newHeight) {
+            return
+        }
+        params.width = newWidth
+        params.height = newHeight
+        indicatorParams = params
+        if (indicator.windowToken != null) {
+            windowManager.updateViewLayout(indicator, params)
+        }
         syncIndicatorWithMinimizedWindow()
     }
 
@@ -416,10 +534,9 @@ internal class WebSessionBrowserHost(
                 WindowManager.LayoutParams.TYPE_PHONE
             }
 
-        val size = dp(40).coerceAtLeast(1)
         return WindowManager.LayoutParams(
-            size,
-            size,
+            indicatorWidthPx(),
+            indicatorHeightPx(),
             type,
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
@@ -431,6 +548,20 @@ internal class WebSessionBrowserHost(
             y = dp(16)
         }
     }
+
+    private fun indicatorWidthPx(): Int =
+        if (hostState.externalOpenPrompt != null) {
+            dp(248)
+        } else {
+            dp(40).coerceAtLeast(1)
+        }
+
+    private fun indicatorHeightPx(): Int =
+        if (hostState.externalOpenPrompt != null) {
+            dp(86)
+        } else {
+            dp(40).coerceAtLeast(1)
+        }
 
     private fun dp(value: Int): Int =
         (value * appContext.resources.displayMetrics.density).roundToInt()

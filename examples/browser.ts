@@ -1,688 +1,728 @@
 /* METADATA
 {
     "name": "browser",
-
     "display_name": {
         "zh": "Browser 自动化操作",
         "en": "Browser Automation"
     },
     "description": {
-        "zh": "能够基于真实浏览器会话完成复杂的浏览器自动化。",
-        "en": "Enables complex browser automation based on a real browser session."
+        "zh": "严格对齐 Playwright MCP 默认 browser 工具面的浏览器自动化工具集。",
+        "en": "Browser automation tools aligned to the default Playwright MCP browser surface."
     },
     "enabledByDefault": true,
     "category": "Automatic",
     "tools": [
         {
-            "name": "start",
-            "description": { "zh": "启动浏览器会话并打开悬浮浏览窗口。", "en": "Start a browser session and open a floating browser window." },
-            "parameters": [
-                { "name": "url", "description": { "zh": "可选，初始 URL", "en": "Optional initial URL." }, "type": "string", "required": false },
-                { "name": "headers", "description": { "zh": "可选，请求头对象", "en": "Optional request headers object." }, "type": "object", "required": false },
-                { "name": "user_agent", "description": { "zh": "可选，自定义 User-Agent", "en": "Optional custom User-Agent." }, "type": "string", "required": false },
-                { "name": "session_name", "description": { "zh": "可选，会话名称", "en": "Optional session name." }, "type": "string", "required": false }
-            ]
-        },
-        {
-            "name": "goto",
-            "description": { "zh": "让会话跳转到指定 URL。", "en": "Navigate session to target URL." },
-            "parameters": [
-                { "name": "url", "description": { "zh": "目标 URL", "en": "Target URL." }, "type": "string", "required": true },
-                { "name": "session_id", "description": { "zh": "可选，不传则使用 Kotlin 侧当前活动会话", "en": "Optional. Uses active Kotlin-side session when omitted." }, "type": "string", "required": false },
-                { "name": "headers", "description": { "zh": "可选，请求头对象", "en": "Optional request headers object." }, "type": "object", "required": false }
-            ]
-        },
-        {
             "name": "click",
-            "description": { "zh": "按快照 ref 点击元素。", "en": "Click element by snapshot ref." },
+            "description": { "zh": "点击页面元素。", "en": "Click an element on the page." },
             "parameters": [
-                { "name": "session_id", "description": { "zh": "可选，不传则使用 Kotlin 侧当前活动会话。", "en": "Optional. Uses active Kotlin-side session when omitted." }, "type": "string", "required": false },
-                { "name": "ref", "description": { "zh": "必填，snapshot 中的元素引用（例如 e12）。", "en": "Required element ref from snapshot (for example e12)." }, "type": "string", "required": true },
-                { "name": "element", "description": { "zh": "可选，人类可读元素描述，仅用于语义提示。", "en": "Optional human-readable element description." }, "type": "string", "required": false },
-                { "name": "button", "description": { "zh": "可选，left/right/middle", "en": "Optional mouse button: left/right/middle." }, "type": "string", "required": false },
-                { "name": "modifiers", "description": { "zh": "可选，修饰键数组（仅 Alt/Control/ControlOrMeta/Meta/Shift）。", "en": "Optional modifier keys array (only Alt/Control/ControlOrMeta/Meta/Shift)." }, "type": "array", "required": false },
-                { "name": "doubleClick", "description": { "zh": "可选，是否双击", "en": "Optional double click." }, "type": "boolean", "required": false }
-            ]
-        },
-        {
-            "name": "fill",
-            "description": { "zh": "按 CSS 选择器填写输入框。", "en": "Fill input by CSS selector." },
-            "parameters": [
-                { "name": "selector", "description": { "zh": "CSS 选择器", "en": "CSS selector." }, "type": "string", "required": true },
-                { "name": "value", "description": { "zh": "写入值", "en": "Value to set." }, "type": "string", "required": true },
-                { "name": "session_id", "description": { "zh": "可选，不传则使用 Kotlin 侧当前活动会话", "en": "Optional. Uses active Kotlin-side session when omitted." }, "type": "string", "required": false }
-            ]
-        },
-        {
-            "name": "evaluate",
-            "description": { "zh": "在网页中执行 JavaScript。", "en": "Evaluate JavaScript in current page." },
-            "parameters": [
-                { "name": "script", "description": { "zh": "JavaScript 脚本", "en": "JavaScript source." }, "type": "string", "required": true },
-                { "name": "session_id", "description": { "zh": "可选，不传则使用 Kotlin 侧当前活动会话", "en": "Optional. Uses active Kotlin-side session when omitted." }, "type": "string", "required": false },
-                { "name": "timeout_ms", "description": { "zh": "可选，执行超时", "en": "Optional execution timeout." }, "type": "number", "required": false }
-            ]
-        },
-        {
-            "name": "wait_for",
-            "description": { "zh": "等待页面就绪或元素出现。", "en": "Wait for page ready or selector appearance." },
-            "parameters": [
-                { "name": "selector", "description": { "zh": "可选，CSS 选择器", "en": "Optional CSS selector." }, "type": "string", "required": false },
-                { "name": "session_id", "description": { "zh": "可选，不传则使用 Kotlin 侧当前活动会话", "en": "Optional. Uses active Kotlin-side session when omitted." }, "type": "string", "required": false },
-                { "name": "timeout_ms", "description": { "zh": "可选，等待超时", "en": "Optional wait timeout." }, "type": "number", "required": false }
-            ]
-        },
-        {
-            "name": "snapshot",
-            "description": { "zh": "抓取当前网页文本快照。", "en": "Capture current page text snapshot." },
-            "parameters": [
-                { "name": "session_id", "description": { "zh": "可选，不传则使用 Kotlin 侧当前活动会话", "en": "Optional. Uses active Kotlin-side session when omitted." }, "type": "string", "required": false },
-                { "name": "include_links", "description": { "zh": "可选，是否包含链接", "en": "Optional include links." }, "type": "boolean", "required": false },
-                { "name": "include_images", "description": { "zh": "可选，是否包含图片", "en": "Optional include images." }, "type": "boolean", "required": false }
-            ]
-        },
-        {
-            "name": "content",
-            "description": { "zh": "获取页面主要内容；当内容过长时自动写入文件并返回路径。", "en": "Get main page content; auto-save to file and return path when too long." },
-            "parameters": [
-                { "name": "session_id", "description": { "zh": "可选，不传则使用 Kotlin 侧当前活动会话", "en": "Optional. Uses active Kotlin-side session when omitted." }, "type": "string", "required": false },
-                { "name": "include_links", "description": { "zh": "可选，是否包含链接", "en": "Optional include links." }, "type": "boolean", "required": false },
-                { "name": "include_images", "description": { "zh": "可选，是否包含图片", "en": "Optional include images." }, "type": "boolean", "required": false }
-            ]
-        },
-        {
-            "name": "open_in_system_browser",
-            "description": { "zh": "在系统浏览器中打开当前会话 URL（或指定 URL）。", "en": "Open current session URL (or a specified URL) in system browser." },
-            "parameters": [
-                { "name": "url", "description": { "zh": "可选，目标 URL。不传则自动读取当前会话 URL。", "en": "Optional target URL. If omitted, uses current session URL." }, "type": "string", "required": false },
-                { "name": "session_id", "description": { "zh": "可选，读取当前会话 URL 时指定会话，不传则使用 Kotlin 侧当前活动会话。", "en": "Optional session when resolving current URL; uses active Kotlin-side session if omitted." }, "type": "string", "required": false },
-                { "name": "package_name", "description": { "zh": "可选，指定浏览器包名。", "en": "Optional target browser package name." }, "type": "string", "required": false }
-            ]
-        },
-        {
-            "name": "upload",
-            "description": { "zh": "向浏览器文件选择器上传文件。paths 不传时取消当前 file chooser。", "en": "Upload files to an active browser file chooser. If paths is omitted, cancels the current file chooser." },
-            "parameters": [
-                { "name": "session_id", "description": { "zh": "可选，不传则使用 Kotlin 侧当前活动会话", "en": "Optional. Uses active Kotlin-side session when omitted." }, "type": "string", "required": false },
-                { "name": "paths", "description": { "zh": "可选，绝对路径数组。示例：['/sdcard/Download/a.txt']", "en": "Optional absolute file path array. Example: ['/sdcard/Download/a.txt']" }, "type": "array", "required": false }
+                { "name": "ref", "description": { "zh": "快照中的目标元素引用。", "en": "Target element ref from the snapshot." }, "type": "string", "required": true },
+                { "name": "element", "description": { "zh": "可选，人类可读元素描述。", "en": "Optional human-readable element description." }, "type": "string", "required": false },
+                { "name": "doubleClick", "description": { "zh": "可选，是否双击。", "en": "Optional double click." }, "type": "boolean", "required": false },
+                { "name": "button", "description": { "zh": "可选，left/right/middle。", "en": "Optional mouse button: left/right/middle." }, "type": "string", "required": false },
+                { "name": "modifiers", "description": { "zh": "可选，修饰键数组。", "en": "Optional modifier keys array." }, "type": "array", "required": false }
             ]
         },
         {
             "name": "close",
-            "description": { "zh": "关闭浏览器会话。", "en": "Close browser session." },
+            "description": { "zh": "关闭当前 tab。", "en": "Close the current tab." },
+            "parameters": []
+        },
+        {
+            "name": "console_messages",
+            "description": { "zh": "读取控制台消息。", "en": "Read console messages." },
             "parameters": [
-                { "name": "session_id", "description": { "zh": "可选，不传则关闭 Kotlin 侧当前活动会话", "en": "Optional. Closes active Kotlin-side session when omitted." }, "type": "string", "required": false },
-                { "name": "close_all", "description": { "zh": "可选，是否关闭全部会话", "en": "Optional, close all sessions." }, "type": "boolean", "required": false }
+                { "name": "level", "description": { "zh": "可选，日志级别：error/warning/info/debug，默认 info。", "en": "Optional log level: error/warning/info/debug. Defaults to info." }, "type": "string", "required": false },
+                { "name": "filename", "description": { "zh": "可选，保存输出的文件名。", "en": "Optional output file name." }, "type": "string", "required": false }
             ]
         },
         {
-            "name": "userscript_list",
-            "description": { "zh": "列出已安装的油猴脚本。", "en": "List installed userscripts." },
+            "name": "drag",
+            "description": { "zh": "在两个元素之间拖拽。", "en": "Drag between two elements." },
             "parameters": [
-                { "name": "include_disabled", "description": { "zh": "可选，是否包含已禁用脚本", "en": "Optional include disabled userscripts." }, "type": "boolean", "required": false }
+                { "name": "startElement", "description": { "zh": "源元素的人类可读描述。", "en": "Human-readable source element description." }, "type": "string", "required": true },
+                { "name": "startRef", "description": { "zh": "源元素 ref。", "en": "Source element ref." }, "type": "string", "required": true },
+                { "name": "endElement", "description": { "zh": "目标元素的人类可读描述。", "en": "Human-readable target element description." }, "type": "string", "required": true },
+                { "name": "endRef", "description": { "zh": "目标元素 ref。", "en": "Target element ref." }, "type": "string", "required": true }
             ]
         },
         {
-            "name": "userscript_install",
-            "description": { "zh": "从 URL、本地文件或源码安装油猴脚本。", "en": "Install a userscript from URL, local file, or source text." },
+            "name": "evaluate",
+            "description": { "zh": "在页面或元素上执行 JavaScript 函数。", "en": "Evaluate a JavaScript function on the page or an element." },
             "parameters": [
-                { "name": "url", "description": { "zh": "可选，远程脚本 URL。url/path/source 必须且只能传一个。", "en": "Optional remote userscript URL. Exactly one of url/path/source is required." }, "type": "string", "required": false },
-                { "name": "path", "description": { "zh": "可选，绝对本地 .user.js 路径。url/path/source 必须且只能传一个。", "en": "Optional absolute local .user.js path. Exactly one of url/path/source is required." }, "type": "string", "required": false },
-                { "name": "source", "description": { "zh": "可选，userscript 源码。url/path/source 必须且只能传一个。", "en": "Optional userscript source text. Exactly one of url/path/source is required." }, "type": "string", "required": false },
-                { "name": "source_url", "description": { "zh": "可选，为本地或源码安装补充的来源 URL。", "en": "Optional source URL recorded for local or inline installs." }, "type": "string", "required": false },
-                { "name": "source_display", "description": { "zh": "可选，脚本库中显示的来源标签。", "en": "Optional source label shown in library." }, "type": "string", "required": false }
+                { "name": "function", "description": { "zh": "要执行的函数源码。", "en": "Function source to execute." }, "type": "string", "required": true },
+                { "name": "element", "description": { "zh": "可选，人类可读元素描述。", "en": "Optional human-readable element description." }, "type": "string", "required": false },
+                { "name": "ref", "description": { "zh": "可选，目标元素 ref。", "en": "Optional target element ref." }, "type": "string", "required": false }
             ]
         },
         {
-            "name": "userscript_start",
-            "description": { "zh": "启用一个已安装的油猴脚本。", "en": "Enable an installed userscript." },
+            "name": "upload",
+            "description": { "zh": "向当前文件选择器上传文件。", "en": "Upload files to the current file chooser." },
             "parameters": [
-                { "name": "script_id", "description": { "zh": "可选，已安装脚本 ID；已知时优先传这个。", "en": "Optional installed script id; preferred when known." }, "type": "string", "required": false },
-                { "name": "name", "description": { "zh": "可选，不传 script_id 时按脚本名查找。", "en": "Optional script name when script_id is omitted." }, "type": "string", "required": false },
-                { "name": "namespace", "description": { "zh": "可选，用于消歧。", "en": "Optional namespace used to disambiguate names." }, "type": "string", "required": false },
-                { "name": "source_url", "description": { "zh": "可选，用于重名脚本消歧。", "en": "Optional source URL used to disambiguate duplicates." }, "type": "string", "required": false }
+                { "name": "paths", "description": { "zh": "可选，绝对路径数组；不传则取消 file chooser。", "en": "Optional absolute file paths; omit to cancel the file chooser." }, "type": "array", "required": false }
             ]
         },
         {
-            "name": "userscript_stop",
-            "description": { "zh": "禁用一个已安装的油猴脚本。", "en": "Disable an installed userscript." },
+            "name": "fill_form",
+            "description": { "zh": "批量填写表单字段。", "en": "Fill multiple form fields." },
             "parameters": [
-                { "name": "script_id", "description": { "zh": "可选，已安装脚本 ID；已知时优先传这个。", "en": "Optional installed script id; preferred when known." }, "type": "string", "required": false },
-                { "name": "name", "description": { "zh": "可选，不传 script_id 时按脚本名查找。", "en": "Optional script name when script_id is omitted." }, "type": "string", "required": false },
-                { "name": "namespace", "description": { "zh": "可选，用于消歧。", "en": "Optional namespace used to disambiguate names." }, "type": "string", "required": false },
-                { "name": "source_url", "description": { "zh": "可选，用于重名脚本消歧。", "en": "Optional source URL used to disambiguate duplicates." }, "type": "string", "required": false }
+                { "name": "fields", "description": { "zh": "字段数组。", "en": "Array of form fields." }, "type": "array", "required": true }
             ]
         },
         {
-            "name": "userscript_uninstall",
-            "description": { "zh": "卸载一个已安装的油猴脚本。", "en": "Uninstall an installed userscript." },
+            "name": "handle_dialog",
+            "description": { "zh": "处理当前对话框。", "en": "Handle the current dialog." },
             "parameters": [
-                { "name": "script_id", "description": { "zh": "可选，已安装脚本 ID；已知时优先传这个。", "en": "Optional installed script id; preferred when known." }, "type": "string", "required": false },
-                { "name": "name", "description": { "zh": "可选，不传 script_id 时按脚本名查找。", "en": "Optional script name when script_id is omitted." }, "type": "string", "required": false },
-                { "name": "namespace", "description": { "zh": "可选，用于消歧。", "en": "Optional namespace used to disambiguate names." }, "type": "string", "required": false },
-                { "name": "source_url", "description": { "zh": "可选，用于重名脚本消歧。", "en": "Optional source URL used to disambiguate duplicates." }, "type": "string", "required": false }
+                { "name": "accept", "description": { "zh": "是否接受对话框。", "en": "Whether to accept the dialog." }, "type": "boolean", "required": true },
+                { "name": "promptText", "description": { "zh": "可选，prompt 的输入文本。", "en": "Optional prompt text." }, "type": "string", "required": false }
             ]
-        }
+        },
+        {
+            "name": "hover",
+            "description": { "zh": "悬停到页面元素上。", "en": "Hover over an element." },
+            "parameters": [
+                { "name": "ref", "description": { "zh": "目标元素 ref。", "en": "Target element ref." }, "type": "string", "required": true },
+                { "name": "element", "description": { "zh": "可选，人类可读元素描述。", "en": "Optional human-readable element description." }, "type": "string", "required": false }
+            ]
+        },
+        {
+            "name": "goto",
+            "description": { "zh": "导航到指定 URL。", "en": "Navigate to a URL." },
+            "parameters": [
+                { "name": "url", "description": { "zh": "目标 URL。", "en": "Target URL." }, "type": "string", "required": true }
+            ]
+        },
+        {
+            "name": "back",
+            "description": { "zh": "后退到上一页。", "en": "Go back to the previous page." },
+            "parameters": []
+        },
+        {
+            "name": "network_requests",
+            "description": { "zh": "读取当前页面的网络请求。", "en": "Read network requests for the current page." },
+            "parameters": [
+                { "name": "includeStatic", "description": { "zh": "可选，是否包含静态资源请求，默认 false。", "en": "Optional include static resource requests. Defaults to false." }, "type": "boolean", "required": false },
+                { "name": "filename", "description": { "zh": "可选，保存输出的文件名。", "en": "Optional output file name." }, "type": "string", "required": false }
+            ]
+        },
+        {
+            "name": "press_key",
+            "description": { "zh": "按下键盘按键。", "en": "Press a keyboard key." },
+            "parameters": [
+                { "name": "key", "description": { "zh": "按键名。", "en": "Key name." }, "type": "string", "required": true }
+            ]
+        },
+        {
+            "name": "resize",
+            "description": { "zh": "调整浏览器视口大小。", "en": "Resize the browser viewport." },
+            "parameters": [
+                { "name": "width", "description": { "zh": "宽度。", "en": "Width." }, "type": "number", "required": true },
+                { "name": "height", "description": { "zh": "高度。", "en": "Height." }, "type": "number", "required": true }
+            ]
+        },
+        {
+            "name": "run_code",
+            "description": { "zh": "运行 Playwright 风格代码片段。", "en": "Run a Playwright-style code snippet." },
+            "parameters": [
+                { "name": "code", "description": { "zh": "代码片段。", "en": "Code snippet." }, "type": "string", "required": true }
+            ]
+        },
+        {
+            "name": "select_option",
+            "description": { "zh": "在下拉框中选择选项。", "en": "Select options in a dropdown." },
+            "parameters": [
+                { "name": "ref", "description": { "zh": "目标元素 ref。", "en": "Target element ref." }, "type": "string", "required": true },
+                { "name": "values", "description": { "zh": "要选择的值数组。", "en": "Values to select." }, "type": "array", "required": true },
+                { "name": "element", "description": { "zh": "可选，人类可读元素描述。", "en": "Optional human-readable element description." }, "type": "string", "required": false }
+            ]
+        },
+        {
+            "name": "snapshot",
+            "description": { "zh": "获取当前页面结构化快照。", "en": "Get a structured page snapshot." },
+            "parameters": [
+                { "name": "filename", "description": { "zh": "可选，保存快照的文件名。", "en": "Optional snapshot output file name." }, "type": "string", "required": false }
+            ]
+        },
+        {
+            "name": "screenshot",
+            "description": { "zh": "截取页面截图。", "en": "Take a screenshot." },
+            "parameters": [
+                { "name": "type", "description": { "zh": "可选，图片类型：png/jpeg，默认 png。", "en": "Optional image type: png/jpeg. Defaults to png." }, "type": "string", "required": false },
+                { "name": "filename", "description": { "zh": "可选，保存截图的文件名。", "en": "Optional screenshot output file name." }, "type": "string", "required": false },
+                { "name": "element", "description": { "zh": "可选，元素描述。", "en": "Optional element description." }, "type": "string", "required": false },
+                { "name": "ref", "description": { "zh": "可选，元素 ref。", "en": "Optional element ref." }, "type": "string", "required": false },
+                { "name": "fullPage", "description": { "zh": "可选，是否截取整页。", "en": "Optional full-page screenshot." }, "type": "boolean", "required": false }
+            ]
+        },
+        {
+            "name": "type",
+            "description": { "zh": "向可编辑元素输入文本。", "en": "Type text into an editable element." },
+            "parameters": [
+                { "name": "ref", "description": { "zh": "目标元素 ref。", "en": "Target element ref." }, "type": "string", "required": true },
+                { "name": "text", "description": { "zh": "输入文本。", "en": "Text to type." }, "type": "string", "required": true },
+                { "name": "element", "description": { "zh": "可选，人类可读元素描述。", "en": "Optional human-readable element description." }, "type": "string", "required": false },
+                { "name": "submit", "description": { "zh": "可选，输入后是否提交。", "en": "Optional submit after typing." }, "type": "boolean", "required": false },
+                { "name": "slowly", "description": { "zh": "可选，是否逐字输入。", "en": "Optional type slowly." }, "type": "boolean", "required": false }
+            ]
+        },
+        {
+            "name": "wait_for",
+            "description": { "zh": "等待文本出现、消失或等待指定时间。", "en": "Wait for text to appear, disappear, or for a duration." },
+            "parameters": [
+                { "name": "time", "description": { "zh": "可选，等待秒数。", "en": "Optional number of seconds to wait." }, "type": "number", "required": false },
+                { "name": "text", "description": { "zh": "可选，等待出现的文本。", "en": "Optional text to wait for." }, "type": "string", "required": false },
+                { "name": "textGone", "description": { "zh": "可选，等待消失的文本。", "en": "Optional text to wait to disappear." }, "type": "string", "required": false }
+            ]
+        },
+        {
+            "name": "tabs",
+            "description": { "zh": "列出、创建、切换或关闭 tab。", "en": "List, create, select, or close tabs." },
+            "parameters": [
+                { "name": "action", "description": { "zh": "操作：list/create/select/close。", "en": "Action: list/create/select/close." }, "type": "string", "required": true },
+                { "name": "index", "description": { "zh": "可选，0-based tab 索引。", "en": "Optional 0-based tab index." }, "type": "number", "required": false }
+            ]
+        },
     ]
 }*/
 
-type AnyObject = Record<string, any>;
+const MAX_INLINE_BROWSER_TEXT_CHARS = 24000;
+type JsonObject = Record<string, unknown>;
+type BrowserTabAction = "list" | "create" | "select" | "close";
+type BrowserMouseButton = "left" | "right" | "middle";
+type ToolParamValue = string | number | boolean | object;
 
-type WrappedResult = {
-    success: boolean;
-    message: string;
-    data?: any;
-    error?: string;
-};
+interface FilenamePayload {
+    filename?: string;
+}
 
-const MAX_INLINE_BROWSER_CONTENT_CHARS = 24_000;
+interface ClickPayload {
+    ref: string;
+    element?: string;
+    button?: BrowserMouseButton;
+    modifiers?: string[];
+    doubleClick?: boolean;
+}
 
-const Browser = (function () {
-    function toPayload(raw: any): AnyObject {
-        if (raw == null) {
-            return {};
-        }
+interface ConsoleMessagesPayload extends FilenamePayload {
+    level: string;
+}
 
-        if (typeof raw === 'string') {
-            try {
-                return JSON.parse(raw);
-            } catch {
-                return { value: raw };
-            }
-        }
+interface EvaluatePayload {
+    function: string;
+    ref?: string;
+    element?: string;
+}
 
-        if (typeof raw === 'object' && typeof raw.value === 'string') {
-            try {
-                return JSON.parse(raw.value);
-            } catch {
-                return { ...raw, value: raw.value };
-            }
-        }
+interface UploadPayload {
+    paths?: string[];
+}
 
-        if (typeof raw === 'object') {
-            return raw;
-        }
+interface FillFormFieldPayload {
+    name: string;
+    type: string;
+    value: ToolParamValue;
+    ref?: string;
+    selector?: string;
+}
 
-        return { value: String(raw) };
+interface FillFormPayload {
+    fields: FillFormFieldPayload[];
+}
+
+interface HandleDialogPayload {
+    accept: boolean;
+    promptText?: string;
+}
+
+interface HoverPayload {
+    ref: string;
+    element?: string;
+}
+
+interface NetworkRequestsPayload extends FilenamePayload {
+    includeStatic?: boolean;
+}
+
+interface SelectOptionPayload {
+    ref: string;
+    values: string[];
+    element?: string;
+}
+
+interface ScreenshotPayload extends FilenamePayload {
+    type: string;
+    element?: string;
+    ref?: string;
+    fullPage?: boolean;
+}
+
+interface TypePayload {
+    ref: string;
+    text: string;
+    element?: string;
+    submit?: boolean;
+    slowly?: boolean;
+}
+
+interface WaitForPayload {
+    time?: number;
+    text?: string;
+    textGone?: string;
+}
+
+interface TabsPayload {
+    action: BrowserTabAction;
+    index?: number;
+}
+
+const TOOL_NAMES = [
+    "click",
+    "close",
+    "console_messages",
+    "drag",
+    "evaluate",
+    "upload",
+    "fill_form",
+    "handle_dialog",
+    "hover",
+    "goto",
+    "back",
+    "network_requests",
+    "press_key",
+    "resize",
+    "run_code",
+    "select_option",
+    "snapshot",
+    "screenshot",
+    "type",
+    "wait_for",
+    "tabs"
+];
+
+function assertObject(params: unknown, toolName: string): JsonObject {
+    if (params === undefined || params === null) {
+        return {};
     }
-
-    function normalizeHeaders(headers: any): Record<string, string> | undefined {
-        if (!headers || typeof headers !== 'object') {
-            return undefined;
-        }
-
-        const result: Record<string, string> = {};
-        for (const [key, value] of Object.entries(headers)) {
-            if (value === undefined || value === null) {
-                continue;
-            }
-            result[String(key)] = String(value);
-        }
-        return result;
+    if (typeof params !== "object" || Array.isArray(params)) {
+        throw new Error(toolName + " expects one parameter object");
     }
+    return params as JsonObject;
+}
 
-    function optionalSessionId(raw: any): string | undefined {
-        if (raw === undefined || raw === null) {
-            return undefined;
-        }
-        const sid = String(raw).trim();
-        return sid.length > 0 ? sid : undefined;
+function requireString(value: unknown, name: string): string {
+    const normalized = typeof value === "string" ? value.trim() : String(value || "").trim();
+    if (!normalized) {
+        throw new Error(name + " is required");
     }
+    return normalized;
+}
 
-    function normalizeUserscriptLocator(params: AnyObject = {}, requireTarget: boolean = true): AnyObject {
-        const result: AnyObject = {};
-
-        if (params.script_id !== undefined && params.script_id !== null) {
-            const scriptId = String(params.script_id).trim();
-            if (scriptId) {
-                result.script_id = scriptId;
-            }
-        }
-        if (params.name !== undefined && params.name !== null) {
-            const name = String(params.name).trim();
-            if (name) {
-                result.name = name;
-            }
-        }
-        if (params.namespace !== undefined && params.namespace !== null) {
-            const namespace = String(params.namespace).trim();
-            if (namespace) {
-                result.namespace = namespace;
-            }
-        }
-        if (params.source_url !== undefined && params.source_url !== null) {
-            const sourceUrl = String(params.source_url).trim();
-            if (sourceUrl) {
-                result.source_url = sourceUrl;
-            }
-        }
-
-        if (requireTarget && !result.script_id && !result.name) {
-            throw new Error('script_id 或 name 至少传一个');
-        }
-
-        return result;
-    }
-
-    function normalizeUserscriptInstallParams(params: AnyObject): AnyObject {
-        if (!params || typeof params !== 'object' || Array.isArray(params)) {
-            throw new Error('安装参数必须是对象');
-        }
-
-        const normalized: AnyObject = {};
-        ['url', 'path', 'source', 'source_url', 'source_display'].forEach((key) => {
-            if (params[key] === undefined || params[key] === null) {
-                return;
-            }
-            const value = String(params[key]).trim();
-            if (value) {
-                normalized[key] = value;
-            }
-        });
-
-        const sourceCount = [normalized.url, normalized.path, normalized.source].filter(Boolean).length;
-        if (sourceCount !== 1) {
-            throw new Error('url/path/source 必须且只能传一个');
-        }
-
-        return normalized;
-    }
-
-    function extractUrlFromPayload(payload: AnyObject): string | undefined {
-        const candidates = [payload?.url, payload?.result, payload?.value];
-        for (const item of candidates) {
-            if (typeof item !== 'string') {
-                continue;
-            }
-            const trimmed = item.trim();
-            if (trimmed.length > 0) {
-                return trimmed;
-            }
-        }
+function optionalString(value: unknown): string | undefined {
+    if (value === undefined || value === null) {
         return undefined;
     }
+    const normalized = String(value).trim();
+    return normalized ? normalized : undefined;
+}
 
-    async function resolveUrlForSystemBrowser(sessionId?: string, explicitUrl?: any): Promise<string> {
-        const providedUrl = explicitUrl !== undefined && explicitUrl !== null
-            ? String(explicitUrl).trim()
-            : '';
-        if (providedUrl.length > 0) {
-            return providedUrl;
-        }
-
-        const evalPayload = toPayload(
-            await Tools.Net.browserEval(
-                sessionId,
-                '(function(){ try { return window.location.href || document.URL || ""; } catch (e) { return ""; } })();',
-                3000
-            )
-        );
-
-        const detectedUrl = extractUrlFromPayload(evalPayload);
-        if (!detectedUrl) {
-            throw new Error('url 参数缺失，且无法从当前会话获取 URL');
-        }
-
-        return detectedUrl;
+function optionalBoolean(value: unknown, name: string): boolean | undefined {
+    if (value === undefined) {
+        return undefined;
     }
-
-    function extractPageContent(payload: AnyObject): string {
-        const candidates = [payload?.snapshot, payload?.content, payload?.text, payload?.value];
-        for (const item of candidates) {
-            if (typeof item === 'string' && item.length > 0) {
-                return item;
-            }
-        }
-        return '';
+    if (typeof value !== "boolean") {
+        throw new Error(name + " must be a boolean");
     }
+    return value;
+}
 
-    function sanitizeSessionId(sessionId: string | undefined): string {
-        if (!sessionId) {
-            return 'default';
-        }
-        return sessionId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 40) || 'default';
+function requireNumber(value: unknown, name: string): number {
+    const normalized = Number(value);
+    if (!Number.isFinite(normalized)) {
+        throw new Error(name + " must be a number");
     }
+    return normalized;
+}
 
-    async function persistPageContentIfTooLong(payload: AnyObject, sessionId?: string): Promise<AnyObject> {
-        const content = extractPageContent(payload);
-        if (!content || content.length <= MAX_INLINE_BROWSER_CONTENT_CHARS) {
-            return payload;
-        }
-
-        await Tools.Files.mkdir(OPERIT_CLEAN_ON_EXIT_DIR, true);
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-        const rand = Math.floor(Math.random() * 1_000_000);
-        const safeSessionId = sanitizeSessionId(sessionId);
-        const filePath = `${OPERIT_CLEAN_ON_EXIT_DIR}/browser_content_${safeSessionId}_${timestamp}_${rand}.txt`;
-
-        await Tools.Files.write(filePath, content, false);
-
-        return {
-            ...payload,
-            snapshot: '(saved_to_file)',
-            snapshot_chars: content.length,
-            snapshot_saved_to: filePath,
-            operit_clean_on_exit_dir: OPERIT_CLEAN_ON_EXIT_DIR,
-            hint: 'Content is large and saved to file. Use read_file_part or grep_code to inspect it.',
-        };
+function optionalArray(value: unknown, name: string): unknown[] | undefined {
+    if (value === undefined) {
+        return undefined;
     }
-
-    async function start(params: AnyObject = {}): Promise<AnyObject> {
-        return toPayload(
-            await Tools.Net.startBrowser({
-                url: params.url,
-                headers: normalizeHeaders(params.headers),
-                user_agent: params.user_agent,
-                session_name: params.session_name,
-            })
-        );
+    if (!Array.isArray(value)) {
+        throw new Error(name + " must be an array");
     }
+    return value;
+}
 
-    async function goto(params: AnyObject): Promise<AnyObject> {
-        if (!params || !params.url) {
-            throw new Error('url 参数必填');
-        }
-
-        return toPayload(
-            await Tools.Net.browserNavigate(
-                optionalSessionId(params.session_id),
-                String(params.url),
-                normalizeHeaders(params.headers)
-            )
-        );
+function requireStringArray(value: unknown, name: string): string[] {
+    const array = optionalArray(value, name);
+    if (!array || array.length === 0) {
+        throw new Error(name + " must be a non-empty array");
     }
+    return array.map((item) => requireString(item, name + "[]"));
+}
 
-    async function click(params: AnyObject): Promise<AnyObject> {
-        type ClickButton = 'left' | 'right' | 'middle';
-        type ClickModifier = 'Alt' | 'Control' | 'ControlOrMeta' | 'Meta' | 'Shift';
+function buildLargeOutputFilename(prefix: string, extension: string): string {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const rand = Math.floor(Math.random() * 1000000);
+    return OPERIT_CLEAN_ON_EXIT_DIR + "/browser_" + prefix + "_" + timestamp + "_" + rand + "." + extension;
+}
 
-        const ref =
-            params && params.ref !== undefined && params.ref !== null
-                ? String(params.ref).trim()
-                : '';
-
-        if (!ref) {
-            throw new Error('ref 参数必填');
-        }
-
-        const normalizedButtonRaw =
-            params && params.button !== undefined && params.button !== null
-                ? String(params.button).trim()
-                : '';
-        if (
-            normalizedButtonRaw &&
-            normalizedButtonRaw !== 'left' &&
-            normalizedButtonRaw !== 'right' &&
-            normalizedButtonRaw !== 'middle'
-        ) {
-            throw new Error('button 只能是 left/right/middle');
-        }
-        const button: ClickButton | undefined =
-            normalizedButtonRaw === 'left' ||
-                normalizedButtonRaw === 'right' ||
-                normalizedButtonRaw === 'middle'
-                ? (normalizedButtonRaw as ClickButton)
-                : undefined;
-
-        let modifiers: ClickModifier[] | undefined = undefined;
-        if (params && params.modifiers !== undefined) {
-            if (!Array.isArray(params.modifiers)) {
-                throw new Error('modifiers 必须是数组');
-            }
-            const normalized = params.modifiers.map((item: any) => String(item).trim());
-            const invalid = normalized.filter(
-                (item) =>
-                    item !== 'Alt' &&
-                    item !== 'Control' &&
-                    item !== 'ControlOrMeta' &&
-                    item !== 'Meta' &&
-                    item !== 'Shift'
-            );
-            if (invalid.length > 0) {
-                throw new Error(`modifiers 存在非法值: ${invalid.join(', ')}`);
-            }
-            modifiers = normalized as ClickModifier[];
-        }
-
-        return toPayload(
-            await Tools.Net.browserClick({
-                session_id: optionalSessionId(params?.session_id),
-                ref,
-                element:
-                    params && params.element !== undefined && params.element !== null
-                        ? String(params.element)
-                        : undefined,
-                button,
-                modifiers: modifiers && modifiers.length > 0 ? modifiers : undefined,
-                doubleClick:
-                    params && params.doubleClick !== undefined
-                        ? Boolean(params.doubleClick)
-                        : undefined,
-            })
-        );
+async function maybePersistLargeText<T extends FilenamePayload>(
+    nativeName: string,
+    params: T,
+    result: unknown,
+    prefix: string,
+    extension: string
+) {
+    if (typeof result !== "string" || result.length <= MAX_INLINE_BROWSER_TEXT_CHARS || params.filename) {
+        return result;
     }
-    async function fill(params: AnyObject): Promise<AnyObject> {
-        if (!params || !params.selector) {
-            throw new Error('selector 参数必填');
-        }
-        if (params.value === undefined || params.value === null) {
-            throw new Error('value 参数必填');
-        }
+    await Tools.Files.mkdir(OPERIT_CLEAN_ON_EXIT_DIR, true);
+    const filename = buildLargeOutputFilename(prefix, extension);
+    return toolCall(nativeName, toToolParams({ ...params, filename: filename }));
+}
 
-        return toPayload(
-            await Tools.Net.browserFill(
-                optionalSessionId(params.session_id),
-                String(params.selector),
-                String(params.value)
-            )
-        );
-    }
+function toToolParams<T extends object>(params: T): ToolParams {
+    return params as unknown as ToolParams;
+}
 
-    async function evaluate(params: AnyObject): Promise<AnyObject> {
-        if (!params || !params.script) {
-            throw new Error('script 参数必填');
-        }
+async function callBrowser(nativeName: string, params: object = {}) {
+    return toolCall(nativeName, toToolParams(params));
+}
 
-        return toPayload(
-            await Tools.Net.browserEval(
-                optionalSessionId(params.session_id),
-                String(params.script),
-                params.timeout_ms !== undefined ? Number(params.timeout_ms) : undefined
-            )
-        );
-    }
-
-    async function wait_for(params: AnyObject = {}): Promise<AnyObject> {
-        return toPayload(
-            await Tools.Net.browserWaitFor(
-                optionalSessionId(params.session_id),
-                params.selector !== undefined ? String(params.selector) : undefined,
-                params.timeout_ms !== undefined ? Number(params.timeout_ms) : undefined
-            )
-        );
-    }
-
-    async function snapshot(params: AnyObject = {}): Promise<AnyObject> {
-        const sessionId = optionalSessionId(params.session_id);
-        const payload = toPayload(
-            await Tools.Net.browserSnapshot(sessionId, {
-                include_links:
-                    params.include_links !== undefined ? Boolean(params.include_links) : undefined,
-                include_images:
-                    params.include_images !== undefined ? Boolean(params.include_images) : undefined,
-            })
-        );
-
-        return persistPageContentIfTooLong(payload, sessionId);
-    }
-
-    async function content(params: AnyObject = {}): Promise<AnyObject> {
-        return snapshot(params);
-    }
-
-    async function open_in_system_browser(params: AnyObject = {}): Promise<AnyObject> {
-        const sessionId = optionalSessionId(params.session_id);
-        const targetUrl = await resolveUrlForSystemBrowser(sessionId, params.url);
-
-        const intentResult = await Tools.System.intent({
-            action: 'android.intent.action.VIEW',
-            uri: targetUrl,
-            package: params.package_name ? String(params.package_name) : undefined,
-            type: 'activity',
-        });
-
-        return {
-            status: 'ok',
-            url: targetUrl,
-            session_id: sessionId,
-            intent_result: intentResult,
-        };
-    }
-
-    async function upload(params: AnyObject = {}): Promise<AnyObject> {
-        const sessionId = optionalSessionId(params.session_id);
-
-        let paths: string[] | undefined = undefined;
-        if (params.paths !== undefined) {
-            let parsed: any = params.paths;
-            if (typeof parsed === "string") {
-                try {
-                    parsed = JSON.parse(parsed);
-                } catch {
-                    throw new Error("paths 必须是合法 JSON 数组字符串");
-                }
-            }
-            if (!Array.isArray(parsed)) {
-                throw new Error("paths 参数必须是数组");
-            }
-            paths = parsed.map((p: any) => String(p));
-        }
-
-        return toPayload(
-            await Tools.Net.browserFileUpload(sessionId, paths)
-        );
-    }
-
-    async function close(params: AnyObject = {}): Promise<AnyObject> {
-        const closeAll = Boolean(params.close_all);
-        if (closeAll) {
-            return toPayload(await Tools.Net.stopBrowser({ close_all: true }));
-        }
-
-        const sid = optionalSessionId(params.session_id);
-        if (sid) {
-            return toPayload(await Tools.Net.stopBrowser({ session_id: sid, close_all: false }));
-        }
-
-        return toPayload(await Tools.Net.stopBrowser({ close_all: false }));
-    }
-
-    async function userscript_list(params: AnyObject = {}): Promise<AnyObject> {
-        return toPayload(
-            await Tools.Net.browserUserscriptList({
-                include_disabled:
-                    params.include_disabled !== undefined ? Boolean(params.include_disabled) : undefined,
-            })
-        );
-    }
-
-    async function userscript_install(params: AnyObject = {}): Promise<AnyObject> {
-        return toPayload(
-            await Tools.Net.browserUserscriptInstall(
-                normalizeUserscriptInstallParams(params)
-            )
-        );
-    }
-
-    async function userscript_start(params: AnyObject = {}): Promise<AnyObject> {
-        return toPayload(
-            await Tools.Net.browserUserscriptStart(
-                normalizeUserscriptLocator(params, true)
-            )
-        );
-    }
-
-    async function userscript_stop(params: AnyObject = {}): Promise<AnyObject> {
-        return toPayload(
-            await Tools.Net.browserUserscriptStop(
-                normalizeUserscriptLocator(params, true)
-            )
-        );
-    }
-
-    async function userscript_uninstall(params: AnyObject = {}): Promise<AnyObject> {
-        return toPayload(
-            await Tools.Net.browserUserscriptUninstall(
-                normalizeUserscriptLocator(params, true)
-            )
-        );
-    }
-
-    async function wrap(
-        toolName: string,
-        fn: (params?: AnyObject) => Promise<AnyObject>,
-        params?: AnyObject
-    ): Promise<void> {
-        try {
-            const data = await fn(params || {});
-            const result: WrappedResult = {
-                success: true,
-                message: `${toolName} 执行成功`,
-                data,
-            };
-            complete(result);
-        } catch (error: any) {
-            const result: WrappedResult = {
-                success: false,
-                message: `${toolName} 执行失败: ${error?.message || String(error)}`,
-                error: String(error?.stack || error),
-            };
-            complete(result);
-        }
-    }
-
-    async function main() {
-        complete({
-            success: true,
-            message: 'Browser 已就绪，可调用 start/goto/click/fill/evaluate/wait_for/snapshot/content/open_in_system_browser/upload/close/userscript_list/userscript_install/userscript_start/userscript_stop/userscript_uninstall',
-        });
-    }
-
-    return {
-        start: (params: AnyObject) => wrap('start', start, params),
-        goto: (params: AnyObject) => wrap('goto', goto, params),
-        click: (params: AnyObject) => wrap('click', click, params),
-        fill: (params: AnyObject) => wrap('fill', fill, params),
-        evaluate: (params: AnyObject) => wrap('evaluate', evaluate, params),
-        wait_for: (params: AnyObject) => wrap('wait_for', wait_for, params),
-        snapshot: (params: AnyObject) => wrap('snapshot', snapshot, params),
-        content: (params: AnyObject) => wrap('content', content, params),
-        open_in_system_browser: (params: AnyObject) => wrap('open_in_system_browser', open_in_system_browser, params),
-        upload: (params: AnyObject) => wrap('upload', upload, params),
-        close: (params: AnyObject) => wrap('close', close, params),
-        userscript_list: (params: AnyObject) => wrap('userscript_list', userscript_list, params),
-        userscript_install: (params: AnyObject) => wrap('userscript_install', userscript_install, params),
-        userscript_start: (params: AnyObject) => wrap('userscript_start', userscript_start, params),
-        userscript_stop: (params: AnyObject) => wrap('userscript_stop', userscript_stop, params),
-        userscript_uninstall: (params: AnyObject) => wrap('userscript_uninstall', userscript_uninstall, params),
-        main,
+async function click(params: unknown) {
+    const normalized = assertObject(params, "click");
+    const payload: ClickPayload = {
+        ref: requireString(normalized.ref, "ref")
     };
-})();
+    const element = optionalString(normalized.element);
+    const button = optionalString(normalized.button);
+    const modifiers = optionalArray(normalized.modifiers, "modifiers");
+    const doubleClick = optionalBoolean(normalized.doubleClick, "doubleClick");
+    if (element) {
+        payload.element = element;
+    }
+    if (button) {
+        if (!["left", "right", "middle"].includes(button)) {
+            throw new Error("button must be left, right, or middle");
+        }
+        payload.button = button as BrowserMouseButton;
+    }
+    if (modifiers) {
+        payload.modifiers = modifiers.map((item) => requireString(item, "modifiers[]"));
+    }
+    if (doubleClick !== undefined) {
+        payload.doubleClick = doubleClick;
+    }
+    return callBrowser("browser_click", payload);
+}
 
-exports.start = Browser.start;
-exports.goto = Browser.goto;
-exports.click = Browser.click;
-exports.fill = Browser.fill;
-exports.evaluate = Browser.evaluate;
-exports.wait_for = Browser.wait_for;
-exports.snapshot = Browser.snapshot;
-exports.content = Browser.content;
-exports.open_in_system_browser = Browser.open_in_system_browser;
-exports.upload = Browser.upload;
-exports.close = Browser.close;
-exports.userscript_list = Browser.userscript_list;
-exports.userscript_install = Browser.userscript_install;
-exports.userscript_start = Browser.userscript_start;
-exports.userscript_stop = Browser.userscript_stop;
-exports.userscript_uninstall = Browser.userscript_uninstall;
-exports.main = Browser.main;
+async function close() {
+    return callBrowser("browser_close");
+}
+
+async function console_messages(params: unknown) {
+    const normalized = assertObject(params, "console_messages");
+    const payload: ConsoleMessagesPayload = {
+        level: optionalString(normalized.level) || "info"
+    };
+    const filename = optionalString(normalized.filename);
+    if (filename) {
+        payload.filename = filename;
+    }
+    const result = await callBrowser("browser_console_messages", payload);
+    return maybePersistLargeText("browser_console_messages", payload, result, "console_messages", "log");
+}
+
+async function drag(params: unknown) {
+    const normalized = assertObject(params, "drag");
+    return callBrowser("browser_drag", {
+        startElement: requireString(normalized.startElement, "startElement"),
+        startRef: requireString(normalized.startRef, "startRef"),
+        endElement: requireString(normalized.endElement, "endElement"),
+        endRef: requireString(normalized.endRef, "endRef")
+    });
+}
+
+async function evaluate(params: unknown) {
+    const normalized = assertObject(params, "evaluate");
+    const payload: EvaluatePayload = {
+        function: requireString(normalized.function, "function")
+    };
+    const ref = optionalString(normalized.ref);
+    const element = optionalString(normalized.element);
+    if (element && !ref) {
+        throw new Error("ref is required when element is provided");
+    }
+    if (ref) {
+        payload.ref = ref;
+    }
+    if (element) {
+        payload.element = element;
+    }
+    return callBrowser("browser_evaluate", payload);
+}
+
+async function upload(params: unknown) {
+    const normalized = assertObject(params, "upload");
+    const payload: UploadPayload = {};
+    if (normalized.paths !== undefined) {
+        payload.paths = requireStringArray(normalized.paths, "paths");
+    }
+    return callBrowser("browser_file_upload", payload);
+}
+
+function normalizeFormFields(fields: unknown): FillFormFieldPayload[] {
+    const array = optionalArray(fields, "fields");
+    if (!array || array.length === 0) {
+        throw new Error("fields must be a non-empty array");
+    }
+    return array.map((field, index) => {
+        if (!field || typeof field !== "object" || Array.isArray(field)) {
+            throw new Error("fields[" + index + "] must be an object");
+        }
+        const normalizedField = field as JsonObject;
+        const normalized: FillFormFieldPayload = {
+            name: requireString(normalizedField.name, "fields[" + index + "].name"),
+            type: requireString(normalizedField.type, "fields[" + index + "].type"),
+            value: normalizedField.value as ToolParamValue
+        };
+        const ref = optionalString(normalizedField.ref);
+        const selector = optionalString(normalizedField.selector);
+        if (!ref && !selector) {
+            throw new Error("fields[" + index + "] requires ref or selector");
+        }
+        if (ref) {
+            normalized.ref = ref;
+        }
+        if (selector) {
+            normalized.selector = selector;
+        }
+        return normalized;
+    });
+}
+
+async function fill_form(params: unknown) {
+    const normalized = assertObject(params, "fill_form");
+    const payload: FillFormPayload = {
+        fields: normalizeFormFields(normalized.fields)
+    };
+    return callBrowser("browser_fill_form", payload);
+}
+
+async function handle_dialog(params: unknown) {
+    const normalized = assertObject(params, "handle_dialog");
+    if (typeof normalized.accept !== "boolean") {
+        throw new Error("accept must be a boolean");
+    }
+    const payload: HandleDialogPayload = {
+        accept: normalized.accept
+    };
+    const promptText = optionalString(normalized.promptText);
+    if (promptText) {
+        payload.promptText = promptText;
+    }
+    return callBrowser("browser_handle_dialog", payload);
+}
+
+async function hover(params: unknown) {
+    const normalized = assertObject(params, "hover");
+    const payload: HoverPayload = {
+        ref: requireString(normalized.ref, "ref")
+    };
+    const element = optionalString(normalized.element);
+    if (element) {
+        payload.element = element;
+    }
+    return callBrowser("browser_hover", payload);
+}
+
+async function goto(params: unknown) {
+    const normalized = assertObject(params, "goto");
+    return callBrowser("browser_navigate", {
+        url: requireString(normalized.url, "url")
+    });
+}
+
+async function back() {
+    return callBrowser("browser_navigate_back");
+}
+
+async function network_requests(params: unknown) {
+    const normalized = assertObject(params, "network_requests");
+    const payload: NetworkRequestsPayload = {};
+    const includeStatic = optionalBoolean(normalized.includeStatic, "includeStatic");
+    const filename = optionalString(normalized.filename);
+    if (includeStatic !== undefined) {
+        payload.includeStatic = includeStatic;
+    }
+    if (filename) {
+        payload.filename = filename;
+    }
+    const result = await callBrowser("browser_network_requests", payload);
+    return maybePersistLargeText("browser_network_requests", payload, result, "network_requests", "log");
+}
+
+async function press_key(params: unknown) {
+    const normalized = assertObject(params, "press_key");
+    return callBrowser("browser_press_key", {
+        key: requireString(normalized.key, "key")
+    });
+}
+
+async function resize(params: unknown) {
+    const normalized = assertObject(params, "resize");
+    return callBrowser("browser_resize", {
+        width: requireNumber(normalized.width, "width"),
+        height: requireNumber(normalized.height, "height")
+    });
+}
+
+async function run_code(params: unknown) {
+    const normalized = assertObject(params, "run_code");
+    return callBrowser("browser_run_code", {
+        code: requireString(normalized.code, "code")
+    });
+}
+
+async function select_option(params: unknown) {
+    const normalized = assertObject(params, "select_option");
+    const payload: SelectOptionPayload = {
+        ref: requireString(normalized.ref, "ref"),
+        values: requireStringArray(normalized.values, "values")
+    };
+    const element = optionalString(normalized.element);
+    if (element) {
+        payload.element = element;
+    }
+    return callBrowser("browser_select_option", payload);
+}
+
+async function snapshot(params: unknown) {
+    const normalized = assertObject(params, "snapshot");
+    const payload: FilenamePayload = {};
+    const filename = optionalString(normalized.filename);
+    if (filename) {
+        payload.filename = filename;
+    }
+    const result = await callBrowser("browser_snapshot", payload);
+    return maybePersistLargeText("browser_snapshot", payload, result, "snapshot", "md");
+}
+
+async function screenshot(params: unknown) {
+    const normalized = assertObject(params, "screenshot");
+    const payload: ScreenshotPayload = {
+        type: optionalString(normalized.type) || "png"
+    };
+    const filename = optionalString(normalized.filename);
+    const element = optionalString(normalized.element);
+    const ref = optionalString(normalized.ref);
+    const fullPage = optionalBoolean(normalized.fullPage, "fullPage");
+    if (!["png", "jpeg", "jpg"].includes(payload.type)) {
+        throw new Error("type must be png or jpeg");
+    }
+    if (ref && !element) {
+        throw new Error("element is required when ref is provided");
+    }
+    if (element && !ref) {
+        throw new Error("ref is required when element is provided");
+    }
+    if (fullPage && ref) {
+        throw new Error("fullPage cannot be used with element screenshots");
+    }
+    if (filename) {
+        payload.filename = filename;
+    }
+    if (element) {
+        payload.element = element;
+    }
+    if (ref) {
+        payload.ref = ref;
+    }
+    if (fullPage !== undefined) {
+        payload.fullPage = fullPage;
+    }
+    return callBrowser("browser_take_screenshot", payload);
+}
+
+async function type(params: unknown) {
+    const normalized = assertObject(params, "type");
+    const payload: TypePayload = {
+        ref: requireString(normalized.ref, "ref"),
+        text: requireString(normalized.text, "text")
+    };
+    const element = optionalString(normalized.element);
+    const submit = optionalBoolean(normalized.submit, "submit");
+    const slowly = optionalBoolean(normalized.slowly, "slowly");
+    if (element) {
+        payload.element = element;
+    }
+    if (submit !== undefined) {
+        payload.submit = submit;
+    }
+    if (slowly !== undefined) {
+        payload.slowly = slowly;
+    }
+    return callBrowser("browser_type", payload);
+}
+
+async function wait_for(params: unknown) {
+    const normalized = assertObject(params, "wait_for");
+    const payload: WaitForPayload = {};
+    const time = normalized.time !== undefined ? requireNumber(normalized.time, "time") : undefined;
+    const text = optionalString(normalized.text);
+    const textGone = optionalString(normalized.textGone);
+    if (time === undefined && !text && !textGone) {
+        throw new Error("one of time, text, or textGone is required");
+    }
+    if (time !== undefined) {
+        payload.time = time;
+    }
+    if (text) {
+        payload.text = text;
+    }
+    if (textGone) {
+        payload.textGone = textGone;
+    }
+    return callBrowser("browser_wait_for", payload);
+}
+
+async function tabs(params: unknown) {
+    const normalized = assertObject(params, "tabs");
+    const action = requireString(normalized.action, "action");
+    if (!["list", "create", "select", "close"].includes(action)) {
+        throw new Error("action must be list, create, select, or close");
+    }
+    const payload: TabsPayload = { action: action as BrowserTabAction };
+    if (normalized.index !== undefined) {
+        payload.index = requireNumber(normalized.index, "index");
+    }
+    return callBrowser("browser_tabs", payload);
+}
+
+async function browserMain() {
+    return "Browser package ready: " + TOOL_NAMES.join(", ");
+}
+
+exports.click = click;
+exports.close = close;
+exports.console_messages = console_messages;
+exports.drag = drag;
+exports.evaluate = evaluate;
+exports.upload = upload;
+exports.fill_form = fill_form;
+exports.handle_dialog = handle_dialog;
+exports.hover = hover;
+exports.goto = goto;
+exports.back = back;
+exports.network_requests = network_requests;
+exports.press_key = press_key;
+exports.resize = resize;
+exports.run_code = run_code;
+exports.select_option = select_option;
+exports.snapshot = snapshot;
+exports.screenshot = screenshot;
+exports.type = type;
+exports.wait_for = wait_for;
+exports.tabs = tabs;
+exports.main = browserMain;

@@ -177,65 +177,36 @@ fun getJsToolsDefinition(): String {
                     }
                     return toolCall("visit_web", params);
                 },
-                startBrowser: (options) => {
-                    const params = { ...(options || {}) };
+                browserNavigate: (urlOrOptions) => {
+                    const params = typeof urlOrOptions === 'string' ? { url: urlOrOptions } : { ...(urlOrOptions || {}) };
+                    if (!params.url) {
+                        throw new Error("browserNavigate requires url");
+                    }
                     if (params.headers !== undefined && typeof params.headers === 'object') {
                         params.headers = JSON.stringify(params.headers);
                     }
-                    return toolCall("start_browser", params);
-                },
-                stopBrowser: (sessionIdOrOptions) => {
-                    if (typeof sessionIdOrOptions === 'string') {
-                        const sid = String(sessionIdOrOptions).trim();
-                        return toolCall("stop_browser", sid ? { session_id: sid } : {});
-                    }
-                    return toolCall("stop_browser", sessionIdOrOptions || {});
-                },
-                browserNavigate: (sessionId, url, headers) => {
-                    const params = { url };
-                    if (sessionId !== undefined && sessionId !== null && String(sessionId).trim() !== "") {
-                        params.session_id = String(sessionId);
-                    }
-                    if (headers !== undefined && headers !== null) {
-                        params.headers = typeof headers === 'object' ? JSON.stringify(headers) : headers;
-                    }
                     return toolCall("browser_navigate", params);
                 },
-                browserEval: (sessionId, script, timeoutMs) => {
-                    const params = { script };
-                    if (sessionId !== undefined && sessionId !== null && String(sessionId).trim() !== "") {
-                        params.session_id = String(sessionId);
+                browserNavigateBack: (options) => {
+                    if (options !== undefined && (typeof options !== 'object' || Array.isArray(options))) {
+                        throw new Error("browserNavigateBack only accepts one options object");
                     }
-                    if (timeoutMs !== undefined) params.timeout_ms = String(timeoutMs);
-                    return toolCall("browser_eval", params);
+                    return toolCall("browser_navigate_back", options || {});
                 },
                 browserClick: (options) => {
                     if (!options || typeof options !== 'object' || Array.isArray(options)) {
                         throw new Error("browserClick only accepts one options object");
                     }
-
                     const params = { ...options };
-
-                    if (params.session_id !== undefined && params.session_id !== null) {
-                        const sid = String(params.session_id).trim();
-                        if (sid) params.session_id = sid;
-                        else delete params.session_id;
+                    if (params.ref !== undefined && params.ref !== null) {
+                        params.ref = String(params.ref).trim();
                     }
-
-                    if (params.ref !== undefined && params.ref !== null) params.ref = String(params.ref).trim();
-                    if (!params.ref) throw new Error("browser_click requires ref");
-
-                    if (
-                        params.selector !== undefined ||
-                        params.index !== undefined ||
-                        params.double_click !== undefined ||
-                        params.timeout_ms !== undefined
-                    ) {
-                        throw new Error("browserClick options do not support selector/index/double_click/timeout_ms");
+                    if (!params.ref) {
+                        throw new Error("browserClick requires ref");
                     }
-
-                    if (params.element !== undefined && params.element !== null) params.element = String(params.element);
-
+                    if (params.element !== undefined && params.element !== null) {
+                        params.element = String(params.element);
+                    }
                     if (params.button !== undefined && params.button !== null) {
                         const button = String(params.button).trim();
                         if (button !== 'left' && button !== 'right' && button !== 'middle') {
@@ -243,118 +214,296 @@ fun getJsToolsDefinition(): String {
                         }
                         params.button = button;
                     }
-
                     if (params.modifiers !== undefined) {
                         if (!Array.isArray(params.modifiers)) {
                             throw new Error("modifiers must be an array");
                         }
                         const allowedModifiers = ['Alt', 'Control', 'ControlOrMeta', 'Meta', 'Shift'];
-                        const normalized = params.modifiers.map((m) => String(m).trim());
-                        const invalid = normalized.filter((m) => !allowedModifiers.includes(m));
+                        const normalized = params.modifiers.map((modifier) => String(modifier).trim());
+                        const invalid = normalized.filter((modifier) => !allowedModifiers.includes(modifier));
                         if (invalid.length > 0) {
                             throw new Error("Invalid modifiers: " + invalid.join(', '));
                         }
-                        params.modifiers = JSON.stringify(normalized);
+                        params.modifiers = normalized;
                     }
-
-                    if (params.doubleClick !== undefined) params.doubleClick = params.doubleClick ? "true" : "false";
-
+                    if (params.doubleClick !== undefined) {
+                        params.doubleClick = !!params.doubleClick;
+                    }
                     return toolCall("browser_click", params);
                 },
-                browserFill: (sessionId, selector, value) => {
-                    const params = { selector, value: String(value ?? "") };
-                    if (sessionId !== undefined && sessionId !== null && String(sessionId).trim() !== "") {
-                        params.session_id = String(sessionId);
+                browserClose: (options) => {
+                    if (options !== undefined && (typeof options !== 'object' || Array.isArray(options))) {
+                        throw new Error("browserClose only accepts one options object");
                     }
-                    return toolCall("browser_fill", params);
+                    return toolCall("browser_close", options || {});
                 },
-                browserWaitFor: (sessionId, selector, timeoutMs) => {
-                    const params = {};
-                    if (sessionId !== undefined && sessionId !== null && String(sessionId).trim() !== "") {
-                        params.session_id = String(sessionId);
+                browserConsoleMessages: (options) => {
+                    if (options !== undefined && (typeof options !== 'object' || Array.isArray(options))) {
+                        throw new Error("browserConsoleMessages only accepts one options object");
                     }
-                    if (selector !== undefined && selector !== null) params.selector = String(selector);
-                    if (timeoutMs !== undefined) params.timeout_ms = String(timeoutMs);
-                    return toolCall("browser_wait_for", params);
-                },
-                browserSnapshot: (sessionId, options) => {
                     const params = { ...(options || {}) };
-                    if (sessionId !== undefined && sessionId !== null && String(sessionId).trim() !== "") {
-                        params.session_id = String(sessionId);
+                    if (params.level !== undefined && params.level !== null) {
+                        params.level = String(params.level).trim();
                     }
-                    return toolCall("browser_snapshot", params);
+                    if (!params.level) {
+                        params.level = "info";
+                    }
+                    if (params.filename !== undefined && params.filename !== null) {
+                        params.filename = String(params.filename);
+                    }
+                    return toolCall("browser_console_messages", params);
                 },
-                browserFileUpload: (sessionId, paths) => {
-                    const params = {};
-                    if (sessionId !== undefined && sessionId !== null && String(sessionId).trim() !== "") {
-                        params.session_id = String(sessionId);
+                browserDrag: (options) => {
+                    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+                        throw new Error("browserDrag only accepts one options object");
                     }
-                    if (paths !== undefined) {
-                        if (!Array.isArray(paths)) {
+                    const params = { ...options };
+                    ['startElement', 'startRef', 'endElement', 'endRef'].forEach((key) => {
+                        if (params[key] !== undefined && params[key] !== null) {
+                            params[key] = String(params[key]).trim();
+                        }
+                        if (!params[key]) {
+                            throw new Error("browserDrag requires " + key);
+                        }
+                    });
+                    return toolCall("browser_drag", params);
+                },
+                browserEvaluate: (options) => {
+                    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+                        throw new Error("browserEvaluate only accepts one options object");
+                    }
+                    const params = { ...options };
+                    if (params.function !== undefined && params.function !== null) {
+                        params.function = String(params.function);
+                    }
+                    if (!params.function) {
+                        throw new Error("browserEvaluate requires function");
+                    }
+                    if (params.element !== undefined && params.element !== null) {
+                        params.element = String(params.element);
+                    }
+                    if (params.ref !== undefined && params.ref !== null) {
+                        params.ref = String(params.ref).trim();
+                    }
+                    if (params.element && !params.ref) {
+                        throw new Error("ref is required when element is provided");
+                    }
+                    return toolCall("browser_evaluate", params);
+                },
+                browserFileUpload: (options) => {
+                    if (options !== undefined && (typeof options !== 'object' || Array.isArray(options))) {
+                        throw new Error("browserFileUpload only accepts one options object");
+                    }
+                    const params = { ...(options || {}) };
+                    if (params.paths !== undefined) {
+                        if (!Array.isArray(params.paths)) {
                             throw new Error("paths must be an array");
                         }
-                        params.paths = JSON.stringify(paths.map((p) => String(p)));
+                        params.paths = params.paths.map((path) => String(path));
                     }
                     return toolCall("browser_file_upload", params);
                 },
-                browserUserscriptList: (options) => {
+                browserFillForm: (options) => {
+                    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+                        throw new Error("browserFillForm only accepts one options object");
+                    }
+                    const params = { ...options };
+                    if (!Array.isArray(params.fields) || params.fields.length === 0) {
+                        throw new Error("browserFillForm requires a non-empty fields array");
+                    }
+                    return toolCall("browser_fill_form", params);
+                },
+                browserHandleDialog: (options) => {
+                    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+                        throw new Error("browserHandleDialog only accepts one options object");
+                    }
+                    const params = { ...options };
+                    if (typeof params.accept !== 'boolean') {
+                        throw new Error("accept must be a boolean");
+                    }
+                    if (params.promptText !== undefined && params.promptText !== null) {
+                        params.promptText = String(params.promptText);
+                    }
+                    return toolCall("browser_handle_dialog", params);
+                },
+                browserHover: (options) => {
+                    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+                        throw new Error("browserHover only accepts one options object");
+                    }
+                    const params = { ...options };
+                    if (params.ref !== undefined && params.ref !== null) {
+                        params.ref = String(params.ref).trim();
+                    }
+                    if (!params.ref) {
+                        throw new Error("browserHover requires ref");
+                    }
+                    if (params.element !== undefined && params.element !== null) {
+                        params.element = String(params.element);
+                    }
+                    return toolCall("browser_hover", params);
+                },
+                browserNetworkRequests: (options) => {
+                    if (options !== undefined && (typeof options !== 'object' || Array.isArray(options))) {
+                        throw new Error("browserNetworkRequests only accepts one options object");
+                    }
                     const params = { ...(options || {}) };
-                    if (params.include_disabled !== undefined) {
-                        params.include_disabled = params.include_disabled ? "true" : "false";
+                    if (params.includeStatic !== undefined) {
+                        params.includeStatic = !!params.includeStatic;
                     }
-                    return toolCall("browser_userscript_list", params);
+                    if (params.filename !== undefined && params.filename !== null) {
+                        params.filename = String(params.filename);
+                    }
+                    return toolCall("browser_network_requests", params);
                 },
-                browserUserscriptInstall: (options) => {
-                    if (!options || typeof options !== "object" || Array.isArray(options)) {
-                        throw new Error("browserUserscriptInstall only accepts one options object");
+                browserPressKey: (keyOrOptions) => {
+                    const params = typeof keyOrOptions === 'string' ? { key: keyOrOptions } : { ...(keyOrOptions || {}) };
+                    if (params.key !== undefined && params.key !== null) {
+                        params.key = String(params.key).trim();
+                    }
+                    if (!params.key) {
+                        throw new Error("browserPressKey requires key");
+                    }
+                    return toolCall("browser_press_key", params);
+                },
+                browserResize: (options) => {
+                    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+                        throw new Error("browserResize only accepts one options object");
                     }
                     const params = { ...options };
-                    const presentCount = [params.url, params.path, params.source].filter((item) => item !== undefined && item !== null && String(item).trim() !== "").length;
-                    if (presentCount !== 1) {
-                        throw new Error("Exactly one of url, path, or source is required");
+                    if (params.width === undefined || params.height === undefined) {
+                        throw new Error("browserResize requires width and height");
                     }
-                    ["url", "path", "source", "source_url", "source_display"].forEach((key) => {
-                        if (params[key] !== undefined && params[key] !== null) {
-                            params[key] = String(params[key]);
-                        }
-                    });
-                    return toolCall("browser_userscript_install", params);
+                    return toolCall("browser_resize", params);
                 },
-                browserUserscriptStart: (options) => {
-                    if (!options || typeof options !== "object" || Array.isArray(options)) {
-                        throw new Error("browserUserscriptStart only accepts one options object");
+                browserRunCode: (options) => {
+                    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+                        throw new Error("browserRunCode only accepts one options object");
                     }
                     const params = { ...options };
-                    ["script_id", "name", "namespace", "source_url"].forEach((key) => {
-                        if (params[key] !== undefined && params[key] !== null) {
-                            params[key] = String(params[key]);
-                        }
-                    });
-                    return toolCall("browser_userscript_start", params);
+                    if (params.code !== undefined && params.code !== null) {
+                        params.code = String(params.code);
+                    }
+                    if (!params.code) {
+                        throw new Error("browserRunCode requires code");
+                    }
+                    return toolCall("browser_run_code", params);
                 },
-                browserUserscriptStop: (options) => {
-                    if (!options || typeof options !== "object" || Array.isArray(options)) {
-                        throw new Error("browserUserscriptStop only accepts one options object");
+                browserSelectOption: (options) => {
+                    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+                        throw new Error("browserSelectOption only accepts one options object");
                     }
                     const params = { ...options };
-                    ["script_id", "name", "namespace", "source_url"].forEach((key) => {
-                        if (params[key] !== undefined && params[key] !== null) {
-                            params[key] = String(params[key]);
-                        }
-                    });
-                    return toolCall("browser_userscript_stop", params);
+                    if (params.ref !== undefined && params.ref !== null) {
+                        params.ref = String(params.ref).trim();
+                    }
+                    if (!params.ref) {
+                        throw new Error("browserSelectOption requires ref");
+                    }
+                    if (!Array.isArray(params.values) || params.values.length === 0) {
+                        throw new Error("browserSelectOption requires a non-empty values array");
+                    }
+                    params.values = params.values.map((value) => String(value));
+                    if (params.element !== undefined && params.element !== null) {
+                        params.element = String(params.element);
+                    }
+                    return toolCall("browser_select_option", params);
                 },
-                browserUserscriptUninstall: (options) => {
-                    if (!options || typeof options !== "object" || Array.isArray(options)) {
-                        throw new Error("browserUserscriptUninstall only accepts one options object");
+                browserSnapshot: (options) => {
+                    if (options !== undefined && (typeof options !== 'object' || Array.isArray(options))) {
+                        throw new Error("browserSnapshot only accepts one options object");
+                    }
+                    const params = { ...(options || {}) };
+                    if (params.filename !== undefined && params.filename !== null) {
+                        params.filename = String(params.filename);
+                    }
+                    return toolCall("browser_snapshot", params);
+                },
+                browserTabs: (options) => {
+                    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+                        throw new Error("browserTabs only accepts one options object");
                     }
                     const params = { ...options };
-                    ["script_id", "name", "namespace", "source_url"].forEach((key) => {
-                        if (params[key] !== undefined && params[key] !== null) {
-                            params[key] = String(params[key]);
-                        }
-                    });
-                    return toolCall("browser_userscript_uninstall", params);
+                    if (params.action !== undefined && params.action !== null) {
+                        params.action = String(params.action).trim();
+                    }
+                    if (!params.action) {
+                        throw new Error("browserTabs requires action");
+                    }
+                    return toolCall("browser_tabs", params);
+                },
+                browserTakeScreenshot: (options) => {
+                    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+                        throw new Error("browserTakeScreenshot only accepts one options object");
+                    }
+                    const params = { ...options };
+                    if (params.type !== undefined && params.type !== null) {
+                        params.type = String(params.type).trim();
+                    }
+                    if (!params.type) {
+                        params.type = "png";
+                    }
+                    if (params.element !== undefined && params.element !== null) {
+                        params.element = String(params.element);
+                    }
+                    if (params.ref !== undefined && params.ref !== null) {
+                        params.ref = String(params.ref).trim();
+                    }
+                    if (params.ref && !params.element) {
+                        throw new Error("element is required when ref is provided");
+                    }
+                    if (params.element && !params.ref) {
+                        throw new Error("ref is required when element is provided");
+                    }
+                    if (params.fullPage !== undefined) {
+                        params.fullPage = !!params.fullPage;
+                    }
+                    return toolCall("browser_take_screenshot", params);
+                },
+                browserType: (options) => {
+                    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+                        throw new Error("browserType only accepts one options object");
+                    }
+                    const params = { ...options };
+                    if (params.ref !== undefined && params.ref !== null) {
+                        params.ref = String(params.ref).trim();
+                    }
+                    if (!params.ref) {
+                        throw new Error("browserType requires ref");
+                    }
+                    if (params.text === undefined || params.text === null) {
+                        throw new Error("browserType requires text");
+                    }
+                    params.text = String(params.text);
+                    if (params.element !== undefined && params.element !== null) {
+                        params.element = String(params.element);
+                    }
+                    if (params.submit !== undefined) {
+                        params.submit = !!params.submit;
+                    }
+                    if (params.slowly !== undefined) {
+                        params.slowly = !!params.slowly;
+                    }
+                    return toolCall("browser_type", params);
+                },
+                browserWaitFor: (options) => {
+                    if (!options || typeof options !== 'object' || Array.isArray(options)) {
+                        throw new Error("browserWaitFor only accepts one options object");
+                    }
+                    const params = { ...options };
+                    if (
+                        params.time === undefined &&
+                        params.text === undefined &&
+                        params.textGone === undefined
+                    ) {
+                        throw new Error("browserWaitFor requires one of: time, text, textGone");
+                    }
+                    if (params.text !== undefined && params.text !== null) {
+                        params.text = String(params.text);
+                    }
+                    if (params.textGone !== undefined && params.textGone !== null) {
+                        params.textGone = String(params.textGone);
+                    }
+                    return toolCall("browser_wait_for", params);
                 },
                 // 新增增强版HTTP请求
                 http: (options) => {
