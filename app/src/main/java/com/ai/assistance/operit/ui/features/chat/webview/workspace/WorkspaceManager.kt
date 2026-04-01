@@ -1,6 +1,7 @@
 package com.ai.assistance.operit.ui.features.chat.webview.workspace
 
 import android.annotation.SuppressLint
+import android.net.Uri
 import com.ai.assistance.operit.util.AppLogger
 import android.view.MotionEvent
 import android.webkit.WebView
@@ -42,7 +43,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.platform.rememberNestedScrollInteropConnection
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlin.math.roundToInt
@@ -89,6 +89,29 @@ private fun WebView.releaseWorkspaceWebView() {
     stopLoading()
     removeAllViews()
     destroy()
+}
+
+private fun isLocalPreviewUrl(url: String): Boolean {
+    if (url.isBlank()) return false
+    return runCatching {
+        val uri = Uri.parse(url)
+        val host = uri.host?.lowercase()
+        (uri.scheme == "http" || uri.scheme == "https") &&
+            (host == "localhost" || host == "127.0.0.1")
+    }.getOrDefault(false)
+}
+
+private fun previewWebViewOptions(url: String): WebViewHandler.WebViewOptions {
+    if (!isLocalPreviewUrl(url)) {
+        return WebViewHandler.WebViewOptions()
+    }
+    return WebViewHandler.WebViewOptions(
+        preferDesktopSite = false,
+        enableWorkspaceCorsProxy = false,
+        supportZoom = false,
+        useWideViewPort = false,
+        loadWithOverviewMode = false
+    )
 }
 
 @Composable
@@ -168,15 +191,19 @@ fun WorkspaceManager(
         }
     }
 
-    LaunchedEffect(isVisible, workspacePath, workspaceEnv, workspaceServer) {
+    LaunchedEffect(isVisible, workspacePath, workspaceEnv, workspaceServer, workspaceConfig.server.enabled) {
         if (!isVisible) return@LaunchedEffect
 
         runCatching {
             withContext(Dispatchers.IO) {
-                if (!workspaceServer.isRunning()) {
-                    workspaceServer.start()
+                if (workspaceConfig.server.enabled) {
+                    if (!workspaceServer.isRunning()) {
+                        workspaceServer.start()
+                    }
+                    workspaceServer.updateChatWorkspace(workspacePath, workspaceEnv)
+                } else if (workspaceServer.isRunning()) {
+                    workspaceServer.stop()
                 }
-                workspaceServer.updateChatWorkspace(workspacePath, workspaceEnv)
             }
         }.onFailure { error ->
             AppLogger.e("WorkspaceManager", "Failed to prepare workspace preview server", error)
@@ -204,12 +231,48 @@ fun WorkspaceManager(
         mutableStateOf<String?>(null)
     }
     val workspacePreviewUrl = workspaceConfig.preview.url.ifEmpty { "http://localhost:8093" }
+    val workspacePreviewOptions = remember(workspacePreviewUrl) { previewWebViewOptions(workspacePreviewUrl) }
 
     var canWebViewGoBack by remember { mutableStateOf(false) }
+    var canWebViewGoForward by remember { mutableStateOf(false) }
+    var showCommandBrowserPreview by remember(workspacePath, workspaceEnv, workspaceConfig.preview.url) {
+        mutableStateOf(false)
+    }
+    var commandPreviewWebView by remember { mutableStateOf<WebView?>(null) }
+    var lastLoadedCommandPreviewUrl by remember(workspacePath, workspaceEnv, workspaceConfig.preview.url) {
+        mutableStateOf<String?>(null)
+    }
+    var canCommandPreviewGoBack by remember { mutableStateOf(false) }
+    var canCommandPreviewGoForward by remember { mutableStateOf(false) }
+    val commandPreviewUrl = workspaceConfig.preview.url
+    val commandPreviewOptions = remember(commandPreviewUrl) { previewWebViewOptions(commandPreviewUrl) }
 
     LaunchedEffect(webViewHandler) {
         webViewHandler.onCanGoBackChanged = { canGoBack ->
             canWebViewGoBack = canGoBack
+        }
+        webViewHandler.onCanGoForwardChanged = { canGoForward ->
+            canWebViewGoForward = canGoForward
+        }
+    }
+
+    val commandPreviewHandler =
+        remember(context) {
+            WebViewHandler(context).apply {
+                onFileChooserRequest = { intent, callback ->
+                    actualViewModel.startFileChooserForResult(intent) { resultCode, data ->
+                        callback(resultCode, data)
+                    }
+                }
+            }
+        }
+
+    LaunchedEffect(commandPreviewHandler) {
+        commandPreviewHandler.onCanGoBackChanged = { canGoBack ->
+            canCommandPreviewGoBack = canGoBack
+        }
+        commandPreviewHandler.onCanGoForwardChanged = { canGoForward ->
+            canCommandPreviewGoForward = canGoForward
         }
     }
 
@@ -220,6 +283,32 @@ fun WorkspaceManager(
     var currentFileIndex by rememberLocal(key = "current_file_index_$workspaceStateKey", -1)
     var filePreviewStates by remember { mutableStateOf(mapOf<String, Boolean>()) }
     var unsavedFiles by rememberLocal<Set<String>>(key = "unsaved_files_$workspaceStateKey", emptySet())
+    val isBrowserPreviewVisible =
+        isVisible && currentFileIndex == -1 && workspaceConfig.preview.type == "browser"
+    val isCommandPreviewVisible =
+        isVisible &&
+            currentFileIndex == -1 &&
+            workspaceConfig.preview.type != "browser" &&
+            showCommandBrowserPreview &&
+            commandPreviewUrl.isNotEmpty()
+    val activePreviewWebView =
+        when {
+            isBrowserPreviewVisible -> workspaceWebView
+            isCommandPreviewVisible -> commandPreviewWebView
+            else -> null
+        }
+    val activePreviewCanGoBack =
+        when {
+            isBrowserPreviewVisible -> canWebViewGoBack
+            isCommandPreviewVisible -> canCommandPreviewGoBack
+            else -> false
+        }
+    val activePreviewCanGoForward =
+        when {
+            isBrowserPreviewVisible -> canWebViewGoForward
+            isCommandPreviewVisible -> canCommandPreviewGoForward
+            else -> false
+        }
     
     // 控制可展开FAB的菜单状态
     var isFabMenuExpanded by remember { mutableStateOf(false) }
@@ -248,6 +337,7 @@ fun WorkspaceManager(
             // 确保webView已经加载完成后再刷新
             kotlinx.coroutines.delay(100) // 短暂延迟确保webView准备就绪
             workspaceWebView?.reload()
+            commandPreviewWebView?.reload()
         }
     }
 
@@ -391,12 +481,10 @@ fun WorkspaceManager(
                 .fillMaxSize()
                 .imePadding()
     ) {
-        val isBrowserPreviewVisible = isVisible && currentFileIndex == -1 && workspaceConfig.preview.type == "browser"
-
-        BackHandler(enabled = isBrowserPreviewVisible && canWebViewGoBack) {
-            if (canWebViewGoBack) {
+        BackHandler(enabled = activePreviewCanGoBack) {
+            if (activePreviewCanGoBack) {
                 try {
-                    workspaceWebView?.goBack()
+                    activePreviewWebView?.goBack()
                 } catch (e: Exception) {
                     AppLogger.e("WorkspaceManager", "Failed to navigate WebView back", e)
                 }
@@ -470,6 +558,51 @@ fun WorkspaceManager(
                                     contentDescription = "Toggle Preview"
                             )
                         }
+                    } else if (isBrowserPreviewVisible || isCommandPreviewVisible) {
+                        IconButton(
+                            onClick = { activePreviewWebView?.goBack() },
+                            enabled = activePreviewCanGoBack,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ChevronLeft,
+                                contentDescription = stringResource(R.string.web_session_back),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { activePreviewWebView?.goForward() },
+                            enabled = activePreviewCanGoForward,
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ChevronRight,
+                                contentDescription = stringResource(R.string.web_session_forward),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { activePreviewWebView?.reload() },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = stringResource(R.string.web_session_refresh),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        if (isCommandPreviewVisible) {
+                            IconButton(
+                                onClick = { showCommandBrowserPreview = false },
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = stringResource(R.string.workspace_close_preview),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -488,7 +621,12 @@ fun WorkspaceManager(
                                     factory = { androidContext ->
                                         WebView(androidContext).apply {
                                             installWorkspaceTouchInterceptor()
-                                            webViewHandler.configureWebView(this, WebViewHandler.WebViewMode.WORKSPACE, "workspace_preview_webview")
+                                            webViewHandler.configureWebView(
+                                                this,
+                                                WebViewHandler.WebViewMode.WORKSPACE,
+                                                "workspace_preview_webview",
+                                                workspacePreviewOptions
+                                            )
                                             loadUrl(workspacePreviewUrl)
                                             workspaceWebView = this
                                             webViewHandler.currentWebView = this
@@ -511,6 +649,7 @@ fun WorkspaceManager(
                                             webViewHandler.currentWebView = null
                                         }
                                         canWebViewGoBack = false
+                                        canWebViewGoForward = false
                                         lastLoadedWorkspacePreviewUrl = null
                                         view.releaseWorkspaceWebView()
                                     },
@@ -520,19 +659,66 @@ fun WorkspaceManager(
                     }
                     // 显示命令按钮界面（当preview类型不是browser时）
                     currentFileIndex == -1 && workspaceConfig.preview.type != "browser" -> {
-                        CommandButtonsView(
-                            config = workspaceConfig,
-                            workspacePath = workspacePath,
-                            onCommandExecute = { command ->
-                                // 在专属会话中执行命令
-                                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                                    actualViewModel.executeCommandInWorkspace(command, workspacePath)
-                                } else {
-                                    // 对于旧版本Android，显示不支持提示
-                                    AppLogger.w("WorkspaceManager", "Terminal features require Android 8.0+")
-                                }
+                        if (isCommandPreviewVisible) {
+                            key(workspacePath, workspaceEnv, commandPreviewUrl) {
+                                AndroidView(
+                                    factory = { androidContext ->
+                                        WebView(androidContext).apply {
+                                            installWorkspaceTouchInterceptor()
+                                            commandPreviewHandler.configureWebView(
+                                                this,
+                                                WebViewHandler.WebViewMode.WORKSPACE,
+                                                "workspace_preview_${workspacePath.hashCode()}",
+                                                commandPreviewOptions
+                                            )
+                                            loadUrl(commandPreviewUrl)
+                                            commandPreviewWebView = this
+                                            commandPreviewHandler.currentWebView = this
+                                            lastLoadedCommandPreviewUrl = commandPreviewUrl
+                                        }
+                                    },
+                                    update = { webView ->
+                                        commandPreviewWebView = webView
+                                        commandPreviewHandler.currentWebView = webView
+                                        if (lastLoadedCommandPreviewUrl != commandPreviewUrl) {
+                                            webView.loadUrl(commandPreviewUrl)
+                                            lastLoadedCommandPreviewUrl = commandPreviewUrl
+                                        }
+                                        webView.requestFocus()
+                                    },
+                                    onRelease = { webView ->
+                                        if (commandPreviewWebView === webView) {
+                                            commandPreviewWebView = null
+                                        }
+                                        if (commandPreviewHandler.currentWebView === webView) {
+                                            commandPreviewHandler.currentWebView = null
+                                        }
+                                        canCommandPreviewGoBack = false
+                                        canCommandPreviewGoForward = false
+                                        lastLoadedCommandPreviewUrl = null
+                                        webView.releaseWorkspaceWebView()
+                                    },
+                                    modifier = Modifier.fillMaxSize()
+                                )
                             }
-                        )
+                        } else {
+                            CommandButtonsView(
+                                config = workspaceConfig,
+                                workspacePath = workspacePath,
+                                onCommandExecute = { command ->
+                                    // 在专属会话中执行命令
+                                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                                        actualViewModel.executeCommandInWorkspace(command, workspacePath)
+                                    } else {
+                                        // 对于旧版本Android，显示不支持提示
+                                        AppLogger.w("WorkspaceManager", "Terminal features require Android 8.0+")
+                                    }
+                                },
+                                onOpenBrowserPreview = {
+                                    showCommandBrowserPreview = true
+                                }
+                            )
+                        }
                     }
                     // 显示打开的文件
                     currentFileIndex in openFiles.indices -> {
@@ -1241,71 +1427,11 @@ fun VSCodeTab(
 fun CommandButtonsView(
     config: WorkspaceConfig,
     workspacePath: String,
-    onCommandExecute: (CommandConfig) -> Unit
+    onCommandExecute: (CommandConfig) -> Unit,
+    onOpenBrowserPreview: () -> Unit
 ) {
     val context = LocalContext.current
-    var showBrowserPreview by remember { mutableStateOf(false) }
-    var refreshCounter by remember { mutableStateOf(0) }
-    var browserPreviewWebView by remember { mutableStateOf<WebView?>(null) }
-    var lastLoadedBrowserPreviewUrl by remember(workspacePath, config.preview.url) {
-        mutableStateOf<String?>(null)
-    }
-    
-    // 如果用户切换到浏览器预览，显示 WebView
-    if (showBrowserPreview && config.preview.url.isNotEmpty()) {
-        val handler = remember(context) { WebViewHandler(context) }
-        
-        // 每次刷新计数器改变时重新加载页面
-        LaunchedEffect(refreshCounter) {
-            browserPreviewWebView?.loadUrl(config.preview.url)
-            lastLoadedBrowserPreviewUrl = config.preview.url
-        }
-        
-        val nestedScrollInterop = rememberNestedScrollInteropConnection()
-        Box(modifier = Modifier.fillMaxSize()) {
-            AndroidView(
-                factory = { androidContext ->
-                    WebView(androidContext).apply {
-                        installWorkspaceTouchInterceptor()
-                        handler.configureWebView(this, WebViewHandler.WebViewMode.WORKSPACE, "workspace_preview_${workspacePath.hashCode()}")
-                        loadUrl(config.preview.url)
-                        browserPreviewWebView = this
-                        lastLoadedBrowserPreviewUrl = config.preview.url
-                    }
-                },
-                update = { webView ->
-                    browserPreviewWebView = webView
-                    if (lastLoadedBrowserPreviewUrl != config.preview.url) {
-                        webView.loadUrl(config.preview.url)
-                        lastLoadedBrowserPreviewUrl = config.preview.url
-                    }
-                    webView.requestFocus()
-                },
-                onRelease = { webView ->
-                    if (browserPreviewWebView === webView) {
-                        browserPreviewWebView = null
-                    }
-                    lastLoadedBrowserPreviewUrl = null
-                    webView.releaseWorkspaceWebView()
-                },
-                modifier = Modifier
-                    .fillMaxSize()
-                    .nestedScroll(nestedScrollInterop)
-            )
-            
-            // 返回按钮
-            FloatingActionButton(
-                onClick = { showBrowserPreview = false },
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(16.dp)
-            ) {
-                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.workspace_close_preview))
-            }
-        }
-        return
-    }
-    
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1347,10 +1473,7 @@ fun CommandButtonsView(
         // 浏览器预览按钮（可选）
         if (config.preview.showPreviewButton && config.preview.url.isNotEmpty()) {
             Button(
-                onClick = { 
-                    showBrowserPreview = true
-                    refreshCounter++
-                },
+                onClick = onOpenBrowserPreview,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),

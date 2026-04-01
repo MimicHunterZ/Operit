@@ -4,7 +4,10 @@ import android.content.Context
 import com.ai.assistance.operit.data.model.ApiProviderType
 import com.ai.assistance.operit.data.model.ModelParameter
 import com.ai.assistance.operit.data.model.ToolPrompt
+import com.ai.assistance.operit.data.preferences.ApiPreferences
 import com.ai.assistance.operit.util.AppLogger
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody
 import org.json.JSONObject
@@ -14,6 +17,10 @@ import org.json.JSONObject
  *
  * OpenRouter chat completions are largely OpenAI-compatible, but reasoning is controlled via
  * the unified `reasoning` object instead of the app's generic `enableThinking` toggle.
+ *
+ * We align the default reasoning request shape with RikkaHub's OpenRouter handling:
+ * - thinking on: `reasoning: {}` or `reasoning.max_tokens = <budget>`
+ * - thinking off: `reasoning: { enabled: false, max_tokens: 0 }`
  *
  * This provider keeps the shared OpenAI request/response handling while applying OpenRouter's
  * request-body conventions and default headers.
@@ -63,7 +70,12 @@ class OpenRouterProvider(
         )
         val jsonObject = JSONObject(baseRequestBodyJson)
 
-        applyOpenRouterReasoning(jsonObject, enableThinking)
+        applyOpenRouterReasoning(
+            context = context,
+            requestJson = jsonObject,
+            modelParameters = modelParameters,
+            enableThinking = enableThinking
+        )
 
         val logJson = JSONObject(jsonObject.toString())
         if (logJson.has("tools")) {
@@ -81,59 +93,104 @@ class OpenRouterProvider(
     }
 
     private fun applyOpenRouterReasoning(
+        context: Context,
         requestJson: JSONObject,
+        modelParameters: List<ModelParameter<*>>,
         enableThinking: Boolean
     ) {
-        if (!enableThinking) {
-            return
-        }
-
         val reasoningObject = requestJson.optJSONObject("reasoning")
+        val existingHasExplicitReasoningControl =
+            reasoningObject?.let {
+                it.has("enabled") || it.has("max_tokens") || it.has("effort")
+            } == true
+
         when {
-            reasoningObject == null && !requestJson.has("reasoning") -> {
-                requestJson.put("reasoning", JSONObject().put("enabled", true))
-                AppLogger.d(
+            reasoningObject == null && requestJson.has("reasoning") && !requestJson.isNull("reasoning") -> {
+                AppLogger.w(
                     "OpenRouterProvider",
-                    "OpenRouter thinking enabled via reasoning.enabled=true"
+                    "Skipping OpenRouter reasoning adaptation because reasoning is not an object"
                 )
             }
 
-            reasoningObject == null && requestJson.isNull("reasoning") -> {
-                requestJson.put("reasoning", JSONObject().put("enabled", true))
+            existingHasExplicitReasoningControl -> {
                 AppLogger.d(
                     "OpenRouterProvider",
-                    "OpenRouter thinking enabled via reasoning.enabled=true (replaced null reasoning)"
+                    "Preserving caller-supplied OpenRouter reasoning object"
                 )
-            }
-
-            reasoningObject != null -> {
-                val hasExplicitReasoningControl =
-                    reasoningObject.has("enabled") ||
-                        reasoningObject.has("max_tokens") ||
-                        reasoningObject.has("effort")
-
-                if (!hasExplicitReasoningControl) {
-                    reasoningObject.put("enabled", true)
-                    requestJson.put("reasoning", reasoningObject)
-                    AppLogger.d(
-                        "OpenRouterProvider",
-                        "OpenRouter reasoning object augmented with enabled=true"
-                    )
-                } else {
-                    AppLogger.d(
-                        "OpenRouterProvider",
-                        "Preserving caller-supplied OpenRouter reasoning object"
-                    )
-                }
             }
 
             else -> {
-                AppLogger.w(
-                    "OpenRouterProvider",
-                    "Skipping automatic thinking injection because reasoning is not an object"
-                )
+                val finalReasoningObject = reasoningObject ?: JSONObject()
+                if (enableThinking) {
+                    val budgetTokens = resolveReasoningBudget(context, requestJson, modelParameters)
+                    if (budgetTokens != null && budgetTokens > 0) {
+                        finalReasoningObject.put("max_tokens", budgetTokens)
+                    }
+                    requestJson.put("reasoning", finalReasoningObject)
+                    AppLogger.d(
+                        "OpenRouterProvider",
+                        if (budgetTokens != null) {
+                            "OpenRouter thinking enabled via reasoning.max_tokens=$budgetTokens"
+                        } else {
+                            "OpenRouter thinking enabled via empty reasoning object"
+                        }
+                    )
+                } else {
+                    finalReasoningObject.put("enabled", false)
+                    finalReasoningObject.put("max_tokens", 0)
+                    requestJson.put("reasoning", finalReasoningObject)
+                    AppLogger.d(
+                        "OpenRouterProvider",
+                        "OpenRouter thinking disabled via reasoning.enabled=false and max_tokens=0"
+                    )
+                }
             }
         }
+    }
+
+    private fun resolveReasoningBudget(
+        context: Context,
+        requestJson: JSONObject,
+        modelParameters: List<ModelParameter<*>>
+    ): Int? {
+        val qualityLevel = runCatching {
+            runBlocking {
+                ApiPreferences.getInstance(context).thinkingQualityLevelFlow.first()
+            }
+        }.getOrElse {
+            AppLogger.w(
+                "OpenRouterProvider",
+                "Failed to read thinking quality level, falling back to auto reasoning",
+                it
+            )
+            return null
+        }
+
+        val requestedBudget =
+            when (qualityLevel.coerceIn(1, 4)) {
+                1 -> null
+                2 -> 1024
+                3 -> 16_000
+                4 -> 32_000
+                else -> null
+            }
+
+        if (requestedBudget == null) {
+            return null
+        }
+
+        val modelMaxTokens =
+            (modelParameters.firstOrNull { it.apiName == "max_tokens" && it.isEnabled }?.currentValue as? Number)
+                ?.toInt()
+                ?.takeIf { it > 1 }
+                ?: requestJson.optInt("max_tokens", 0).takeIf { it > 1 }
+
+        if (modelMaxTokens == null) {
+            return requestedBudget
+        }
+
+        val cappedBudget = minOf(requestedBudget, modelMaxTokens - 1)
+        return if (cappedBudget > 0) cappedBudget else null
     }
 
     companion object {

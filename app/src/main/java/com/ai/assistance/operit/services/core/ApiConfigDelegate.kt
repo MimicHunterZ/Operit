@@ -411,8 +411,9 @@ class ApiConfigDelegate(
 
     fun updateThinkingQualityLevel(level: Int) {
         coroutineScope.launch {
-            apiPreferences.saveThinkingQualityLevel(level)
-            _thinkingQualityLevel.value = level
+            val clampedLevel = level.coerceIn(1, 4)
+            apiPreferences.saveThinkingQualityLevel(clampedLevel)
+            _thinkingQualityLevel.value = clampedLevel
         }
     }
 

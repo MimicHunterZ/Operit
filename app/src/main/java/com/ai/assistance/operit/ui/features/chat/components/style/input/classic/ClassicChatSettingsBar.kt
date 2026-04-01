@@ -478,6 +478,11 @@ fun ClassicChatSettingsBar(
                                         context.getString(R.string.thinking_mode) to context.getString(R.string.thinking_mode_desc)
                                     showMenu = false
                                 },
+                                onThinkingQualityInfoClick = {
+                                    infoPopupContent =
+                                        context.getString(R.string.thinking_quality) to context.getString(R.string.thinking_quality_desc)
+                                    showMenu = false
+                                },
                                 onThinkingGuidanceInfoClick = {
                                     infoPopupContent =
                                         context.getString(R.string.thinking_guidance) to context.getString(R.string.thinking_guidance_desc)
@@ -1192,10 +1197,10 @@ private fun ThinkingSettingsItem(
     onExpandedChange: (Boolean) -> Unit,
     onInfoClick: () -> Unit,
     onThinkingModeInfoClick: () -> Unit,
+    onThinkingQualityInfoClick: () -> Unit,
     onThinkingGuidanceInfoClick: () -> Unit
 ) {
     val context = LocalContext.current
-    val showThinkingQuality = false
 
     @Composable
     fun ThinkingSubSettingItem(
@@ -1366,19 +1371,19 @@ private fun ThinkingSettingsItem(
                     onInfoClick = onThinkingModeInfoClick
                 )
 
-                if (enableThinkingMode && showThinkingQuality) {
+                if (enableThinkingMode) {
                     Box(modifier = Modifier.padding(start = 28.dp)) {
                         SettingSliderItem(
                             label = stringResource(R.string.thinking_quality),
                             icon = Icons.Outlined.Speed,
                             value = thinkingQualityLevel.toFloat(),
                             onValueChange = { newValue ->
-                                val intValue = newValue.toInt().coerceIn(1, 3)
+                                val intValue = newValue.toInt().coerceIn(1, 4)
                                 onThinkingQualityLevelChange(intValue)
                             },
-                            onInfoClick = onThinkingModeInfoClick,
-                            valueRange = 1f..3f,
-                            steps = 1,
+                            onInfoClick = onThinkingQualityInfoClick,
+                            valueRange = 1f..4f,
+                            steps = 2,
                             decimalFormatPattern = "0"
                         )
                     }

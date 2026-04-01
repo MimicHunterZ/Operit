@@ -108,12 +108,12 @@ object AIServiceFactory {
             ApiProviderType.OPENAI_RESPONSES,
             ApiProviderType.OPENAI_RESPONSES_GENERIC ->
                 OpenAIResponsesProvider(
-                    apiEndpoint = config.apiEndpoint,
+                    responsesApiEndpoint = config.apiEndpoint,
                     apiKeyProvider = apiKeyProvider,
                     modelName = config.modelName,
                     client = httpClient,
                     customHeaders = customHeaders,
-                    providerType = config.apiProviderType,
+                    responsesProviderType = config.apiProviderType,
                     supportsVision = supportsVision,
                     supportsAudio = supportsAudio,
                     supportsVideo = supportsVideo,

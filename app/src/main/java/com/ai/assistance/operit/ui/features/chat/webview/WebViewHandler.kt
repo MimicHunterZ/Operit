@@ -40,6 +40,14 @@ class WebViewHandler(private val context: Context) {
         WORKSPACE // 用于代码/网页预览，需要自适应屏幕
     }
 
+    data class WebViewOptions(
+        val preferDesktopSite: Boolean = true,
+        val enableWorkspaceCorsProxy: Boolean = true,
+        val supportZoom: Boolean = true,
+        val useWideViewPort: Boolean = true,
+        val loadWithOverviewMode: Boolean = true
+    )
+
     private var filePathCallback: ValueCallback<Array<Uri>>? = null
 
     // 用于覆盖URL加载行为的回调
@@ -62,6 +70,7 @@ class WebViewHandler(private val context: Context) {
     var onPageStarted: ((tabId: String) -> Unit)? = null
     var onPageFinished: ((tabId: String) -> Unit)? = null
     var onCanGoBackChanged: ((Boolean) -> Unit)? = null
+    var onCanGoForwardChanged: ((Boolean) -> Unit)? = null
 
 
     // 通过JavaScript接口处理Blob/Base64数据下载
@@ -120,7 +129,12 @@ class WebViewHandler(private val context: Context) {
     }
 
     // 配置WebView的所有设置
-    fun configureWebView(webView: WebView, mode: WebViewMode, tabId: String): WebView {
+    fun configureWebView(
+        webView: WebView,
+        mode: WebViewMode,
+        tabId: String,
+        options: WebViewOptions = WebViewOptions()
+    ): WebView {
         return webView.apply {
             // 明确设置布局参数，确保WebView填满其父容器
             layoutParams =
@@ -133,7 +147,7 @@ class WebViewHandler(private val context: Context) {
             setLayerType(View.LAYER_TYPE_HARDWARE, null)
 
             // 配置WebViewClient处理页面加载和错误
-            webViewClient = createWebViewClient(mode, tabId)
+            webViewClient = createWebViewClient(mode, tabId, options)
 
             // 配置WebChromeClient处理文件选择等高级功能
             webChromeClient = createWebChromeClient()
@@ -165,19 +179,24 @@ class WebViewHandler(private val context: Context) {
                 cacheMode = WebSettings.LOAD_DEFAULT
 
                 // 视图设置
-                useWideViewPort = true
-                loadWithOverviewMode = true
+                useWideViewPort = options.useWideViewPort
+                loadWithOverviewMode = options.loadWithOverviewMode
 
                 // 缩放设置
-                setSupportZoom(true)
-                builtInZoomControls = true
+                setSupportZoom(options.supportZoom)
+                builtInZoomControls = options.supportZoom
                 displayZoomControls = false
 
                 // 编码设置
                 defaultTextEncodingName = "UTF-8"
 
-                // 设置用户代理，模拟PC版Edge浏览器以请求桌面版网站
-                userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0 OperitWebView/1.0"
+                // 本地预览页默认保持移动端UA，避免 Flutter/Web 应用在内置浏览器里走错布局或渲染路径。
+                userAgentString =
+                    if (options.preferDesktopSite) {
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0 OperitWebView/1.0"
+                    } else {
+                        WebSettings.getDefaultUserAgent(context)
+                    }
             }
 
             // 注入Blob下载辅助JavaScript
@@ -186,11 +205,21 @@ class WebViewHandler(private val context: Context) {
     }
 
     // 创建WebViewClient
-    private fun createWebViewClient(mode: WebViewMode, tabId: String): WebViewClient {
+    private fun notifyNavigationState(view: WebView?) {
+        onCanGoBackChanged?.invoke(view?.canGoBack() == true)
+        onCanGoForwardChanged?.invoke(view?.canGoForward() == true)
+    }
+
+    private fun createWebViewClient(
+        mode: WebViewMode,
+        tabId: String,
+        options: WebViewOptions
+    ): WebViewClient {
         return object : WebViewClient() {
             override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 onPageStarted?.invoke(tabId)
+                notifyNavigationState(view)
             }
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
@@ -199,11 +228,11 @@ class WebViewHandler(private val context: Context) {
                 // 注入Blob下载辅助代码
                 view?.let { injectBlobDownloadHelper(it) }
 
-                if (mode == WebViewMode.WORKSPACE) {
+                if (mode == WebViewMode.WORKSPACE && options.enableWorkspaceCorsProxy) {
                     view?.let { injectWorkspaceCorsProxyHelper(it) }
                 }
 
-                onCanGoBackChanged?.invoke(view?.canGoBack() == true)
+                notifyNavigationState(view)
             }
 
             override fun shouldOverrideUrlLoading(
@@ -277,6 +306,7 @@ class WebViewHandler(private val context: Context) {
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 super.onProgressChanged(view, newProgress)
                 onProgressChanged?.invoke(newProgress)
+                notifyNavigationState(view)
             }
 
             override fun onReceivedTitle(view: WebView?, title: String?) {

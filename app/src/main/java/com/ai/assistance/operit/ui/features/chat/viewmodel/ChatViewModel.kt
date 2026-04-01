@@ -61,6 +61,7 @@ import com.ai.assistance.operit.util.WaifuMessageProcessor
 import com.ai.assistance.operit.ui.features.chat.webview.workspace.WorkspaceBackupManager
 import com.ai.assistance.operit.ui.features.chat.webview.workspace.CommandConfig
 import com.ai.assistance.operit.ui.features.chat.webview.workspace.WorkspaceCommandExecutionState
+import com.ai.assistance.operit.ui.features.chat.webview.workspace.WorkspaceConfigReader
 import com.ai.assistance.operit.ui.features.chat.webview.workspace.toWorkspaceCommandOutputEntries
 import com.ai.assistance.operit.core.tools.system.Terminal
 import com.ai.assistance.operit.util.TtsCleaner
@@ -1724,13 +1725,30 @@ class ChatViewModel(private val context: Context) : ViewModel() {
         return currentChatId.value
     }
 
-    private suspend fun prepareWorkspaceServer(workspacePath: String, workspaceEnv: String?) {
-        withContext(Dispatchers.IO) {
+    private fun isWorkspaceServerEnabled(workspacePath: String, workspaceEnv: String?): Boolean {
+        if (workspaceEnv?.startsWith("repo:", ignoreCase = true) == true) {
+            return false
+        }
+        return WorkspaceConfigReader.readConfig(workspacePath).server.enabled
+    }
+
+    private suspend fun prepareWorkspaceServer(workspacePath: String, workspaceEnv: String?): Boolean {
+        return withContext(Dispatchers.IO) {
             val webServer = LocalWebServer.getInstance(context, LocalWebServer.ServerType.WORKSPACE)
-            if (!webServer.isRunning()) {
-                webServer.start()
+            val serverEnabled = isWorkspaceServerEnabled(workspacePath, workspaceEnv)
+
+            if (!serverEnabled) {
+                if (webServer.isRunning()) {
+                    webServer.stop()
+                }
+                false
+            } else {
+                if (!webServer.isRunning()) {
+                    webServer.start()
+                }
+                webServer.updateChatWorkspace(workspacePath, workspaceEnv)
+                true
             }
-            webServer.updateChatWorkspace(workspacePath, workspaceEnv)
         }
     }
 
@@ -1744,8 +1762,11 @@ class ChatViewModel(private val context: Context) : ViewModel() {
             return
         }
 
-        prepareWorkspaceServer(workspacePath, workspaceEnv)
-        AppLogger.d(TAG, "Web服务器工作空间已更新为: $workspacePath env=$workspaceEnv for chat $chatId")
+        if (prepareWorkspaceServer(workspacePath, workspaceEnv)) {
+            AppLogger.d(TAG, "Web服务器工作空间已更新为: $workspacePath env=$workspaceEnv for chat $chatId")
+        } else {
+            AppLogger.d(TAG, "工作区服务器已按配置禁用: $workspacePath env=$workspaceEnv for chat $chatId")
+        }
     }
 
 
@@ -1920,8 +1941,11 @@ class ChatViewModel(private val context: Context) : ViewModel() {
         // 2. Update the web server with the new path and refresh
         viewModelScope.launch {
             try {
-                prepareWorkspaceServer(workspace, workspaceEnv)
-                AppLogger.d(TAG, "Web server workspace updated to: $workspace env=$workspaceEnv for chat $chatId")
+                if (prepareWorkspaceServer(workspace, workspaceEnv)) {
+                    AppLogger.d(TAG, "Web server workspace updated to: $workspace env=$workspaceEnv for chat $chatId")
+                } else {
+                    AppLogger.d(TAG, "Workspace server disabled by config for: $workspace env=$workspaceEnv")
+                }
 
                 // 3. Trigger a refresh of the WebView
                 refreshWebView()

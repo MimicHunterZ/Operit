@@ -144,6 +144,13 @@ open class OpenAIProvider(
         tokenCacheManager.resetTokenCounts()
     }
 
+    protected open fun customizeFinalRequestObject(
+        requestObject: JSONObject,
+        messagesArray: JSONArray,
+        toolsJson: String?
+    ) {
+    }
+
      override fun cancelStreaming() {
          isManuallyCancelled = true
          runCatching { activeResponse?.close() }
@@ -577,6 +584,8 @@ open class OpenAIProvider(
             } else {
                 jsonObject
             }
+
+        customizeFinalRequestObject(finalRequestObject, messagesArray, toolsJson)
 
         // 使用分块日志函数记录请求体（省略过长的tools字段）
         val logJson = JSONObject(finalRequestObject.toString())

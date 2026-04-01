@@ -308,7 +308,7 @@ class ApiPreferences private constructor(private val context: Context) {
 
     val thinkingQualityLevelFlow: Flow<Int> =
         context.apiDataStore.data.map { preferences ->
-            preferences[THINKING_QUALITY_LEVEL] ?: DEFAULT_THINKING_QUALITY_LEVEL
+            (preferences[THINKING_QUALITY_LEVEL] ?: DEFAULT_THINKING_QUALITY_LEVEL).coerceIn(1, 4)
         }
 
     // Flow for Memory Attachment
@@ -427,7 +427,7 @@ class ApiPreferences private constructor(private val context: Context) {
 
     suspend fun saveThinkingQualityLevel(level: Int) {
         context.apiDataStore.edit { preferences ->
-            preferences[THINKING_QUALITY_LEVEL] = level
+            preferences[THINKING_QUALITY_LEVEL] = level.coerceIn(1, 4)
         }
     }
 
@@ -455,7 +455,7 @@ class ApiPreferences private constructor(private val context: Context) {
             preferences[ENABLE_THINKING_MODE] = newMode
             preferences[ENABLE_THINKING_GUIDANCE] = newGuidance
 
-            thinkingQualityLevel?.let { preferences[THINKING_QUALITY_LEVEL] = it.coerceIn(1, 3) }
+            thinkingQualityLevel?.let { preferences[THINKING_QUALITY_LEVEL] = it.coerceIn(1, 4) }
         }
     }
 

@@ -1,34 +1,122 @@
 package com.ai.assistance.operit.api.chat.llmprovider
 
 import com.ai.assistance.operit.data.model.ApiProviderType
+import com.ai.assistance.operit.util.AppLogger
+import java.security.MessageDigest
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
 
 class OpenAIResponsesProvider(
-    apiEndpoint: String,
+    private val responsesApiEndpoint: String,
     apiKeyProvider: ApiKeyProvider,
     modelName: String,
     client: OkHttpClient,
     customHeaders: Map<String, String> = emptyMap(),
-    providerType: ApiProviderType = ApiProviderType.OPENAI_RESPONSES,
+    private val responsesProviderType: ApiProviderType = ApiProviderType.OPENAI_RESPONSES,
     supportsVision: Boolean = false,
     supportsAudio: Boolean = false,
     supportsVideo: Boolean = false,
     enableToolCall: Boolean = false
 ) : OpenAIProvider(
-    apiEndpoint = apiEndpoint,
+    apiEndpoint = responsesApiEndpoint,
     apiKeyProvider = apiKeyProvider,
     modelName = modelName,
     client = client,
     customHeaders = customHeaders,
-    providerType = providerType,
+    providerType = responsesProviderType,
     supportsVision = supportsVision,
     supportsAudio = supportsAudio,
     supportsVideo = supportsVideo,
     enableToolCall = enableToolCall
 ) {
     override val useResponsesApi: Boolean = true
+
+    override fun customizeFinalRequestObject(
+        requestObject: JSONObject,
+        messagesArray: JSONArray,
+        toolsJson: String?
+    ) {
+        if (!shouldAttachPromptCacheKey()) {
+            return
+        }
+
+        if (requestObject.has("prompt_cache_key")) {
+            return
+        }
+
+        val promptCacheKey = buildPromptCacheKey(messagesArray, toolsJson) ?: return
+        requestObject.put("prompt_cache_key", promptCacheKey)
+        AppLogger.d("AIService", "Responses API自动附加prompt_cache_key: $promptCacheKey")
+    }
+
+    private fun shouldAttachPromptCacheKey(): Boolean {
+        return responsesProviderType == ApiProviderType.OPENAI_RESPONSES
+    }
+
+    private fun buildPromptCacheKey(
+        messagesArray: JSONArray,
+        toolsJson: String?
+    ): String? {
+        if (messagesArray.length() == 0 && toolsJson.isNullOrBlank()) {
+            return null
+        }
+
+        val anchorParts = mutableListOf<String>()
+        var assistantOrToolSeen = false
+
+        for (i in 0 until messagesArray.length()) {
+            val message = messagesArray.optJSONObject(i) ?: continue
+            val role = message.optString("role", "")
+            if (role.isEmpty()) {
+                continue
+            }
+
+            if (role == "assistant" || role == "tool") {
+                assistantOrToolSeen = true
+                break
+            }
+
+            if (role == "system" || role == "developer") {
+                anchorParts.add("$role:${message.opt("content")}")
+                continue
+            }
+
+            if (role == "user") {
+                anchorParts.add("$role:${message.opt("content")}")
+                break
+            }
+        }
+
+        if (anchorParts.isEmpty() && assistantOrToolSeen) {
+            val firstMessage = messagesArray.optJSONObject(0)
+            if (firstMessage != null) {
+                anchorParts.add(
+                    "${firstMessage.optString("role", "unknown")}:${firstMessage.opt("content")}"
+                )
+            }
+        }
+
+        val digestInput =
+            buildString {
+                append("operit:responses_prompt_cache:v1")
+                append("|model=").append(modelName)
+                append("|toolCall=").append(enableToolCall)
+                if (!toolsJson.isNullOrBlank()) {
+                    append("|tools=").append(toolsJson)
+                }
+                anchorParts.forEach { part ->
+                    append("|anchor=").append(part)
+                }
+            }
+
+        val digest =
+            MessageDigest.getInstance("SHA-256")
+                .digest(digestInput.toByteArray(Charsets.UTF_8))
+                .joinToString("") { "%02x".format(it) }
+
+        return "operit_resp_${digest.take(48)}"
+    }
 }
 
 object OpenAIResponsesPayloadAdapter {
@@ -399,4 +487,3 @@ object OpenAIResponsesPayloadAdapter {
         }
     }
 }
-

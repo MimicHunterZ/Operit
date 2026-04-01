@@ -3032,8 +3032,8 @@
     <string name="thinking_type_off">off</string>
     <string name="thinking_type_mode">mode</string>
     <string name="thinking_type_guidance">guidance</string>
-    <string name="thinking_quality">Thinking quality</string>
-    <string name="thinking_quality_desc">Only effective in thinking mode</string>
+    <string name="thinking_quality">Thinking intensity</string>
+    <string name="thinking_quality_desc">Only effective in thinking mode. Four levels are available; higher means deeper reasoning, and level 1 uses auto.</string>
     <string name="model_config">Model Configuration</string>
     <string name="model_config_desc">Select a configured model here, or click Manage Configuration below to create or modify models</string>
     <string name="prompt">Prompt</string>

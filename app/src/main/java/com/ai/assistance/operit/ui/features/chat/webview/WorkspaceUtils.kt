@@ -215,12 +215,12 @@ private fun generateFlutterProjectConfig(context: Context): String {
     "description": "${context.getString(R.string.workspace_project_flutter_description)}",
     "server": {
         "enabled": false,
-        "port": 8093,
+        "port": 5013,
         "autoStart": false
     },
     "preview": {
         "type": "terminal",
-        "url": "http://localhost:8093",
+        "url": "http://localhost:5013",
         "showPreviewButton": true,
         "previewButtonLabel": "${context.getString(R.string.workspace_preview_button_label_browser)}"
     },
@@ -249,7 +249,7 @@ private fun generateFlutterProjectConfig(context: Context): String {
         {
             "id": "flutter_run_web_server",
             "label": "${context.getString(R.string.workspace_cmd_flutter_run_web)}",
-            "command": "flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8093",
+            "command": "flutter run -d web-server --web-hostname 0.0.0.0 --web-port 5013",
             "workingDir": ".",
             "shell": true,
             "usesDedicatedSession": true,
@@ -279,7 +279,7 @@ private fun generateFlutterProjectConfig(context: Context): String {
         {
             "id": "flutter_build_web",
             "label": "${context.getString(R.string.workspace_cmd_flutter_build_web)}",
-            "command": "flutter build web",
+            "command": "flutter build web --no-tree-shake-icons",
             "workingDir": ".",
             "shell": true
         }

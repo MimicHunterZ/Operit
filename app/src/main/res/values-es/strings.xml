@@ -1354,8 +1354,8 @@
     <string name="thinking_type_off">off</string>
     <string name="thinking_type_mode">mode</string>
     <string name="thinking_type_guidance">guidance</string>
-    <string name="thinking_quality">Calidad de pensamiento</string>
-    <string name="thinking_quality_desc">Solo efectivo en modo de pensamiento</string>
+    <string name="thinking_quality">Intensidad de pensamiento</string>
+    <string name="thinking_quality_desc">Solo funciona en el modo de pensamiento. Hay 4 niveles; cuanto mayor sea el valor, mas profundo razona, y el nivel 1 usa automatico.</string>
     
     <string name="provider_doubao">Doubao (Modelo Volcano)</string>
     <string name="provider_nvidia">NVIDIA (API Catalog)</string>

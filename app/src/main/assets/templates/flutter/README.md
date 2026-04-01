@@ -4,9 +4,9 @@
 
 ## 快速开始
 
-1. 先执行 `bash android/setup_android_env.sh`。如果当前环境还没有 Flutter，这个脚本会优先从 Flutter 官方 `storage.flutter-io.cn / storage.googleapis.com` 自动安装 Flutter stable，并继续完成 Flutter host artifacts、Java、Android SDK、Gradle、AAPT2 替换等初始化。
+1. 先执行 `bash android/setup_android_env.sh`。如果当前环境还没有 Flutter，这个脚本会优先从 Flutter 官方 `storage.flutter-io.cn / storage.googleapis.com` 自动安装 Flutter stable，并继续完成 Flutter host artifacts、Java、Android SDK、Gradle、AAPT2 替换等初始化；同时会把 `FLUTTER_STORAGE_BASE_URL` 和 `PUB_HOSTED_URL` 持久化到 `~/.bashrc`，方便后续 `flutter pub get` 继续走同一套源。
 2. 在项目根目录执行 `flutter pub get`。
-3. 需要浏览器预览时，执行 `flutter run -d web-server --web-hostname 0.0.0.0 --web-port 8093`。
+3. 需要浏览器预览时，执行 `flutter run -d web-server --web-hostname 0.0.0.0 --web-port 5013`。
 4. 需要 Android 安装包时，执行 `flutter build apk`。
 
 ## 模板说明
@@ -26,7 +26,7 @@
 - `flutter analyze`
 - `flutter test`
 - `flutter build apk`
-- `flutter build web`
+- `flutter build web --no-tree-shake-icons`
 
 ## 关键目录
 

@@ -34,7 +34,12 @@ GRADLE_ZIP="${GRADLE_ROOT}/${GRADLE_DIST}-bin.zip"
 GRADLE_USER_HOME="${GRADLE_USER_HOME:-$HOME/.gradle}"
 FLUTTER_RELEASES_URL="${FLUTTER_RELEASES_URL:-}"
 FLUTTER_DEFAULT_INSTALL_DIR="${FLUTTER_DEFAULT_INSTALL_DIR:-$HOME/flutter}"
+ANDROID_NDK_VERSION="${ANDROID_NDK_VERSION:-28.2.13676358}"
+ANDROID_NDK_ZIP_URL="${ANDROID_NDK_ZIP_URL:-}"
+ANDROID_CMAKE_VERSION="${ANDROID_CMAKE_VERSION:-3.22.1}"
+ENABLE_ARM64_NDK_EMULATION="${ENABLE_ARM64_NDK_EMULATION:-1}"
 FLUTTER_STORAGE_BASE_URL_SELECTED=""
+PUB_HOSTED_URL_SELECTED=""
 FLUTTER_SDK=""
 SCRIPT_DIR=""
 export GRADLE_USER_HOME
@@ -162,9 +167,30 @@ download_file() {
   local dest="$2"
   local max_retries=3
   local retry_count=0
-  
+
   while [[ $retry_count -lt $max_retries ]]; do
-    if command_exists curl; then
+    if command_exists aria2c; then
+      if aria2c \
+        --allow-overwrite=true \
+        --continue=true \
+        --max-connection-per-server=16 \
+        --split=16 \
+        --min-split-size=1M \
+        --connect-timeout=30 \
+        --timeout=120 \
+        --max-tries=3 \
+        --retry-wait=3 \
+        --async-dns=false \
+        --disable-ipv6=true \
+        --file-allocation=none \
+        --summary-interval=0 \
+        --console-log-level=warn \
+        --out="$(basename "$dest")" \
+        --dir="$(dirname "$dest")" \
+        "$url"; then
+        return 0
+      fi
+    elif command_exists curl; then
       if curl -L --connect-timeout 30 --max-time 120 --retry 2 --retry-delay 3 "$url" -o "$dest"; then
         return 0
       fi
@@ -173,15 +199,15 @@ download_file() {
         return 0
       fi
     else
-      log "curl or wget is required to download files."
+      log "aria2c/curl/wget is required to download files."
       exit 1
     fi
-    
+
     retry_count=$((retry_count + 1))
     log "Download failed, retrying ($retry_count/$max_retries)..."
     sleep 2
   done
-  
+
   log "Failed to download file after $max_retries attempts: $url"
   return 1
 }
@@ -498,18 +524,354 @@ configure_flutter_storage_env() {
   log "Using Flutter storage mirror: $FLUTTER_STORAGE_BASE_URL"
 }
 
+measure_pub_host_speed() {
+  local pub_url="$1"
+  local probe_url="${pub_url%/}/api/packages/flutter"
+  if ! command_exists curl; then
+    echo 0
+    return 0
+  fi
+  local speed
+  speed=$(curl -L \
+    --output /dev/null \
+    --silent \
+    --show-error \
+    --connect-timeout 3 \
+    --max-time 8 \
+    -w "%{speed_download}" \
+    "$probe_url" 2>/dev/null || echo 0)
+  speed_to_int "$speed"
+}
+
+configure_pub_hosted_url() {
+  if [[ -n "${PUB_HOSTED_URL:-}" ]]; then
+    PUB_HOSTED_URL_SELECTED="${PUB_HOSTED_URL%/}"
+    export PUB_HOSTED_URL="$PUB_HOSTED_URL_SELECTED"
+    log "Using user-specified PUB_HOSTED_URL: $PUB_HOSTED_URL"
+    return 0
+  fi
+
+  local default_pub="https://pub.dev"
+  local mirror_pub="https://pub.flutter-io.cn"
+
+  local default_speed mirror_speed
+  default_speed=$(measure_pub_host_speed "$default_pub")
+  mirror_speed=$(measure_pub_host_speed "$mirror_pub")
+
+  if [[ "$mirror_speed" -gt "$default_speed" ]]; then
+    PUB_HOSTED_URL_SELECTED="$mirror_pub"
+  else
+    PUB_HOSTED_URL_SELECTED="$default_pub"
+  fi
+
+  export PUB_HOSTED_URL="$PUB_HOSTED_URL_SELECTED"
+  log "Selected PUB_HOSTED_URL: $PUB_HOSTED_URL (pub.dev=${default_speed}B/s, mirror=${mirror_speed}B/s)"
+}
+
 bootstrap_flutter_sdk() {
   log "Bootstrapping Flutter SDK"
   if ! flutter --version; then
     fail "Flutter SDK bootstrap failed."
   fi
 }
-
 precache_flutter_sdk() {
   log "Precaching Flutter artifacts for Linux and Android"
   if ! flutter precache --linux --android; then
     fail "Flutter artifact precache failed."
   fi
+}
+
+is_arm64_host() {
+  case "$(uname -m)" in
+    aarch64 | arm64 | arm64_v8a)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+ensure_flutter_arm64_dart_sdk() {
+  if ! is_arm64_host; then
+    return 0
+  fi
+
+  local dart_bin="$FLUTTER_SDK/bin/cache/dart-sdk/bin/dart"
+  if [[ -x "$dart_bin" ]] && "$dart_bin" --version >/dev/null 2>&1; then
+    log "ARM64 host Dart SDK is already usable"
+    return 0
+  fi
+
+  local engine_version_file="$FLUTTER_SDK/bin/internal/engine.version"
+  if [[ ! -f "$engine_version_file" ]]; then
+    fail "Flutter engine.version not found: $engine_version_file"
+  fi
+
+  local engine_version
+  engine_version=$(tr -d '[:space:]' < "$engine_version_file")
+  if [[ -z "$engine_version" ]]; then
+    fail "Failed to read Flutter engine version from: $engine_version_file"
+  fi
+
+  local storage_root
+  storage_root=$(resolve_flutter_storage_base_url)
+  local primary_url="${storage_root%/}/flutter_infra_release/flutter/${engine_version}/dart-sdk-linux-arm64.zip"
+  local fallback_url="https://storage.googleapis.com/flutter_infra_release/flutter/${engine_version}/dart-sdk-linux-arm64.zip"
+
+  log "ARM64 host detected; repairing Flutter Dart SDK cache"
+
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local zip_path="$tmp_dir/dart-sdk-linux-arm64.zip"
+
+  if ! download_file "$primary_url" "$zip_path"; then
+    log "Primary Dart SDK URL failed, trying fallback: $fallback_url"
+    download_file "$fallback_url" "$zip_path" || {
+      rm -rf "$tmp_dir"
+      fail "Failed to download ARM64 Dart SDK for engine $engine_version"
+    }
+  fi
+
+  local extract_dir="$tmp_dir/extract"
+  mkdir -p "$extract_dir"
+  unzip -q "$zip_path" -d "$extract_dir"
+
+  local extracted_sdk_dir=""
+  if [[ -d "$extract_dir/dart-sdk" ]]; then
+    extracted_sdk_dir="$extract_dir/dart-sdk"
+  else
+    extracted_sdk_dir=$(find "$extract_dir" -mindepth 1 -maxdepth 3 -type d -name dart-sdk | head -n 1)
+  fi
+
+  if [[ -z "$extracted_sdk_dir" || ! -d "$extracted_sdk_dir" ]]; then
+    rm -rf "$tmp_dir"
+    fail "Extracted ARM64 Dart SDK directory not found"
+  fi
+
+  rm -rf "$FLUTTER_SDK/bin/cache/dart-sdk"
+  mkdir -p "$FLUTTER_SDK/bin/cache"
+  mv "$extracted_sdk_dir" "$FLUTTER_SDK/bin/cache/dart-sdk"
+
+  chmod +x "$FLUTTER_SDK/bin/cache/dart-sdk/bin/dart" 2>/dev/null || true
+  chmod +x "$FLUTTER_SDK/bin/cache/dart-sdk/bin/dartaotruntime" 2>/dev/null || true
+
+  rm -f "$FLUTTER_SDK/bin/cache/flutter_tools.snapshot"
+  rm -rf "$tmp_dir"
+
+  if ! "$FLUTTER_SDK/bin/cache/dart-sdk/bin/dart" --version >/dev/null 2>&1; then
+    fail "ARM64 Dart SDK verification failed after patch"
+  fi
+
+  log "ARM64 Dart SDK patch applied successfully"
+}
+
+verify_setup_health() {
+  log "Running final health checks"
+  flutter --version || fail "flutter --version failed during final check"
+  if ! flutter doctor -v; then
+    log "flutter doctor reports remaining optional issues; setup continues"
+  fi
+}
+
+ensure_android_ndk_preinstall() {
+  local ndk_dir="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
+  if [[ -x "$ndk_dir/ndk-build" ]]; then
+    log "Android NDK already present: $ANDROID_NDK_VERSION"
+    return 0
+  fi
+
+  install_packages unzip
+
+  local ndk_url="${ANDROID_NDK_ZIP_URL:-}"
+  if [[ -z "$ndk_url" ]]; then
+    case "$ANDROID_NDK_VERSION" in
+      28.2.13676358)
+        ndk_url="https://dl.google.com/android/repository/android-ndk-r28b-linux.zip"
+        ;;
+      *)
+        log "No direct NDK zip mapping for $ANDROID_NDK_VERSION; will fallback to sdkmanager"
+        return 1
+        ;;
+    esac
+  fi
+
+  local selected_ndk_url
+  selected_ndk_url=$(select_download_url \
+    "Android NDK ${ANDROID_NDK_VERSION}" \
+    "$ndk_url" \
+    "dl.google.com" \
+    "mirrors.tuna.tsinghua.edu.cn" "https://mirrors.tuna.tsinghua.edu.cn/android/repository/$(basename "$ndk_url")" \
+    "mirrors.bfsu.edu.cn" "https://mirrors.bfsu.edu.cn/android/repository/$(basename "$ndk_url")" \
+    "mirrors.aliyun.com" "https://mirrors.aliyun.com/android/repository/$(basename "$ndk_url")")
+
+  local tmp_dir
+  tmp_dir=$(mktemp -d)
+  local ndk_zip="$tmp_dir/ndk.zip"
+
+  log "Pre-downloading Android NDK with multi-connection downloader"
+  if ! download_file "$selected_ndk_url" "$ndk_zip"; then
+    rm -rf "$tmp_dir"
+    log "NDK zip download failed; will fallback to sdkmanager"
+    return 1
+  fi
+
+  local extract_dir="$tmp_dir/extract"
+  mkdir -p "$extract_dir"
+  if ! unzip -q "$ndk_zip" -d "$extract_dir"; then
+    rm -rf "$tmp_dir"
+    log "NDK zip extract failed; will fallback to sdkmanager"
+    return 1
+  fi
+
+  local extracted_ndk
+  extracted_ndk=$(find "$extract_dir" -mindepth 1 -maxdepth 2 -type d -name "android-ndk-*" | head -n 1)
+  if [[ -z "$extracted_ndk" || ! -d "$extracted_ndk" ]]; then
+    rm -rf "$tmp_dir"
+    log "Extracted NDK folder not found; will fallback to sdkmanager"
+    return 1
+  fi
+
+  mkdir -p "$ANDROID_HOME/ndk"
+  rm -rf "$ndk_dir"
+  mv "$extracted_ndk" "$ndk_dir"
+  rm -rf "$tmp_dir"
+
+  if [[ -x "$ndk_dir/ndk-build" ]]; then
+    log "Android NDK preinstall complete: $ANDROID_NDK_VERSION"
+    return 0
+  fi
+
+  log "NDK preinstall verification failed; will fallback to sdkmanager"
+  return 1
+}
+
+ensure_android_cmake() {
+  if [[ -x "$ANDROID_HOME/cmake/$ANDROID_CMAKE_VERSION/bin/cmake" ]]; then
+    log "Android CMake already present: $ANDROID_CMAKE_VERSION"
+    return 0
+  fi
+  log "Installing Android CMake via sdkmanager: $ANDROID_CMAKE_VERSION"
+  sdkmanager "cmake;$ANDROID_CMAKE_VERSION"
+}
+
+configure_arm64_cmake_emulation() {
+  if ! is_arm64_host; then
+    return 0
+  fi
+
+  local cmake_bin_dir="$ANDROID_HOME/cmake/$ANDROID_CMAKE_VERSION/bin"
+  if [[ ! -d "$cmake_bin_dir" ]]; then
+    log "Android CMake bin dir not found, skip ARM64 cmake emulation: $cmake_bin_dir"
+    return 1
+  fi
+
+  install_packages box64 ninja-build file
+
+  local wrapped_count=0
+  local t
+  for t in cmake ctest cpack; do
+    local f="$cmake_bin_dir/$t"
+    [[ -f "$f" ]] || continue
+
+    if file "$f" | grep -q 'ELF 64-bit.*x86-64'; then
+      local real_path="$cmake_bin_dir/.${t}.real"
+      if [[ ! -f "$real_path" ]]; then
+        mv "$f" "$real_path"
+      fi
+      cat > "$f" <<EOF
+#!/usr/bin/env bash
+exec box64 "$real_path" "\$@"
+EOF
+      chmod +x "$f"
+      wrapped_count=$((wrapped_count + 1))
+    fi
+  done
+
+  # Ninja 在 box64 下容易在 -t recompact/restat 崩，直接强制走本机 native ninja。
+  if command_exists ninja; then
+    cat > "$cmake_bin_dir/ninja" <<'EOF'
+#!/usr/bin/env bash
+exec /usr/bin/ninja "$@"
+EOF
+    chmod +x "$cmake_bin_dir/ninja"
+  else
+    log "native ninja not found in /usr/bin; keep original cmake ninja"
+  fi
+
+  # quick check
+  if ! "$cmake_bin_dir/cmake" --version >/dev/null 2>&1; then
+    log "ARM64 CMake emulation self-check failed"
+    return 1
+  fi
+
+  log "Configured ARM64 CMake emulation in $cmake_bin_dir (wrapped $wrapped_count tools, ninja=native)"
+}
+
+configure_arm64_ndk_emulation() {
+  if ! is_arm64_host; then
+    return 0
+  fi
+  if [[ "$ENABLE_ARM64_NDK_EMULATION" != "1" ]]; then
+    log "ARM64 NDK emulation disabled by ENABLE_ARM64_NDK_EMULATION=$ENABLE_ARM64_NDK_EMULATION"
+    return 0
+  fi
+
+  local ndk_bin="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/bin"
+  if [[ ! -d "$ndk_bin" ]]; then
+    log "NDK linux-x86_64 toolchain dir not found, skip ARM64 emulation: $ndk_bin"
+    return 1
+  fi
+
+  install_packages box64 file lld
+
+  local wrapped_count=0
+  local f
+  for f in "$ndk_bin"/*; do
+    [[ -f "$f" ]] || continue
+
+    # preserve non-ELF launch scripts generated by NDK (keep shebang wrappers)
+    if head -c 2 "$f" 2>/dev/null | grep -q '^#!'; then
+      continue
+    fi
+
+    if file "$f" | grep -q 'ELF 64-bit.*x86-64'; then
+      local base
+      base=$(basename "$f")
+      local real_path="$ndk_bin/.${base}.real"
+      if [[ ! -f "$real_path" ]]; then
+        mv "$f" "$real_path"
+      fi
+      cat > "$f" <<EOF
+#!/usr/bin/env bash
+exec box64 "$real_path" "\$@"
+EOF
+      chmod +x "$f"
+      wrapped_count=$((wrapped_count + 1))
+    fi
+  done
+
+  # Use native lld to avoid argv0 semantic mismatch under emulation.
+  if [[ -x "/usr/bin/ld.lld" ]]; then
+    cat > "$ndk_bin/lld" <<'EOF'
+#!/usr/bin/env bash
+exec /usr/bin/ld.lld "$@"
+EOF
+    chmod +x "$ndk_bin/lld"
+    rm -f "$ndk_bin/ld.lld"
+    ln -s lld "$ndk_bin/ld.lld"
+  fi
+
+  # quick compile+link self-check
+  local test_src="/tmp/operit_ndk_test.c"
+  local test_bin="/tmp/operit_ndk_test"
+  echo 'int main(){return 0;}' > "$test_src"
+  if ! "$ndk_bin/clang" --target=aarch64-none-linux-android24 --sysroot="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION/toolchains/llvm/prebuilt/linux-x86_64/sysroot" "$test_src" -o "$test_bin" >/dev/null 2>&1; then
+    log "ARM64 NDK emulation self-check failed (clang link test)"
+    return 1
+  fi
+
+  log "Configured ARM64 NDK emulation wrappers in $ndk_bin (wrapped $wrapped_count x86_64 tools)"
 }
 
 ensure_android_tools() {
@@ -542,6 +904,19 @@ ensure_android_tools() {
   log "Installing Android SDK packages"
   yes | sdkmanager --licenses >/dev/null || true
   sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+  ensure_android_cmake
+  if ! configure_arm64_cmake_emulation; then
+    log "ARM64 CMake emulation setup failed or skipped; CMake-based native builds may fail on ARM64 host"
+  fi
+
+  if ! ensure_android_ndk_preinstall; then
+    log "Falling back to sdkmanager for NDK: $ANDROID_NDK_VERSION"
+    sdkmanager "ndk;$ANDROID_NDK_VERSION"
+  fi
+
+  if ! configure_arm64_ndk_emulation; then
+    log "ARM64 NDK emulation setup failed or skipped; native builds may still fail on ARM64 host"
+  fi
 }
 
 ensure_gradle() {
@@ -625,11 +1000,13 @@ warmup_gradle_wrapper_cache() {
 restore_gradle_properties() {
   cat > gradle.properties <<'EOF'
 org.gradle.jvmargs=-Xmx8G -XX:MaxMetaspaceSize=4G -XX:ReservedCodeCacheSize=512m -XX:+HeapDumpOnOutOfMemoryError
+org.gradle.workers.max=1
 android.useAndroidX=true
 
 # Proot/Termux Compatibility Settings
 # Disable AAPT2 daemon mode to prevent "Daemon startup failed" errors in proot environment
 android.aapt2.process.daemon=false
+android.enableResourceOptimizations=false
 EOF
 }
 
@@ -758,6 +1135,7 @@ configure_env_persistence() {
 # >>> operit flutter android env >>>
 export FLUTTER_ROOT=$FLUTTER_SDK
 export FLUTTER_STORAGE_BASE_URL=$FLUTTER_STORAGE_BASE_URL
+export PUB_HOSTED_URL=$PUB_HOSTED_URL
 export JAVA_HOME=$JAVA_HOME
 export ANDROID_HOME=$ANDROID_HOME
 export ANDROID_SDK_ROOT=$ANDROID_HOME
@@ -765,10 +1143,29 @@ export PATH=\$FLUTTER_ROOT/bin:\$ANDROID_HOME/cmdline-tools/latest/bin:\$ANDROID
 export GRADLE_USER_HOME=$GRADLE_USER_HOME
 export GRADLE_HOME=${GRADLE_HOME:-$HOME/gradle/gradle-8.14}
 export PATH=\$GRADLE_HOME/bin:\$PATH
+export ENABLE_ARM64_NDK_EMULATION=$ENABLE_ARM64_NDK_EMULATION
 # <<< operit flutter android env <<<
 EOF
   mv "$tmp_file" "$bashrc"
   log "Environment variables updated in ~/.bashrc"
+}
+
+ensure_pub_get() {
+  local project_root
+  project_root=$(cd "$SCRIPT_DIR/.." && pwd)
+
+  if [[ ! -f "$project_root/pubspec.yaml" ]]; then
+    fail "pubspec.yaml not found in project root: $project_root"
+  fi
+
+  log "Running flutter pub get in project root: $project_root"
+  if ! (cd "$project_root" && flutter pub get); then
+    fail "flutter pub get failed in project root: $project_root"
+  fi
+
+  if [[ ! -f "$project_root/.dart_tool/package_config.json" ]]; then
+    fail "package_config.json still missing after pub get: $project_root/.dart_tool/package_config.json"
+  fi
 }
 
 warmup_gradle_cache_for_aapt2() {
@@ -849,14 +1246,13 @@ replace_aapt2() {
   fi
 
   local updated_transform_count=0
-  while IFS= read -r -d '' transforms_dir; do
-    while IFS= read -r -d '' transformed_aapt2; do
-      cp "$aapt2_path" "$transformed_aapt2"
-      updated_transform_count=$((updated_transform_count + 1))
-    done < <(find "$transforms_dir" -name "aapt2" -type f -print0 2>/dev/null || true)
-  done < <(find "$gradle_cache_root" -maxdepth 1 -type d -name "transforms-*" -print0 2>/dev/null || true)
+  while IFS= read -r -d '' transformed_aapt2; do
+    cp "$aapt2_path" "$transformed_aapt2"
+    updated_transform_count=$((updated_transform_count + 1))
+  done < <(find "$gradle_cache_root" -type f -name "aapt2" -path "*/transforms*/*" -print0 2>/dev/null || true)
+
   if [[ "$updated_transform_count" -gt 0 ]]; then
-    log "Updated transformed aapt2 binaries: $updated_transform_count"
+    log "Updated transformed aapt2 binaries (recursive): $updated_transform_count"
   else
     log "No transformed aapt2 binaries found under: $gradle_cache_root"
   fi
@@ -872,12 +1268,15 @@ main() {
     chmod +x "./gradlew"
   fi
 
-  install_packages wget curl unzip zip xz-utils git
+  install_packages wget curl aria2 unzip zip xz-utils git
   ensure_ping
   ensure_java
   resolve_java_home
   configure_flutter_storage_env
+  configure_pub_hosted_url
   resolve_flutter_sdk
+  ensure_flutter_arm64_dart_sdk
+  configure_env_persistence
   bootstrap_flutter_sdk
   precache_flutter_sdk
   ensure_android_tools
@@ -889,6 +1288,7 @@ main() {
   restore_gradle_properties
   restore_gradlew_bat
   update_local_properties
+  ensure_pub_get
   if ! warmup_gradle_cache_for_aapt2; then
     log "Ignoring pre-replace warm-up error and continuing to patch aapt2"
   fi
@@ -896,7 +1296,7 @@ main() {
   if ! warmup_gradle_cache_after_aapt2_replace; then
     log "Ignoring post-replace warm-up error and continuing"
   fi
-  configure_env_persistence
+  verify_setup_health
 
   log "Flutter Android environment setup complete"
   log "Reload shell or run: source ~/.bashrc"
