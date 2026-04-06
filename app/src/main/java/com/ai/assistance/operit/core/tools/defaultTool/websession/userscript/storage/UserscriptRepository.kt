@@ -4,6 +4,7 @@ import android.content.Context
 import android.util.Base64
 import android.webkit.MimeTypeMap
 import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.ParsedUserscriptMetadata
+import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.UserscriptCapabilityRegistry
 import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.UserscriptBootstrapPayload
 import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.UserscriptExecutionPayload
 import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.UserscriptInstallPreview
@@ -41,41 +42,6 @@ internal class UserscriptRepository private constructor(
         private const val LOG_LIMIT = 200
         private const val ENTRY_TYPE_REQUIRE = "require"
         private const val ENTRY_TYPE_RESOURCE = "resource"
-        private val SUPPORTED_GRANTS =
-            setOf(
-                "GM.info",
-                "GM.getValue",
-                "GM.setValue",
-                "GM.deleteValue",
-                "GM.listValues",
-                "GM.addStyle",
-                "GM.getResourceText",
-                "GM.getResourceURL",
-                "GM.xmlHttpRequest",
-                "GM.download",
-                "GM.openInTab",
-                "GM.registerMenuCommand",
-                "GM.unregisterMenuCommand",
-                "GM.setClipboard",
-                "GM.notification",
-                "unsafeWindow",
-                "GM_info",
-                "GM_getValue",
-                "GM_setValue",
-                "GM_deleteValue",
-                "GM_listValues",
-                "GM_addStyle",
-                "GM_getResourceText",
-                "GM_getResourceURL",
-                "GM_xmlhttpRequest",
-                "GM_download",
-                "GM_openInTab",
-                "GM_registerMenuCommand",
-                "GM_unregisterMenuCommand",
-                "GM_setClipboard",
-                "GM_notification",
-                "none"
-            )
 
         @Volatile
         private var instance: UserscriptRepository? = null
@@ -126,16 +92,18 @@ internal class UserscriptRepository private constructor(
         existingScriptId: Long? = null
     ): UserscriptInstallPreview {
         val metadata = UserscriptMetadataParser.parse(rawSource)
-        val supportedGrants = metadata.grants.filter { isGrantSupported(it) }
-        val unsupportedGrants = metadata.grants.filterNot { isGrantSupported(it) }
+        val knownGrants = UserscriptCapabilityRegistry.knownGrants(metadata.grants)
+        val unknownGrants = UserscriptCapabilityRegistry.unknownGrants(metadata.grants)
+        val blockedReasons = UserscriptCapabilityRegistry.blockedReasons(metadata.grants)
         return UserscriptInstallPreview(
             metadata = metadata,
             rawSource = rawSource,
             sourceType = sourceType,
             sourceUrl = sourceUrl,
             sourceDisplay = sourceDisplay,
-            supportedGrants = supportedGrants,
-            unsupportedGrants = unsupportedGrants,
+            knownGrants = knownGrants,
+            unknownGrants = unknownGrants,
+            blockedReasons = blockedReasons,
             isUpdate = isUpdate,
             existingScriptId = existingScriptId
         )
@@ -195,8 +163,8 @@ internal class UserscriptRepository private constructor(
                 sourceHash = sourceHash,
                 scriptFilePath = scriptFile.absolutePath,
                 installSourceType = preview.sourceType.name,
+                metadataJson = json.encodeToString(preview.metadata),
                 grantsJson = json.encodeToString(preview.metadata.grants),
-                unsupportedGrantsJson = json.encodeToString(preview.unsupportedGrants),
                 matchesJson = json.encodeToString(preview.metadata.matches),
                 includesJson = json.encodeToString(preview.metadata.includes),
                 excludesJson = json.encodeToString(preview.metadata.excludes),
@@ -290,6 +258,7 @@ internal class UserscriptRepository private constructor(
         }
 
     suspend fun buildBootstrapPayload(
+        sessionId: String,
         pageUrl: String,
         isTopFrame: Boolean
     ): UserscriptBootstrapPayload = withContext(Dispatchers.IO) {
@@ -303,11 +272,12 @@ internal class UserscriptRepository private constructor(
                 if (!entity.enabled) {
                     return@filter false
                 }
-                if (decodeStringList(entity.unsupportedGrantsJson).isNotEmpty()) {
+                val metadata = entityToMetadata(entity)
+                if (UserscriptCapabilityRegistry.blockedReasons(metadata.grants).isNotEmpty()) {
                     return@filter false
                 }
                 UserscriptMatcher.matches(
-                    metadata = entityToMetadata(entity),
+                    metadata = metadata,
                     pageUrl = pageUrl,
                     isTopFrame = isTopFrame
                 )
@@ -355,11 +325,14 @@ internal class UserscriptRepository private constructor(
                         }
                 UserscriptExecutionPayload(
                     scriptId = entity.id,
+                    sessionId = sessionId,
+                    pageUrl = pageUrl,
                     name = entity.name,
                     namespace = entity.namespace,
                     version = entity.version,
                     runAt = entity.runAt,
                     grants = metadata.grants,
+                    capabilities = UserscriptCapabilityRegistry.knownGrants(metadata.grants),
                     metadataJson = json.encodeToString(metadata),
                     code = source,
                     requires = requireBodies,
@@ -415,11 +388,34 @@ internal class UserscriptRepository private constructor(
         )
     }
 
+    suspend fun persistValues(
+        scriptId: Long,
+        values: Map<String, String>
+    ) {
+        values.forEach { (key, valueJson) ->
+            persistValue(scriptId, key, valueJson)
+        }
+    }
+
+    suspend fun readValueJson(
+        scriptId: Long,
+        key: String
+    ): String? = store.getValue(scriptId, key)?.valueJson
+
     suspend fun deleteValue(
         scriptId: Long,
         key: String
     ) {
         store.deleteValue(scriptId, key)
+    }
+
+    suspend fun deleteValues(
+        scriptId: Long,
+        keys: Collection<String>
+    ) {
+        keys.forEach { key ->
+            store.deleteValue(scriptId, key)
+        }
     }
 
     private suspend fun fetchAndCacheResources(
@@ -476,6 +472,8 @@ internal class UserscriptRepository private constructor(
 
     private fun entityToListItem(entity: UserscriptEntity): UserscriptListItem {
         val metadata = entityToMetadata(entity)
+        val unknownGrants = UserscriptCapabilityRegistry.unknownGrants(metadata.grants)
+        val blockedReasons = UserscriptCapabilityRegistry.blockedReasons(metadata.grants)
         return UserscriptListItem(
             id = entity.id,
             name = entity.name,
@@ -484,7 +482,8 @@ internal class UserscriptRepository private constructor(
             description = entity.description,
             sourceDisplay = entity.sourceDisplay,
             enabled = entity.enabled,
-            unsupportedGrants = decodeStringList(entity.unsupportedGrantsJson),
+            unknownGrants = unknownGrants,
+            blockedReasons = blockedReasons,
             grants = metadata.grants,
             matches = metadata.matches,
             includes = metadata.includes,
@@ -494,6 +493,14 @@ internal class UserscriptRepository private constructor(
             requires = metadata.requires,
             resources = metadata.resources,
             homepage = entity.homepageUrl,
+            website = metadata.website,
+            supportUrl = metadata.supportUrl,
+            icons = metadata.icons,
+            tags = metadata.tags,
+            sandbox = metadata.sandbox,
+            runIn = metadata.runIn,
+            unwrap = metadata.unwrap,
+            webRequestRules = metadata.webRequestRules,
             sourceUrl = entity.sourceUrl,
             updateUrl = entity.updateUrl,
             downloadUrl = entity.downloadUrl,
@@ -518,6 +525,11 @@ internal class UserscriptRepository private constructor(
     }
 
     private fun entityToMetadata(entity: UserscriptEntity): ParsedUserscriptMetadata {
+        if (entity.metadataJson.isNotBlank()) {
+            runCatching { json.decodeFromString<ParsedUserscriptMetadata>(entity.metadataJson) }
+                .getOrNull()
+                ?.let { return it }
+        }
         return ParsedUserscriptMetadata(
             name = entity.name,
             namespace = entity.namespace,
@@ -548,14 +560,6 @@ internal class UserscriptRepository private constructor(
 
     private fun decodeResourceList(raw: String): List<UserscriptResourceEntry> =
         runCatching { json.decodeFromString<List<UserscriptResourceEntry>>(raw) }.getOrElse { emptyList() }
-
-    private fun isGrantSupported(rawGrant: String): Boolean {
-        val normalized = rawGrant.trim()
-        if (normalized.isBlank()) {
-            return false
-        }
-        return normalized in SUPPORTED_GRANTS
-    }
 
     private fun buildFileStem(metadata: ParsedUserscriptMetadata): String =
         buildSafeCachePrefix(metadata) + "_" + sha256("${metadata.namespace.orEmpty()}::${metadata.name}").take(12)

@@ -668,33 +668,14 @@ const dailyLife = (function () {
      * Set an alarm on the device
      * @param params - Parameters with alarm details
      */
-    async function set_alarm(params: { hour: number | string; minute: number | string; message: string; days?: (number | string)[] | string }): Promise<any> {
+    async function set_alarm(params: { hour: number; minute: number; message: string; days?: number[] }): Promise<any> {
         try {
             if (params.hour === undefined || params.minute === undefined) {
                 throw new Error("Hour and minute are required for setting an alarm");
             }
-            if (typeof params.hour === 'string') {
-                params.hour = Number(params.hour);
-            }
-            if (typeof params.minute === 'string') {
-                params.minute = Number(params.minute);
-            }
-            if (params.days) {
-                if (typeof params.days === 'string') {
-                    params.days = JSON.parse(params.days);
-                }
-                if (Array.isArray(params.days)) {
-                    params.days = params.days.map(day => {
-                        if (typeof day === 'string') {
-                            return Number(day);
-                        }
-                        return day;
-                    });
-                } else {
-                    console.error("Invalid days format");
-                    params.days = [];
-                }
-            }
+            const repeatDays = Array.isArray(params.days)
+                ? params.days.filter((day): day is number => typeof day === 'number')
+                : [];
 
             if (params.hour < 0 || params.hour > 23) {
                 throw new Error("Hour must be between 0 and 23");
@@ -720,8 +701,8 @@ const dailyLife = (function () {
 
 
             // 设置重复日期（如果提供）
-            if (params.days && params.days.length > 0) {
-                intent.putExtra("android.intent.extra.alarm.DAYS", params.days);
+            if (repeatDays.length > 0) {
+                intent.putExtra("android.intent.extra.alarm.DAYS", repeatDays);
             }
 
             // 不跳过UI确认 - 这可能是问题所在，某些设备需要用户确认
@@ -930,7 +911,7 @@ const dailyLife = (function () {
      * Make a phone call
      * @param params - Parameters with call details
      */
-    async function make_phone_call(params: { phone_number: string; emergency?: boolean | string }): Promise<any> {
+    async function make_phone_call(params: { phone_number: string; emergency?: boolean }): Promise<any> {
         try {
             if (!params.phone_number) {
                 throw new Error("Phone number is required");
@@ -940,11 +921,8 @@ const dailyLife = (function () {
 
             // 选择合适的Intent Action
             // 如果是紧急电话，使用ACTION_CALL_EMERGENCY，否则使用ACTION_DIAL
-            if (typeof params.emergency === 'string') {
-                params.emergency = params.emergency === 'true';
-            }
-
-            const action = params.emergency ? IntentAction.ACTION_CALL_EMERGENCY : IntentAction.ACTION_DIAL;
+            const isEmergency = params.emergency === true;
+            const action = isEmergency ? IntentAction.ACTION_CALL_EMERGENCY : IntentAction.ACTION_DIAL;
 
             // 创建拨号Intent
             const intent = new Intent(action);
@@ -961,9 +939,9 @@ const dailyLife = (function () {
 
             return {
                 success: true,
-                message: params.emergency ? "紧急电话已拨打" : "拨号界面已打开",
+                message: isEmergency ? "紧急电话已拨打" : "拨号界面已打开",
                 phone_number: params.phone_number,
-                is_emergency: params.emergency || false,
+                is_emergency: isEmergency,
                 raw_result: result
             };
         } catch (error) {
@@ -972,7 +950,7 @@ const dailyLife = (function () {
                 success: false,
                 message: `拨打电话失败: ${error.message}`,
                 phone_number: params.phone_number,
-                is_emergency: params.emergency || false
+                is_emergency: params.emergency === true
             };
         }
     }
@@ -1028,7 +1006,7 @@ const dailyLife = (function () {
      * Adjust device volume using simulated key presses
      * @param params - Parameters with volume action and count
      */
-    async function adjust_volume(params: { action: string; count?: number | string }): Promise<any> {
+    async function adjust_volume(params: { action: string; count?: number }): Promise<any> {
         try {
             if (!params.action) {
                 throw new Error("Volume action is required");
@@ -1042,12 +1020,9 @@ const dailyLife = (function () {
             }
 
             // Parse count parameter
-            let count = 1;
-            if (params.count !== undefined) {
-                count = typeof params.count === 'string' ? Number(params.count) : params.count;
-                if (isNaN(count) || count < 1 || count > 20) {
-                    throw new Error("Count must be a number between 1 and 20");
-                }
+            let count = params.count === undefined ? 1 : params.count;
+            if (!Number.isFinite(count) || count < 1 || count > 20) {
+                throw new Error("Count must be a number between 1 and 20");
             }
 
             console.log(`调节音量: ${action === 'up' ? '增加' : action === 'down' ? '减小' : '静音'}, 次数: ${count}`);
@@ -1256,12 +1231,11 @@ const dailyLife = (function () {
      * 等待指定的毫秒数
      * @param ms 等待的毫秒数
      */
-    async function sleep(ms: number | string): Promise<void> {
-        const sleepTime = Number(ms);
-        if (isNaN(sleepTime)) {
-            throw new Error("Invalid sleep time");
+    async function sleep(ms: number): Promise<void> {
+        if (!Number.isFinite(ms) || ms < 0) {
+            throw new Error("Sleep duration must be a non-negative number");
         }
-        return new Promise(resolve => setTimeout(resolve, sleepTime));
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     /**

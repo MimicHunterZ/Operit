@@ -237,7 +237,7 @@ THINKING_GUIDANCE_SECTION
 
 $BEHAVIOR_GUIDELINES_EN
 
-WEB_WORKSPACE_GUIDELINES_SECTION
+WORKSPACE_GUIDELINES_SECTION
 
 FORMULA FORMATTING: For mathematical formulas, use $ $ for inline LaTeX and $$ $$ for block/display LaTeX equations.
 
@@ -273,7 +273,7 @@ THINKING_GUIDANCE_SECTION
 
 $BEHAVIOR_GUIDELINES_CN
 
-WEB_WORKSPACE_GUIDELINES_SECTION
+WORKSPACE_GUIDELINES_SECTION
 
 公式格式化：对于数学公式，使用 $ $ 包裹行内LaTeX公式，使用 $$ $$ 包裹独立成行的LaTeX公式。
 
@@ -502,7 +502,7 @@ AVAILABLE_TOOLS_SECTION""".trimIndent()
     var prompt = templateToUse
         .replace(defaultBehaviorGuidelines, behaviorGuidelines)
         .replace("ACTIVE_PACKAGES_SECTION", if (enableTools) packagesSection.toString() else "")
-        .replace("WEB_WORKSPACE_GUIDELINES_SECTION", workspaceGuidelines)
+        .replace("WORKSPACE_GUIDELINES_SECTION", workspaceGuidelines)
             
     // Add thinking guidance section if enabled
     prompt =
@@ -641,7 +641,7 @@ AVAILABLE_TOOLS_SECTION""".trimIndent()
   }
   
   /**
-   * Generates web workspace guidelines only when a workspace is actually bound.
+   * Generates workspace guidelines only when a workspace is actually bound.
    *
    * @param workspacePath The current path of the workspace. Null if not bound.
    * @param useEnglish Whether to use the English or Chinese version of the guidelines.
@@ -691,30 +691,24 @@ AVAILABLE_TOOLS_SECTION""".trimIndent()
           val baseGuidelines =
               if (useEnglish) {
               """
-              WEB WORKSPACE GUIDELINES:
-              - Your working directory, `$workspacePath`${if (shouldShowEnv) " (environment=$envLabel)" else ""}, is automatically set up as a web server root.
-              - Use the `apply_file` tool to create web files (HTML/CSS/JS).
-              - The main file must be `index.html` for user previews.
-              - It's recommended to split code into multiple files for better stability and maintainability.
-              - For more complex projects, consider creating `js` and `css` folders and organizing files accordingly.
-              - Always use relative paths for file references.
-              - When using tools for workspace files, do not use relative paths; always use absolute paths.
-              ${if (shouldShowEnv) "- When reading/writing workspace files via tools, pass `environment=\"$envLabel\"` and use absolute paths like `/...`." else ""}
+              WORKSPACE GUIDELINES:
+              - The current workspace root is `$workspacePath`${if (shouldShowEnv) " (environment=$envLabel)" else ""}.
+              - Treat this exact path as the base path for all workspace file operations.
+              - When using tools to read, write, search, list, move, or delete workspace files, do not use relative paths; always use absolute paths rooted at `$workspacePath`.
+              ${if (shouldShowEnv) "- When operating on workspace files via tools, always pass `environment=\"$envLabel\"` together with the workspace path." else ""}
+              - Relative paths are only for file contents or project-internal references, not for tool parameters.
               - Terminal mount note: common mounts include `$externalStoragePath -> /sdcard`, `$externalStoragePath -> $externalStoragePath`, and app sandbox `$appFilesPath -> same path`.
               - If the workspace is under mounted paths, execute workspace files directly in the Linux terminal environment; do not copy files before execution.
               - **Best Practice for Code Modifications**: Before modifying any file, use `grep_code` and `grep_context` to locate and understand relevant code with surrounding context. This ensures you understand the codebase structure before making changes.
               """.trimIndent()
           } else {
               """
-              Web工作区指南：
-              - 你的工作目录，$workspacePath${if (shouldShowEnv) "（environment=$envLabel）" else ""}，已被自动配置为Web服务器的根目录。
-              - 使用 apply_file 工具创建网页文件 (HTML/CSS/JS)。
-              - 主文件必须是 index.html，用户可直接预览。
-              - 建议将代码拆分到不同文件，以提高稳定性和可维护性。
-              - 如果项目较为复杂，可以考虑新建js文件夹和css文件夹并创建多个文件。
-              - 文件引用请使用相对路径。
-              - 通过工具读写工作区文件时，不要使用相对路径，必须使用绝对路径。
-              ${if (shouldShowEnv) "- 通过工具读写工作区文件时，请带上 `environment=\"$envLabel\"`，并使用 `/...` 形式的绝对路径。" else ""}
+              工作区指南：
+              - 当前工作区根目录是 `$workspacePath`${if (shouldShowEnv) "（environment=$envLabel）" else ""}。
+              - 所有工作区文件操作都要把这个精确路径当作根路径。
+              - 使用工具读取、写入、搜索、列目录、移动或删除工作区文件时，不要使用相对路径，必须使用以 `$workspacePath` 为根的绝对路径。
+              ${if (shouldShowEnv) "- 通过工具操作工作区文件时，每次都必须同时传入 `environment=\"$envLabel\"` 和对应的工作区路径。" else ""}
+              - 相对路径只用于文件内容里的项目内部引用，不用于工具参数。
               - 终端挂载说明：常见挂载包括 `$externalStoragePath -> /sdcard`、`$externalStoragePath -> $externalStoragePath`，以及应用沙箱 `$appFilesPath -> 同路径`。
               - 若工作区位于已挂载路径中，直接在 Linux 终端环境中执行工作区文件；无需先复制再执行。
               - **代码修改最佳实践**：修改任何文件之前，建议组合使用 `grep_code` 与 `grep_context` 定位并理解相关代码及其上下文，避免在未理解项目结构时盲改。

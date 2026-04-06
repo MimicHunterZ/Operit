@@ -1618,19 +1618,22 @@ class GeminiProvider(
                 val promptTokenCount = usageMetadata.optInt("promptTokenCount", 0)
                 val cachedContentTokenCount = usageMetadata.optInt("cachedContentTokenCount", 0)
                 val candidatesTokenCount = usageMetadata.optInt("candidatesTokenCount", 0)
-                
-                if (promptTokenCount > 0) {
+
+                val hasServerUsage =
+                    promptTokenCount > 0 || cachedContentTokenCount > 0 || candidatesTokenCount > 0
+                if (hasServerUsage) {
                     // 更新实际的token计数
-                    val actualInputTokens = promptTokenCount - cachedContentTokenCount
+                    val actualInputTokens = (promptTokenCount - cachedContentTokenCount).coerceAtLeast(0)
                     tokenCacheManager.updateActualTokens(actualInputTokens, cachedContentTokenCount)
-                    
+                    tokenCacheManager.setOutputTokens(candidatesTokenCount)
+
                     logDebug("API实际Token使用: 输入=$actualInputTokens, 缓存=$cachedContentTokenCount, 输出=$candidatesTokenCount")
-                    
+
                     // 更新回调，使用实际的token统计
                     onTokensUpdated(
-                        promptTokenCount,
-                        cachedContentTokenCount,
-                        candidatesTokenCount
+                        tokenCacheManager.totalInputTokenCount,
+                        tokenCacheManager.cachedInputTokenCount,
+                        tokenCacheManager.outputTokenCount
                     )
                 }
             }

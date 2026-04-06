@@ -254,7 +254,7 @@ internal fun StandardBrowserSessionTools.configureWebView(
                 session.lastSnapshot = null
                 clearEventLogs(session)
                 session.pendingDialog = null
-                userscriptManager.onPageChanged(session.id, url)
+                userscriptManager.onPageChanged(session.id, url, forceReset = true)
                 syncNavigationStateUi(session)
             }
 
@@ -306,7 +306,8 @@ internal fun StandardBrowserSessionTools.configureWebView(
                 request: WebResourceRequest
             ): android.webkit.WebResourceResponse? {
                 recordNetworkRequest(session, request)
-                return super.shouldInterceptRequest(view, request)
+                return userscriptManager.interceptWebRequest(session.id, request)
+                    ?: super.shouldInterceptRequest(view, request)
             }
 
             override fun doUpdateVisitedHistory(view: WebView, url: String, isReload: Boolean) {
@@ -624,12 +625,13 @@ internal fun StandardBrowserSessionTools.openUserscriptTabOnMain(
     appContext: Context,
     url: String,
     active: Boolean
-) {
+): String {
     val previousActiveId = StandardBrowserSessionTools.activeSessionId
     val newSession = createSessionTabOnMain(appContext, initialUrl = url)
     if (!active && !previousActiveId.isNullOrBlank() && previousActiveId != newSession.id) {
         activateSessionOnMain(previousActiveId)
     }
+    return newSession.id
 }
 
 internal fun StandardBrowserSessionTools.navigateSessionOnMain(

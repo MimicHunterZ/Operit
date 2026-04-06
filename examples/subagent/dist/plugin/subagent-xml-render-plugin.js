@@ -1,8 +1,11 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.onToolXmlRender = onToolXmlRender;
 exports.onToolResultXmlRender = onToolResultXmlRender;
-const SubagentStatusScreen = require("../ui/subagent-status.ui.js").default;
+const subagent_status_ui_1 = __importDefault(require("../ui/subagent-status.ui"));
 const SUBAGENT_TOOL_NAME = "subagent_run";
 function normalizePayload(input) {
     const record = input;
@@ -246,7 +249,7 @@ function createComposeResult(state) {
     return {
         handled: true,
         composeDsl: {
-            screen: SubagentStatusScreen,
+            screen: subagent_status_ui_1.default,
             state,
             memo: {},
         },

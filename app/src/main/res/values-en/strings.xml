@@ -7151,6 +7151,15 @@
     <string name="web_session_userscript_resources">@resource</string>
     <string name="web_session_userscript_update_url">Update URL</string>
     <string name="web_session_userscript_unsupported_grants">Unsupported grants: %1$s</string>
+    <string name="web_session_userscript_unknown_grants">Unknown grants: %1$s</string>
+    <string name="web_session_userscript_blocked_reasons">Blocked: %1$s</string>
+    <string name="web_session_userscript_support_url">@supportURL</string>
+    <string name="web_session_userscript_website">Website</string>
+    <string name="web_session_userscript_icons">Icons</string>
+    <string name="web_session_userscript_tags">@tag</string>
+    <string name="web_session_userscript_sandbox">@sandbox</string>
+    <string name="web_session_userscript_run_in">@run-in</string>
+    <string name="web_session_userscript_web_request">@webRequest</string>
     <string name="web_session_userscript_confirm_install">Confirm Install</string>
     <string name="web_session_userscript_cancel_install">Cancel</string>
     <string name="web_session_userscript_update_action">Confirm Update</string>

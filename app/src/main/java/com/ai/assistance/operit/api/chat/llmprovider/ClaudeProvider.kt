@@ -47,8 +47,8 @@ class ClaudeProvider(
 
     private val JSON = "application/json".toMediaType()
     private val ANTHROPIC_VERSION = "2023-06-01" // Claude API版本
-
-     private val DEFAULT_MAX_TOKENS = 4096
+    private val PROMPT_CACHE_CONTROL_TYPE = "ephemeral"
+    private val DEFAULT_MAX_TOKENS = 4096
 
     // 当前活跃的Call对象，用于取消流式传输
     private var activeCall: Call? = null
@@ -107,21 +107,129 @@ class ClaudeProvider(
         AppLogger.d("AIService", "取消标志已设置，流读取将立即被中断")
     }
 
-     private fun headersForLog(headers: Headers): String {
-         return buildString {
-             headers.names().forEach { name ->
-                 val value = when {
-                     name.equals("x-api-key", ignoreCase = true) -> "[REDACTED]"
-                     name.equals("authorization", ignoreCase = true) -> "[REDACTED]"
-                     else -> headers[name] ?: ""
-                 }
-                 append(name)
-                 append(": ")
-                 append(value)
-                 append('\n')
-             }
-         }.trimEnd()
-     }
+    private fun headersForLog(headers: Headers): String {
+        return buildString {
+            headers.names().forEach { name ->
+                val value = when {
+                    name.equals("x-api-key", ignoreCase = true) -> "[REDACTED]"
+                    name.equals("authorization", ignoreCase = true) -> "[REDACTED]"
+                    else -> headers[name] ?: ""
+                }
+                append(name)
+                append(": ")
+                append(value)
+                append('\n')
+            }
+        }.trimEnd()
+    }
+
+    private data class AnthropicUsageCounts(
+        val actualInputTokens: Int,
+        val cachedInputTokens: Int,
+        val totalInputTokens: Int,
+        val outputTokens: Int,
+        val cacheCreationInputTokens: Int
+    )
+
+    private fun sumNumericFields(jsonObject: JSONObject?): Int {
+        jsonObject ?: return 0
+
+        var total = 0
+        val keys = jsonObject.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            when (val value = jsonObject.opt(key)) {
+                is Number -> total += value.toInt()
+                is JSONObject -> total += sumNumericFields(value)
+            }
+        }
+        return total
+    }
+
+    private fun parseAnthropicUsage(usage: JSONObject?): AnthropicUsageCounts? {
+        usage ?: return null
+
+        val cachedInputTokens = when {
+            usage.has("cache_read_input_tokens") -> usage.optInt("cache_read_input_tokens", 0)
+            usage.optJSONObject("input_tokens_details") != null ->
+                usage.optJSONObject("input_tokens_details")?.optInt("cached_tokens", 0) ?: 0
+            else -> usage.optInt("cached_tokens", 0)
+        }.coerceAtLeast(0)
+
+        val cacheCreationInputTokens = when {
+            usage.has("cache_creation_input_tokens") -> usage.optInt("cache_creation_input_tokens", 0)
+            usage.optJSONObject("cache_creation") != null ->
+                sumNumericFields(usage.optJSONObject("cache_creation"))
+            else -> 0
+        }.coerceAtLeast(0)
+
+        val actualInputTokens = if (usage.has("input_tokens")) {
+            usage.optInt("input_tokens", 0).coerceAtLeast(0) + cacheCreationInputTokens
+        } else {
+            (usage.optInt("prompt_tokens", 0).coerceAtLeast(0) - cachedInputTokens)
+                .coerceAtLeast(0) + cacheCreationInputTokens
+        }
+
+        val totalInputTokens = actualInputTokens + cachedInputTokens
+        val outputTokens =
+            usage.optInt("output_tokens", usage.optInt("completion_tokens", 0)).coerceAtLeast(0)
+
+        if (totalInputTokens <= 0 && outputTokens <= 0) {
+            return null
+        }
+
+        return AnthropicUsageCounts(
+            actualInputTokens = actualInputTokens,
+            cachedInputTokens = cachedInputTokens,
+            totalInputTokens = totalInputTokens,
+            outputTokens = outputTokens,
+            cacheCreationInputTokens = cacheCreationInputTokens
+        )
+    }
+
+    private suspend fun applyAnthropicUsage(
+        usage: JSONObject?,
+        onTokensUpdated: suspend (input: Int, cachedInput: Int, output: Int) -> Unit,
+        source: String,
+        overwriteOutputTokens: Boolean
+    ): Boolean {
+        val parsed = parseAnthropicUsage(usage) ?: return false
+
+        tokenCacheManager.updateActualTokens(
+            actualInput = parsed.actualInputTokens,
+            cachedInput = parsed.cachedInputTokens
+        )
+
+        if (overwriteOutputTokens && parsed.outputTokens > 0) {
+            tokenCacheManager.setOutputTokens(parsed.outputTokens)
+        }
+
+        AppLogger.d(
+            "AIService",
+            "Claude[$source]实际Token: 输入=${parsed.totalInputTokens}, 缓存=${parsed.cachedInputTokens}, 输出=${parsed.outputTokens}, cache_creation=${parsed.cacheCreationInputTokens}"
+        )
+
+        onTokensUpdated(
+            parsed.totalInputTokens,
+            parsed.cachedInputTokens,
+            tokenCacheManager.outputTokenCount
+        )
+        return true
+    }
+
+    private fun ensurePromptCacheBreakpoint(jsonObject: JSONObject) {
+        if (jsonObject.has("cache_control")) {
+            return
+        }
+
+        jsonObject.put(
+            "cache_control",
+            JSONObject().apply {
+                put("type", PROMPT_CACHE_CONTROL_TYPE)
+            }
+        )
+        AppLogger.d("AIService", "已为Claude请求附加自动Prompt Cache断点")
+    }
 
     // ==================== Tool Call 支持 ====================
 
@@ -575,6 +683,8 @@ class ClaudeProvider(
             jsonObject.put("system", systemPrompt)
         }
 
+        ensurePromptCacheBreakpoint(jsonObject)
+
         // 添加extended thinking支持
         if (enableThinking) {
             val thinkingObject = JSONObject()
@@ -916,13 +1026,22 @@ class ClaudeProvider(
                                 emit(resultText)
                                 receivedContent.append(resultText)
                                 tokenCacheManager.addOutputTokens(ChatUtils.estimateTokenCount(resultText))
+                            }
+                            val usageApplied = applyAnthropicUsage(
+                                usage = json.optJSONObject("usage"),
+                                onTokensUpdated = onTokensUpdated,
+                                source = "non_streaming_json",
+                                overwriteOutputTokens = true
+                            )
+                            if (resultText.isBlank() && !usageApplied) {
+                                throw IOException(context.getString(R.string.provider_error_parsing_failed))
+                            }
+                            if (resultText.isNotBlank() && !usageApplied) {
                                 onTokensUpdated(
                                     tokenCacheManager.totalInputTokenCount,
                                     tokenCacheManager.cachedInputTokenCount,
                                     tokenCacheManager.outputTokenCount
                                 )
-                            } else {
-                                throw IOException(context.getString(R.string.provider_error_parsing_failed))
                             }
                             return@withContext
                         }
@@ -935,6 +1054,14 @@ class ClaudeProvider(
                                 emit(resultText)
                                 receivedContent.append(resultText)
                                 tokenCacheManager.addOutputTokens(ChatUtils.estimateTokenCount(resultText))
+                            }
+                            val usageApplied = applyAnthropicUsage(
+                                usage = json.optJSONObject("usage"),
+                                onTokensUpdated = onTokensUpdated,
+                                source = "non_streaming_response",
+                                overwriteOutputTokens = true
+                            )
+                            if (resultText.isNotBlank() && !usageApplied) {
                                 onTokensUpdated(
                                     tokenCacheManager.totalInputTokenCount,
                                     tokenCacheManager.cachedInputTokenCount,
@@ -997,6 +1124,14 @@ class ClaudeProvider(
 
                             when (type) {
                                 "ping" -> {
+                                }
+                                "message_start" -> {
+                                    applyAnthropicUsage(
+                                        usage = jsonResponse.optJSONObject("message")?.optJSONObject("usage"),
+                                        onTokensUpdated = onTokensUpdated,
+                                        source = "message_start",
+                                        overwriteOutputTokens = false
+                                    )
                                 }
                                 "content_block_start" -> {
                                     val contentBlock = jsonResponse.optJSONObject("content_block")
@@ -1141,6 +1276,12 @@ class ClaudeProvider(
                                     }
                                 }
                                 "message_delta" -> {
+                                    applyAnthropicUsage(
+                                        usage = jsonResponse.optJSONObject("usage"),
+                                        onTokensUpdated = onTokensUpdated,
+                                        source = "message_delta",
+                                        overwriteOutputTokens = true
+                                    )
                                 }
                                 "message_stop" -> {
                                     if (isInToolCall && currentToolParser != null) {
@@ -1194,6 +1335,14 @@ class ClaudeProvider(
                                     emit(resultText)
                                     receivedContent.append(resultText)
                                     tokenCacheManager.addOutputTokens(ChatUtils.estimateTokenCount(resultText))
+                                }
+                                val usageApplied = applyAnthropicUsage(
+                                    usage = wholeJson.optJSONObject("usage"),
+                                    onTokensUpdated = onTokensUpdated,
+                                    source = "buffered_json_fallback",
+                                    overwriteOutputTokens = true
+                                )
+                                if (resultText.isNotBlank() && !usageApplied) {
                                     onTokensUpdated(
                                         tokenCacheManager.totalInputTokenCount,
                                         tokenCacheManager.cachedInputTokenCount,

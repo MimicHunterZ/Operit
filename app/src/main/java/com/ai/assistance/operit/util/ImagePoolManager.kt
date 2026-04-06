@@ -195,15 +195,24 @@ object ImagePoolManager {
     @Synchronized
     fun getImage(id: String): ImageData? {
         imagePool[id]?.let {
+            val normalized = normalizeImageDataMimeTypeIfNeeded(id, it)
+            if (normalized !== it) {
+                imagePool[id] = normalized
+                saveToDisk(id, normalized)
+            }
             AppLogger.d(TAG, "从内存缓存获取图片: $id")
-            return it
+            return normalized
         }
 
         val imageData = loadFromDisk(id)
         if (imageData != null) {
+            val normalized = normalizeImageDataMimeTypeIfNeeded(id, imageData)
             AppLogger.d(TAG, "从磁盘缓存加载图片到内存: $id")
-            imagePool[id] = imageData
-            return imageData
+            imagePool[id] = normalized
+            if (normalized !== imageData) {
+                saveToDisk(id, normalized)
+            }
+            return normalized
         }
 
         AppLogger.w(TAG, "图片不存在: $id")
@@ -301,12 +310,22 @@ object ImagePoolManager {
                     jpegQuality = resolvedOptions.jpegQuality
                 )
 
-            val finalMimeType =
+            val declaredFinalMimeType =
                 when (finalFormat) {
                     ImageOutputFormat.PNG -> "image/png"
                     ImageOutputFormat.JPEG -> "image/jpeg"
                     ImageOutputFormat.AUTO -> error("AUTO must be resolved before encoding")
                 }
+            val detectedFinalMimeType = detectImageMimeTypeFromBytes(finalBytes)
+            val finalMimeType = detectedFinalMimeType ?: declaredFinalMimeType
+            if (detectedFinalMimeType != null &&
+                !detectedFinalMimeType.equals(declaredFinalMimeType, ignoreCase = true)
+            ) {
+                AppLogger.w(
+                    TAG,
+                    "图片编码结果与声明格式不一致，已按真实编码修正: declared=$declaredFinalMimeType, detected=$detectedFinalMimeType, sourceMime=$sourceMimeType"
+                )
+            }
 
             val imageData =
                 ImageData(
@@ -399,6 +418,39 @@ object ImagePoolManager {
         } catch (_: Throwable) {
             null
         }
+    }
+
+    private fun detectImageMimeTypeFromBytes(bytes: ByteArray): String? {
+        val options =
+            BitmapFactory.Options().apply {
+                inJustDecodeBounds = true
+            }
+        return try {
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+            options.outMimeType?.takeIf { it.startsWith("image/", ignoreCase = true) }
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun normalizeImageDataMimeTypeIfNeeded(id: String, imageData: ImageData): ImageData {
+        if (!imageData.mimeType.startsWith("image/", ignoreCase = true)) {
+            return imageData
+        }
+        val bytes = try {
+            Base64.decode(imageData.base64, Base64.DEFAULT)
+        } catch (_: Throwable) {
+            return imageData
+        }
+        val detectedMimeType = detectImageMimeTypeFromBytes(bytes) ?: return imageData
+        if (detectedMimeType.equals(imageData.mimeType, ignoreCase = true)) {
+            return imageData
+        }
+        AppLogger.w(
+            TAG,
+            "检测到图片MIME与真实编码不一致，已修正: id=$id, stored=${imageData.mimeType}, detected=$detectedMimeType"
+        )
+        return imageData.copy(mimeType = detectedMimeType)
     }
 
     private fun normalizeBitmapOrientationIfNeeded(bitmap: Bitmap, filePath: String): Bitmap {

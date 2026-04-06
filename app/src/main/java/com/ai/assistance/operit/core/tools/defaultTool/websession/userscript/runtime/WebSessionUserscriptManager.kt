@@ -11,6 +11,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Base64
 import android.webkit.CookieManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -21,6 +23,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.ai.assistance.operit.R
 import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.ParsedUserscriptMetadata
+import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.UserscriptCapabilityRegistry
 import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.UserscriptInstallPreview
 import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.UserscriptInstallSourceType
 import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.UserscriptListItem
@@ -33,7 +36,9 @@ import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.ins
 import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.storage.UserscriptRepository
 import com.ai.assistance.operit.core.tools.defaultTool.websession.userscript.ui.WebSessionUserscriptUiStateStore
 import com.ai.assistance.operit.util.AppLogger
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
@@ -53,7 +58,9 @@ import org.json.JSONObject
 internal class WebSessionUserscriptManager(
     private val context: Context,
     private val onOpenUserscriptUi: () -> Unit,
-    private val onOpenTab: (url: String, active: Boolean) -> Unit,
+    private val onOpenTab: (url: String, active: Boolean) -> String?,
+    private val onActivateSession: (sessionId: String) -> Unit,
+    private val onCloseSession: (sessionId: String) -> Boolean,
     private val onDownload: (sessionId: String, url: String, fileName: String?) -> Unit,
     private val onMenuCommandsChanged: (sessionId: String?) -> Unit,
     private val onToast: (message: String) -> Unit
@@ -80,6 +87,10 @@ internal class WebSessionUserscriptManager(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { encodeDefaults = true; ignoreUnknownKeys = true }
+    private val storageNotifier = UserscriptStorageNotifier()
+    private val tabStateStore = UserscriptTabStateStore()
+    private val cookieService = UserscriptCookieService(CookieManager.getInstance())
+    private val webRequestEngine = UserscriptWebRequestEngine()
     private val requestClient =
         OkHttpClient.Builder()
             .followRedirects(true)
@@ -89,6 +100,9 @@ internal class WebSessionUserscriptManager(
     private val sessionBindings = ConcurrentHashMap<String, SessionBinding>()
     private val sessionPageStates = ConcurrentHashMap<String, SessionPageState>()
     private val activeCalls = ConcurrentHashMap<String, Call>()
+    private val abortedRequestKeys = ConcurrentHashMap.newKeySet<String>()
+    private val openedTabOwners = ConcurrentHashMap<String, String>()
+    private val audioMuteStates = ConcurrentHashMap<String, Boolean>()
     @Volatile
     private var visibleSessionId: String? = null
     private val supportState =
@@ -133,7 +147,14 @@ internal class WebSessionUserscriptManager(
             val state = sessionPageStates.getOrPut(sessionId) { SessionPageState() }
             if (state.pageUrl != pageUrl) {
                 state.pageUrl = pageUrl
-                state.scriptStatuses.clear()
+                if (state.scriptStatuses.isEmpty()) {
+                    rebuildSessionBaseline(sessionId)
+                    return
+                }
+                publishVisibleStatuses()
+                return
+            }
+            if (state.scriptStatuses.isEmpty() && pageUrl != "about:blank") {
                 rebuildSessionBaseline(sessionId)
                 return
             }
@@ -143,15 +164,26 @@ internal class WebSessionUserscriptManager(
 
     fun onPageChanged(
         sessionId: String,
-        pageUrl: String
+        pageUrl: String,
+        forceReset: Boolean = false
     ) {
         val state = sessionPageStates.getOrPut(sessionId) { SessionPageState() }
-        if (state.pageUrl == pageUrl && state.scriptStatuses.isNotEmpty()) {
+        if (!forceReset && state.pageUrl == pageUrl && state.scriptStatuses.isNotEmpty()) {
             return
         }
         state.pageUrl = pageUrl
         state.scriptStatuses.clear()
+        webRequestEngine.clearSession(sessionId)
         rebuildSessionBaseline(sessionId)
+    }
+
+    fun syncUrlChange(
+        sessionId: String,
+        pageUrl: String
+    ) {
+        val state = sessionPageStates.getOrPut(sessionId) { SessionPageState() }
+        state.pageUrl = pageUrl
+        publishVisibleStatuses()
     }
 
     fun attachSession(
@@ -240,6 +272,16 @@ internal class WebSessionUserscriptManager(
                 runCatching { entry.value.cancel() }
             }
             remove
+        }
+        webRequestEngine.clearSession(sessionId)
+        tabStateStore.clearSession(sessionId)
+        audioMuteStates.remove(sessionId)
+        openedTabOwners.remove(sessionId)?.let { ownerSessionId ->
+            dispatchHostEvent(
+                ownerSessionId,
+                "open_tab_closed",
+                JSONObject().put("sessionId", sessionId)
+            )
         }
         onMenuCommandsChanged(sessionId)
         publishVisibleStatuses()
@@ -404,6 +446,89 @@ internal class WebSessionUserscriptManager(
         }
     }
 
+    fun interceptWebRequest(
+        sessionId: String,
+        request: WebResourceRequest
+    ): WebResourceResponse? {
+        val url = request.url?.toString().orEmpty()
+        if (url.isBlank()) {
+            return null
+        }
+        val resolution =
+            webRequestEngine.resolve(
+                sessionId = sessionId,
+                url = url,
+                requestType = resolveWebRequestType(request)
+            )
+        if (resolution.matches.isEmpty()) {
+            return null
+        }
+        resolution.matches.forEach { match ->
+            dispatchHostEvent(
+                sessionId,
+                "web_request_event",
+                JSONObject()
+                    .put("registrationId", match.registrationId)
+                    .put("scriptId", match.scriptId)
+                    .put("url", url)
+                    .put("type", resolveWebRequestType(request))
+                    .put("source", match.source)
+            )
+        }
+        val action = resolution.mergedAction
+        if (!action.requiresInterception()) {
+            return null
+        }
+        if (action.cancel) {
+            return WebResourceResponse("text/plain", "utf-8", 204, "Blocked", emptyMap(), ByteArrayInputStream(ByteArray(0)))
+        }
+        val targetUrl = action.redirectUrl ?: url
+        return runCatching {
+            val requestBuilder = Request.Builder().url(targetUrl)
+            request.requestHeaders.orEmpty().forEach { (key, value) ->
+                requestBuilder.header(key, value)
+            }
+            action.requestHeaders.forEach { (key, value) ->
+                requestBuilder.header(key, value)
+            }
+            val response = requestClient.newCall(requestBuilder.get().build()).execute()
+            val bodyBytes =
+                action.responseBody?.toByteArray(Charsets.UTF_8)
+                    ?: response.body?.bytes()
+                    ?: ByteArray(0)
+            val responseHeaders =
+                response.headers.toMultimap()
+                    .mapValues { (_, values) -> values.joinToString(", ") }
+                    .toMutableMap()
+                    .apply { putAll(action.responseHeaders) }
+            val mimeType =
+                response.header("Content-Type")
+                    ?.substringBefore(';')
+                    ?.trim()
+                    ?.ifBlank { "application/octet-stream" }
+                    ?: "application/octet-stream"
+            val encoding =
+                response.header("Content-Type")
+                    ?.substringAfter("charset=", "")
+                    ?.substringBefore(';')
+                    ?.ifBlank { "utf-8" }
+                    ?: "utf-8"
+            WebResourceResponse(
+                mimeType,
+                encoding,
+                response.code,
+                response.message,
+                responseHeaders,
+                ByteArrayInputStream(bodyBytes)
+            ).also {
+                response.close()
+            }
+        }.getOrElse { error ->
+            AppLogger.w(TAG, "userscript webRequest intercept failed: ${error.message}")
+            null
+        }
+    }
+
     private fun handleBridgeMessage(
         sessionId: String,
         webView: WebView,
@@ -424,7 +549,7 @@ internal class WebSessionUserscriptManager(
                         if (isMainFrame) {
                             onPageChanged(sessionId, href)
                         }
-                        val bootstrapPayload = repository.buildBootstrapPayload(href, isTopFrame)
+                        val bootstrapPayload = repository.buildBootstrapPayload(sessionId, href, isTopFrame)
                         if (isMainFrame) {
                             val state = sessionPageStates.getOrPut(sessionId) { SessionPageState(pageUrl = href) }
                             bootstrapPayload.scripts.forEach { script ->
@@ -519,7 +644,29 @@ internal class WebSessionUserscriptManager(
                 val valueJson = payload.optString("valueJson", "null")
                 if (scriptId > 0L && key.isNotBlank()) {
                     scope.launch {
-                        repository.persistValue(scriptId, key, valueJson)
+                        persistValueAndBroadcast(
+                            sourceSessionId = sessionId,
+                            scriptId = scriptId,
+                            key = key,
+                            valueJson = valueJson
+                        )
+                    }
+                }
+            }
+
+            "storage_set_many" -> {
+                val scriptId = payload.optLong("scriptId")
+                val values = payload.optJSONObject("values") ?: JSONObject()
+                if (scriptId > 0L) {
+                    scope.launch {
+                        values.keys().forEach { key ->
+                            persistValueAndBroadcast(
+                                sourceSessionId = sessionId,
+                                scriptId = scriptId,
+                                key = key,
+                                valueJson = values.optString(key, "null")
+                            )
+                        }
                     }
                 }
             }
@@ -529,43 +676,150 @@ internal class WebSessionUserscriptManager(
                 val key = payload.optString("key", "")
                 if (scriptId > 0L && key.isNotBlank()) {
                     scope.launch {
-                        repository.deleteValue(scriptId, key)
+                        deleteValueAndBroadcast(
+                            sourceSessionId = sessionId,
+                            scriptId = scriptId,
+                            key = key
+                        )
                     }
+                }
+            }
+
+            "storage_delete_many" -> {
+                val scriptId = payload.optLong("scriptId")
+                val keys = payload.optJSONArray("keys") ?: org.json.JSONArray()
+                if (scriptId > 0L) {
+                    scope.launch {
+                        for (index in 0 until keys.length()) {
+                            val key = keys.optString(index).trim()
+                            if (key.isNotBlank()) {
+                                deleteValueAndBroadcast(
+                                    sourceSessionId = sessionId,
+                                    scriptId = scriptId,
+                                    key = key
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            "url_change" -> {
+                if (!isMainFrame) {
+                    return
+                }
+                val href = payload.optString("href", "").trim()
+                if (href.isNotBlank()) {
+                    syncUrlChange(sessionId, href)
                 }
             }
 
             "gm_open_in_tab" -> {
                 val url = payload.optString("url", "").trim()
-                if (url.isNotBlank()) {
-                    mainHandler.post {
-                        onOpenTab(url, payload.optBoolean("active", true))
+                if (url.isBlank()) {
+                    if (requestId.isNotBlank()) {
+                        postRpcError(replyProxy, requestId, "open_tab_url_is_empty")
+                    }
+                    return
+                }
+                mainHandler.post {
+                    val openedSessionId = onOpenTab(url, payload.optBoolean("active", true))
+                    if (!openedSessionId.isNullOrBlank()) {
+                        openedTabOwners[openedSessionId] = sessionId
+                        if (requestId.isNotBlank()) {
+                            postRpcSuccess(
+                                replyProxy,
+                                requestId,
+                                JSONObject().put("sessionId", openedSessionId)
+                            )
+                        }
+                    } else if (requestId.isNotBlank()) {
+                        postRpcError(replyProxy, requestId, "open_tab_failed")
                     }
                 }
             }
 
-            "gm_set_clipboard" -> handleSetClipboard(payload)
-            "gm_notification" -> handleNotification(payload)
-            "gm_download" -> handleDownload(sessionId, payload)
+            "gm_focus_tab" -> {
+                val targetSessionId = payload.optString("sessionId", sessionId).trim()
+                mainHandler.post {
+                    if (targetSessionId.isBlank() || !sessionBindings.containsKey(targetSessionId)) {
+                        if (requestId.isNotBlank()) {
+                            postRpcError(replyProxy, requestId, "focus_tab_failed")
+                        }
+                        return@post
+                    }
+                    onActivateSession(targetSessionId)
+                    if (requestId.isNotBlank()) {
+                        postRpcSuccess(replyProxy, requestId, JSONObject().put("sessionId", targetSessionId))
+                    }
+                }
+            }
+
+            "gm_close_tab" -> {
+                val targetSessionId = payload.optString("sessionId", sessionId).trim()
+                mainHandler.post {
+                    val closed =
+                        if (targetSessionId.isNotBlank()) {
+                            onCloseSession(targetSessionId)
+                        } else {
+                            false
+                        }
+                    if (requestId.isNotBlank()) {
+                        if (closed) {
+                            postRpcSuccess(replyProxy, requestId, JSONObject().put("sessionId", targetSessionId))
+                        } else {
+                            postRpcError(replyProxy, requestId, "close_tab_failed")
+                        }
+                    }
+                }
+            }
+
+            "gm_get_tab" -> handleGetTab(sessionId, payload, replyProxy, requestId)
+            "gm_save_tab" -> handleSaveTab(sessionId, payload, replyProxy, requestId)
+            "gm_get_tabs" -> handleGetTabs(payload, replyProxy, requestId)
+            "gm_cookie" -> handleCookie(payload, replyProxy, requestId)
+            "gm_audio" -> handleAudio(sessionId, payload, replyProxy, requestId)
+            "gm_web_request_register" -> handleRegisterWebRequest(sessionId, payload, replyProxy, requestId)
+            "gm_web_request_unregister" -> handleUnregisterWebRequest(payload, replyProxy, requestId)
+            "gm_set_clipboard" -> handleSetClipboard(payload, replyProxy, requestId)
+            "gm_notification" -> handleNotification(payload, replyProxy, requestId)
+            "gm_download" -> handleDownload(sessionId, payload, replyProxy, requestId)
             "gm_xmlhttp_request" -> handleXmlHttpRequest(sessionId, payload, replyProxy, requestId)
             "gm_abort_request" -> {
                 val gmRequestId = payload.optString("requestId", "").trim()
                 if (gmRequestId.isNotBlank()) {
-                    activeCalls.remove("$sessionId:$gmRequestId")?.cancel()
+                    val requestKey = "$sessionId:$gmRequestId"
+                    abortedRequestKeys.add(requestKey)
+                    activeCalls.remove(requestKey)?.cancel()
                 }
             }
         }
     }
 
-    private fun handleSetClipboard(payload: JSONObject) {
+    private fun handleSetClipboard(
+        payload: JSONObject,
+        replyProxy: JavaScriptReplyProxy,
+        requestId: String
+    ) {
         val text = payload.optString("text", "")
-        if (text.isBlank()) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        if (clipboard == null) {
+            if (requestId.isNotBlank()) {
+                postRpcError(replyProxy, requestId, "clipboard_service_unavailable")
+            }
             return
         }
-        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return
         clipboard.setPrimaryClip(ClipData.newPlainText("userscript", text))
+        if (requestId.isNotBlank()) {
+            postRpcSuccess(replyProxy, requestId, JSONObject().put("text", text))
+        }
     }
 
-    private fun handleNotification(payload: JSONObject) {
+    private fun handleNotification(
+        payload: JSONObject,
+        replyProxy: JavaScriptReplyProxy,
+        requestId: String
+    ) {
         val title = payload.optString("title", "").ifBlank { context.getString(R.string.web_session_userscript_notification_title) }
         val text = payload.optString("text", "")
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -574,10 +828,19 @@ internal class WebSessionUserscriptManager(
                     android.content.pm.PackageManager.PERMISSION_GRANTED
             if (!granted) {
                 onToast(context.getString(R.string.web_session_userscript_notification_denied))
+                if (requestId.isNotBlank()) {
+                    postRpcError(replyProxy, requestId, "notification_permission_denied")
+                }
                 return
             }
         }
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+        if (manager == null) {
+            if (requestId.isNotBlank()) {
+                postRpcError(replyProxy, requestId, "notification_manager_unavailable")
+            }
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(
                 NotificationChannel(
@@ -596,19 +859,275 @@ internal class WebSessionUserscriptManager(
                 .setAutoCancel(true)
                 .build()
         manager.notify(NOTIFICATION_ID + payload.optLong("scriptId").toInt(), notification)
+        if (requestId.isNotBlank()) {
+            postRpcSuccess(
+                replyProxy,
+                requestId,
+                JSONObject()
+                    .put("shown", true)
+                    .put("title", title)
+                    .put("text", text)
+            )
+        }
     }
 
     private fun handleDownload(
         sessionId: String,
-        payload: JSONObject
+        payload: JSONObject,
+        replyProxy: JavaScriptReplyProxy,
+        requestId: String
     ) {
         val url = payload.optString("url", "").trim()
         if (url.isBlank()) {
             onToast(context.getString(R.string.web_session_userscript_download_failed))
+            if (requestId.isNotBlank()) {
+                postRpcError(replyProxy, requestId, "download_url_is_empty")
+            }
             return
         }
         mainHandler.post {
             onDownload(sessionId, url, payload.optString("fileName", "").ifBlank { null })
+            if (requestId.isNotBlank()) {
+                postRpcSuccess(
+                    replyProxy,
+                    requestId,
+                    JSONObject()
+                        .put("started", true)
+                        .put("url", url)
+                        .put("fileName", payload.optString("fileName", ""))
+                )
+            }
+        }
+    }
+
+    private suspend fun persistValueAndBroadcast(
+        sourceSessionId: String,
+        scriptId: Long,
+        key: String,
+        valueJson: String
+    ) {
+        val oldValueJson = repository.readValueJson(scriptId, key)
+        repository.persistValue(scriptId, key, valueJson)
+        broadcastStorageChange(
+            sourceSessionId = sourceSessionId,
+            change =
+                UserscriptStorageChange(
+                    scriptId = scriptId,
+                    key = key,
+                    oldValueJson = oldValueJson,
+                    newValueJson = valueJson,
+                    remote = true
+                )
+        )
+    }
+
+    private suspend fun deleteValueAndBroadcast(
+        sourceSessionId: String,
+        scriptId: Long,
+        key: String
+    ) {
+        val oldValueJson = repository.readValueJson(scriptId, key)
+        repository.deleteValue(scriptId, key)
+        broadcastStorageChange(
+            sourceSessionId = sourceSessionId,
+            change =
+                UserscriptStorageChange(
+                    scriptId = scriptId,
+                    key = key,
+                    oldValueJson = oldValueJson,
+                    newValueJson = null,
+                    remote = true
+                )
+        )
+    }
+
+    private fun broadcastStorageChange(
+        sourceSessionId: String,
+        change: UserscriptStorageChange
+    ) {
+        val payload = storageNotifier.toPayload(change)
+        sessionBindings.keys.forEach { targetSessionId ->
+            if (targetSessionId != sourceSessionId) {
+                dispatchHostEvent(targetSessionId, "storage_changed", payload)
+            }
+        }
+    }
+
+    private fun handleGetTab(
+        sessionId: String,
+        payload: JSONObject,
+        replyProxy: JavaScriptReplyProxy,
+        requestId: String
+    ) {
+        val scriptId = payload.optLong("scriptId")
+        if (scriptId <= 0L) {
+            postRpcError(replyProxy, requestId, "invalid_script_id")
+            return
+        }
+        postRpcSuccess(
+            replyProxy,
+            requestId,
+            JSONObject().put("tabJson", tabStateStore.getTab(scriptId, sessionId))
+        )
+    }
+
+    private fun handleSaveTab(
+        sessionId: String,
+        payload: JSONObject,
+        replyProxy: JavaScriptReplyProxy,
+        requestId: String
+    ) {
+        val scriptId = payload.optLong("scriptId")
+        if (scriptId <= 0L) {
+            postRpcError(replyProxy, requestId, "invalid_script_id")
+            return
+        }
+        val tabJson = payload.optString("tabJson", "{}")
+        tabStateStore.saveTab(scriptId, sessionId, tabJson)
+        postRpcSuccess(replyProxy, requestId, JSONObject().put("tabJson", tabJson))
+    }
+
+    private fun handleGetTabs(
+        payload: JSONObject,
+        replyProxy: JavaScriptReplyProxy,
+        requestId: String
+    ) {
+        val scriptId = payload.optLong("scriptId")
+        if (scriptId <= 0L) {
+            postRpcError(replyProxy, requestId, "invalid_script_id")
+            return
+        }
+        val jsonPayload =
+            JSONObject()
+        tabStateStore.getTabs(scriptId).forEach { (sessionId, tabJson) ->
+            jsonPayload.put(sessionId, tabJson)
+        }
+        postRpcSuccess(replyProxy, requestId, JSONObject().put("tabsJson", jsonPayload.toString()))
+    }
+
+    private fun handleCookie(
+        payload: JSONObject,
+        replyProxy: JavaScriptReplyProxy,
+        requestId: String
+    ) {
+        val details = payload.optJSONObject("details") ?: JSONObject()
+        val pageUrl = payload.optString("pageUrl", "")
+        runCatching {
+            when (payload.optString("action", "").trim()) {
+                "list" -> {
+                    val cookiesJson = org.json.JSONArray()
+                    cookieService.list(details, pageUrl).forEach { cookie ->
+                        cookiesJson.put(cookie.toJson())
+                    }
+                    postRpcSuccess(replyProxy, requestId, JSONObject().put("cookiesJson", cookiesJson.toString()))
+                }
+                "set" -> {
+                    val cookie = cookieService.set(details, pageUrl)
+                    postRpcSuccess(replyProxy, requestId, JSONObject().put("cookieJson", cookie.toJson().toString()))
+                }
+                "delete" -> {
+                    cookieService.delete(details, pageUrl)
+                    postRpcSuccess(replyProxy, requestId, JSONObject().put("deleted", true))
+                }
+                else -> postRpcError(replyProxy, requestId, "unsupported_cookie_action")
+            }
+        }.onFailure { error ->
+            postRpcError(replyProxy, requestId, error.message ?: "gm_cookie_failed")
+        }
+    }
+
+    private fun handleAudio(
+        sessionId: String,
+        payload: JSONObject,
+        replyProxy: JavaScriptReplyProxy,
+        requestId: String
+    ) {
+        val binding = sessionBindings[sessionId]
+        if (binding == null) {
+            postRpcError(replyProxy, requestId, "session_not_found")
+            return
+        }
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.MUTE_AUDIO)) {
+            postRpcError(replyProxy, requestId, "mute_audio_not_supported")
+            return
+        }
+        val action = payload.optString("action", "").trim()
+        mainHandler.post {
+            runCatching {
+                when (action) {
+                    "get_state" -> {
+                        val muted = WebViewCompat.isAudioMuted(binding.webView)
+                        audioMuteStates[sessionId] = muted
+                        postRpcSuccess(
+                            replyProxy,
+                            requestId,
+                            JSONObject().put("stateJson", JSONObject().put("muted", muted).toString())
+                        )
+                    }
+                    "set_mute" -> {
+                        val muted = payload.optBoolean("muted", false)
+                        WebViewCompat.setAudioMuted(binding.webView, muted)
+                        audioMuteStates[sessionId] = muted
+                        dispatchHostEvent(
+                            sessionId,
+                            "audio_state_changed",
+                            JSONObject().put("muted", muted)
+                        )
+                        postRpcSuccess(
+                            replyProxy,
+                            requestId,
+                            JSONObject().put("stateJson", JSONObject().put("muted", muted).toString())
+                        )
+                    }
+                    else -> postRpcError(replyProxy, requestId, "unsupported_audio_action")
+                }
+            }.onFailure { error ->
+                postRpcError(replyProxy, requestId, error.message ?: "gm_audio_failed")
+            }
+        }
+    }
+
+    private fun handleRegisterWebRequest(
+        sessionId: String,
+        payload: JSONObject,
+        replyProxy: JavaScriptReplyProxy,
+        requestId: String
+    ) {
+        val scriptId = payload.optLong("scriptId")
+        val rulesJson = payload.optString("rulesJson", "[]")
+        if (scriptId <= 0L) {
+            postRpcError(replyProxy, requestId, "invalid_script_id")
+            return
+        }
+        runCatching {
+            val registrationId =
+                webRequestEngine.register(
+                    scriptId = scriptId,
+                    sessionId = sessionId,
+                    rulesJson = rulesJson,
+                    source = payload.optString("source", "runtime").ifBlank { "runtime" }
+                )
+            postRpcSuccess(replyProxy, requestId, JSONObject().put("registrationId", registrationId))
+        }.onFailure { error ->
+            postRpcError(replyProxy, requestId, error.message ?: "gm_web_request_register_failed")
+        }
+    }
+
+    private fun handleUnregisterWebRequest(
+        payload: JSONObject,
+        replyProxy: JavaScriptReplyProxy,
+        requestId: String
+    ) {
+        val registrationId = payload.optString("registrationId", "").trim()
+        if (registrationId.isBlank()) {
+            postRpcError(replyProxy, requestId, "invalid_registration_id")
+            return
+        }
+        val removed = webRequestEngine.unregister(registrationId)
+        if (removed) {
+            postRpcSuccess(replyProxy, requestId, JSONObject().put("registrationId", registrationId))
+        } else {
+            postRpcError(replyProxy, requestId, "registration_not_found")
         }
     }
 
@@ -662,14 +1181,34 @@ internal class WebSessionUserscriptManager(
         val timeoutMs = payload.optLong("timeoutMs", 0L).coerceAtLeast(0L)
         val anonymous = payload.optBoolean("anonymous", false)
         val bodyData = payload.opt("data")
-        val headers = jsonObjectToMap(payload.optJSONObject("headers"))
+        val requestType = payload.optString("requestType", "xhr").ifBlank { "xhr" }
+        val headers = jsonObjectToMap(payload.optJSONObject("headers")).toMutableMap()
+        val webRequestResolution = webRequestEngine.resolve(sessionId, url, requestType)
+        webRequestResolution.matches.forEach { match ->
+            dispatchHostEvent(
+                sessionId,
+                "web_request_event",
+                JSONObject()
+                    .put("registrationId", match.registrationId)
+                    .put("scriptId", match.scriptId)
+                    .put("url", url)
+                    .put("type", requestType)
+                    .put("source", match.source)
+            )
+        }
+        val action = webRequestResolution.mergedAction
+        if (action.cancel) {
+            throw IllegalStateException("GM_webRequest canceled request")
+        }
+        val targetUrl = action.redirectUrl ?: url
+        headers.putAll(action.requestHeaders)
 
-        val requestBuilder = Request.Builder().url(url)
+        val requestBuilder = Request.Builder().url(targetUrl)
         headers.forEach { (key, value) ->
             requestBuilder.header(key, value)
         }
         if (!anonymous) {
-            CookieManager.getInstance().getCookie(url)?.takeIf { it.isNotBlank() }?.let { cookie ->
+            CookieManager.getInstance().getCookie(targetUrl)?.takeIf { it.isNotBlank() }?.let { cookie ->
                 if (!headers.keys.any { it.equals("Cookie", ignoreCase = true) }) {
                     requestBuilder.header("Cookie", cookie)
                 }
@@ -695,14 +1234,39 @@ internal class WebSessionUserscriptManager(
         if (timeoutMs > 0L) {
             call.timeout().timeout(timeoutMs, TimeUnit.MILLISECONDS)
         }
-        activeCalls["$sessionId:$gmRequestId"] = call
+        val requestKey = "$sessionId:$gmRequestId"
+        activeCalls[requestKey] = call
+        postXhrEvent(
+            replyProxy = replyProxy,
+            requestId = gmRequestId,
+            eventType = "readystatechange",
+            terminal = false,
+            payload =
+                JSONObject()
+                    .put("readyState", 1)
+                    .put("status", 0)
+                    .put("statusText", "")
+                    .put("finalUrl", targetUrl)
+        )
+        postXhrEvent(
+            replyProxy = replyProxy,
+            requestId = gmRequestId,
+            eventType = "loadstart",
+            terminal = false,
+            payload =
+                JSONObject()
+                    .put("readyState", 1)
+                    .put("status", 0)
+                    .put("statusText", "")
+                    .put("finalUrl", targetUrl)
+        )
 
         scope.launch {
             try {
                 val response = call.execute()
                 if (!anonymous) {
                     response.headers("Set-Cookie").forEach { cookie ->
-                        CookieManager.getInstance().setCookie(url, cookie)
+                        CookieManager.getInstance().setCookie(targetUrl, cookie)
                     }
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                         CookieManager.getInstance().flush()
@@ -722,6 +1286,17 @@ internal class WebSessionUserscriptManager(
                             }
                             output.write(buffer, 0, count)
                             loaded += count
+                            postXhrEvent(
+                                replyProxy = replyProxy,
+                                requestId = gmRequestId,
+                                eventType = "readystatechange",
+                                terminal = false,
+                                payload =
+                                    JSONObject()
+                                        .put("loaded", loaded)
+                                        .put("total", total)
+                                        .put("readyState", 3)
+                            )
                             postXhrEvent(
                                 replyProxy = replyProxy,
                                 requestId = gmRequestId,
@@ -752,44 +1327,84 @@ internal class WebSessionUserscriptManager(
                         .put("total", total)
                 when (responseType.lowercase()) {
                     "arraybuffer", "blob" -> {
+                        val resolvedBytes =
+                            action.responseBody?.toByteArray(Charsets.UTF_8)
+                                ?: bytes
                         payloadJson.put(
                             "response",
-                            Base64.encodeToString(bytes, Base64.NO_WRAP)
+                            Base64.encodeToString(resolvedBytes, Base64.NO_WRAP)
                         )
                         payloadJson.put("responseEncoding", "base64")
                         payloadJson.put("responseType", responseType.lowercase())
                     }
                     else -> {
-                        payloadJson.put("responseText", bytes.toString(Charsets.UTF_8))
-                        payloadJson.put("response", bytes.toString(Charsets.UTF_8))
+                        val resolvedText = action.responseBody ?: bytes.toString(Charsets.UTF_8)
+                        payloadJson.put("responseText", resolvedText)
+                        payloadJson.put("response", resolvedText)
                     }
+                }
+                action.responseHeaders.forEach { (key, value) ->
+                    headersJson.put(key, value)
                 }
                 postXhrEvent(
                     replyProxy = replyProxy,
                     requestId = gmRequestId,
+                    eventType = "readystatechange",
+                    terminal = false,
+                    payload = JSONObject(payloadJson.toString())
+                )
+                postXhrEvent(
+                    replyProxy = replyProxy,
+                    requestId = gmRequestId,
                     eventType = "load",
+                    terminal = false,
+                    payload = payloadJson
+                )
+                postXhrEvent(
+                    replyProxy = replyProxy,
+                    requestId = gmRequestId,
+                    eventType = "loadend",
                     terminal = true,
                     payload = payloadJson
                 )
                 response.close()
             } catch (error: Throwable) {
+                if (abortedRequestKeys.remove(requestKey)) {
+                    return@launch
+                }
                 val eventType = if (error is java.io.InterruptedIOException) "timeout" else "error"
+                val errorPayload =
+                    JSONObject()
+                        .put("status", 0)
+                        .put("statusText", error.message ?: eventType)
+                        .put("readyState", 4)
+                        .put("finalUrl", payload.optString("url", ""))
+                        .put("responseText", "")
+                postXhrEvent(
+                    replyProxy = replyProxy,
+                    requestId = gmRequestId,
+                    eventType = "readystatechange",
+                    terminal = false,
+                    payload = JSONObject(errorPayload.toString())
+                )
                 postXhrEvent(
                     replyProxy = replyProxy,
                     requestId = gmRequestId,
                     eventType = eventType,
+                    terminal = false,
+                    payload = errorPayload
+                )
+                postXhrEvent(
+                    replyProxy = replyProxy,
+                    requestId = gmRequestId,
+                    eventType = "loadend",
                     terminal = true,
-                    payload =
-                        JSONObject()
-                            .put("status", 0)
-                            .put("statusText", error.message ?: eventType)
-                            .put("readyState", 4)
-                            .put("finalUrl", payload.optString("url", ""))
-                            .put("responseText", "")
+                    payload = errorPayload
                 )
                 repository.log(scriptId, "error", pageUrl, error.message ?: "GM_xmlhttpRequest failed")
             } finally {
-                activeCalls.remove("$sessionId:$gmRequestId")
+                activeCalls.remove(requestKey)
+                abortedRequestKeys.remove(requestKey)
             }
         }
     }
@@ -840,10 +1455,10 @@ internal class WebSessionUserscriptManager(
         return when {
             !script.enabled ->
                 UserscriptPageRuntimeStatus(UserscriptPageRuntimeState.DISABLED)
-            script.unsupportedGrants.isNotEmpty() ->
+            script.blockedReasons.isNotEmpty() ->
                 UserscriptPageRuntimeStatus(
                     UserscriptPageRuntimeState.UNSUPPORTED,
-                    detail = script.unsupportedGrants.joinToString()
+                    detail = script.blockedReasons.joinToString()
                 )
             pageUrl.isBlank() || pageUrl == "about:blank" ->
                 UserscriptPageRuntimeStatus(UserscriptPageRuntimeState.NOT_MATCHED)
@@ -888,6 +1503,58 @@ internal class WebSessionUserscriptManager(
         uiStore.updateCurrentPageStatuses(visibleStatuses)
     }
 
+    private fun dispatchHostEvent(
+        sessionId: String,
+        eventType: String,
+        payload: JSONObject
+    ) {
+        val binding = sessionBindings[sessionId] ?: return
+        val rawMessage =
+            JSONObject()
+                .put("type", eventType)
+                .put("payload", payload)
+                .toString()
+        val escapedMessage = JSONObject.quote(rawMessage)
+        mainHandler.post {
+            runCatching {
+                binding.webView.evaluateJavascript(
+                    """
+                    (function() {
+                        const runtime = window.__operitUserscriptRuntime;
+                        if (!runtime || typeof runtime.dispatchHostEvent !== "function") {
+                            return;
+                        }
+                        runtime.dispatchHostEvent(JSON.parse($escapedMessage));
+                    })();
+                    """.trimIndent(),
+                    null
+                )
+            }.onFailure { error ->
+                AppLogger.w(TAG, "Failed to dispatch userscript host event: ${error.message}")
+            }
+        }
+    }
+
+    private fun resolveWebRequestType(request: WebResourceRequest): String {
+        if (request.isForMainFrame) {
+            return "main_frame"
+        }
+        val lowerUrl = request.url?.toString().orEmpty().lowercase()
+        val accept = request.requestHeaders?.entries?.firstOrNull {
+            it.key.equals("Accept", ignoreCase = true)
+        }?.value?.lowercase().orEmpty()
+        return when {
+            accept.contains("text/css") || lowerUrl.endsWith(".css") -> "stylesheet"
+            accept.contains("javascript") || lowerUrl.endsWith(".js") -> "script"
+            accept.contains("image/") || lowerUrl.endsWith(".png") || lowerUrl.endsWith(".jpg") || lowerUrl.endsWith(".jpeg") ||
+                lowerUrl.endsWith(".gif") || lowerUrl.endsWith(".svg") -> "image"
+            accept.contains("font/") || lowerUrl.endsWith(".woff") || lowerUrl.endsWith(".woff2") || lowerUrl.endsWith(".ttf") -> "font"
+            accept.contains("video/") || accept.contains("audio/") -> "media"
+            accept.contains("application/json") || accept.contains("text/plain") -> "fetch"
+            else -> "other"
+        }
+    }
+
     private fun UserscriptListItem.toMetadata(): ParsedUserscriptMetadata =
         ParsedUserscriptMetadata(
             name = name,
@@ -895,6 +1562,8 @@ internal class WebSessionUserscriptManager(
             version = version,
             description = description,
             homepage = homepage,
+            website = website,
+            supportUrl = supportUrl,
             downloadUrl = downloadUrl,
             updateUrl = updateUrl,
             grants = grants,
@@ -904,7 +1573,13 @@ internal class WebSessionUserscriptManager(
             excludeMatches = excludeMatches,
             connects = connects,
             requires = requires,
-            resources = resources
+            resources = resources,
+            icons = icons,
+            tags = tags,
+            sandbox = sandbox,
+            runIn = runIn,
+            unwrap = unwrap,
+            webRequestRules = webRequestRules
         )
 
     private fun postRpcSuccess(

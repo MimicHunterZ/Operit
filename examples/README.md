@@ -152,6 +152,19 @@ exports.hello_world = hello_world;
 
 You can also write your packages in TypeScript (.ts) with full type checking for all APIs. TypeScript packages are automatically compiled to JavaScript at runtime.
 
+### Parameter Typing Rule
+
+For tool packages under `examples`, Kotlin now converts tool params to strong types before invoking the TypeScript/JavaScript runtime, based on each tool's metadata.
+
+- In TypeScript, parameter types should match metadata directly.
+- Fields with `"required": false` should be modeled as optional `?`.
+- Do not keep legacy TS-layer coercion such as `string -> number`, `string -> boolean`, `JSON string -> array/object`, or duplicate "required parameter" checks that only existed to compensate for old permissive passthrough behavior.
+- Keep only validations that metadata cannot express well, such as enum/domain rules, cross-field constraints, and nested object/array shape checks.
+
+### TypeScript Parameter Behavior
+
+Parameters passed to `.ts` example packages rely on Kotlin’s metadata-driven conversion. The Kotlin bridge reads each tool’s `type`/`required` flags and converts values _before_ they arrive in JavaScript/TypeScript, which means the TS layer should trust the metadata typing and focus on higher-level business rules. Please do not add string→number/boolean/array coercion or re-check `required` fields that Kotlin already enforces, and treat `required: false` parameters as optional (`?`) with their actual primitive types.
+
 ### Example TypeScript Package:
 
 ```typescript

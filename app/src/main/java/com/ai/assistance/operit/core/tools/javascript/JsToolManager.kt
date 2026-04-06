@@ -12,11 +12,17 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.json.JSONArray
+import org.json.JSONObject
 
 class JsToolManager private constructor(
     private val context: Context,
     private val packageManager: PackageManager
 ) {
+
+    private class ToolParameterConversionException(
+        message: String
+    ) : IllegalArgumentException(message)
 
     companion object {
         private const val TAG = "JsToolManager"
@@ -119,39 +125,119 @@ class JsToolManager private constructor(
         val toolDefinition = packageManager.getPackageTools(packageName)
             ?.tools
             ?.find { it.name == functionName }
-
-        val converted = buildMap<String, Any?> {
-            tool.parameters.forEach { parameter ->
-                val type = toolDefinition
-                    ?.parameters
-                    ?.find { it.name == parameter.name }
-                    ?.type
-                    ?.lowercase()
-                    ?: "string"
-
-                val value =
-                    try {
-                        when (type) {
-                            "number" -> parameter.value.toDoubleOrNull()
-                                ?: parameter.value.toLongOrNull()
-                                ?: parameter.value
-                            "integer" -> parameter.value.toLongOrNull() ?: parameter.value
-                            "boolean" -> parameter.value.toBooleanStrictOrNull()
-                                ?: parameter.value.equals("1")
-                            else -> parameter.value
-                        }
-                    } catch (e: Exception) {
-                        AppLogger.w(
-                            TAG,
-                            "Parameter conversion failed: tool=${tool.name}, param=${parameter.name}, type=$type, error=${e.message}"
-                        )
-                        parameter.value
-                    }
-                put(parameter.name, value)
+        val parameterDefinitions = toolDefinition?.parameters?.associateBy { it.name }.orEmpty()
+        val missingRequiredParameters = toolDefinition
+            ?.parameters
+            ?.filter { definition ->
+                definition.required && tool.parameters.none { it.name == definition.name }
             }
+            ?.map { it.name }
+            .orEmpty()
+
+        if (missingRequiredParameters.isNotEmpty()) {
+            throw ToolParameterConversionException(
+                "Missing required parameters: ${missingRequiredParameters.joinToString(", ")}"
+            )
+        }
+
+        val converted = linkedMapOf<String, Any?>()
+        tool.parameters.forEach { parameter ->
+            val type = parameterDefinitions[parameter.name]?.type?.lowercase() ?: "string"
+            converted[parameter.name] = convertToolParameterValue(
+                toolName = tool.name,
+                parameterName = parameter.name,
+                rawValue = parameter.value,
+                type = type
+            )
         }
 
         return buildRuntimeParams(packageName, converted)
+    }
+
+    private fun convertToolParameterValue(
+        toolName: String,
+        parameterName: String,
+        rawValue: String,
+        type: String
+    ): Any? {
+        val normalizedValue = rawValue.trim()
+        return when (type) {
+            "number" -> parseNumberValue(normalizedValue)
+                ?: throw invalidParameterType(toolName, parameterName, type, rawValue)
+            "integer" -> normalizedValue.toLongOrNull()
+                ?: throw invalidParameterType(toolName, parameterName, type, rawValue)
+            "boolean" -> parseBooleanValue(normalizedValue)
+                ?: throw invalidParameterType(toolName, parameterName, type, rawValue)
+            "array" -> runCatching { jsonArrayToKotlin(JSONArray(rawValue)) }
+                .getOrElse { throw invalidParameterType(toolName, parameterName, type, rawValue, it) }
+            "object" -> runCatching { jsonObjectToKotlin(JSONObject(rawValue)) }
+                .getOrElse { throw invalidParameterType(toolName, parameterName, type, rawValue, it) }
+            else -> rawValue
+        }
+    }
+
+    private fun parseNumberValue(value: String): Number? {
+        if (value.isEmpty()) {
+            return null
+        }
+        if (!value.contains('.') && !value.contains('e', ignoreCase = true)) {
+            value.toLongOrNull()?.let { return it }
+        }
+        return value.toDoubleOrNull()
+    }
+
+    private fun parseBooleanValue(value: String): Boolean? {
+        return when (value.lowercase()) {
+            "true", "1" -> true
+            "false", "0" -> false
+            else -> null
+        }
+    }
+
+    private fun invalidParameterType(
+        toolName: String,
+        parameterName: String,
+        expectedType: String,
+        rawValue: String,
+        cause: Throwable? = null
+    ): ToolParameterConversionException {
+        val detail = cause?.message?.takeIf { it.isNotBlank() }?.let { " ($it)" }.orEmpty()
+        val preview = rawValue.replace("\n", "\\n").take(120)
+        AppLogger.w(
+            TAG,
+            "Strict parameter conversion failed: tool=$toolName, param=$parameterName, type=$expectedType, value=$preview${if (rawValue.length > 120) "..." else ""}${detail}"
+        )
+        return ToolParameterConversionException(
+            "Invalid parameter '$parameterName' for tool '$toolName': expected $expectedType"
+        )
+    }
+
+    private fun jsonObjectToKotlin(jsonObject: JSONObject): Map<String, Any?> {
+        val result = linkedMapOf<String, Any?>()
+        val keys = jsonObject.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            result[key] = jsonValueToKotlin(jsonObject.opt(key))
+        }
+        return result
+    }
+
+    private fun jsonArrayToKotlin(jsonArray: JSONArray): List<Any?> {
+        val result = mutableListOf<Any?>()
+        for (index in 0 until jsonArray.length()) {
+            result.add(jsonValueToKotlin(jsonArray.opt(index)))
+        }
+        return result
+    }
+
+    private fun jsonValueToKotlin(value: Any?): Any? {
+        return when (value) {
+            null,
+            JSONObject.NULL -> null
+            is JSONObject -> jsonObjectToKotlin(value)
+            is JSONArray -> jsonArrayToKotlin(value)
+            else -> value
+        }
     }
 
     private fun success(toolName: String, value: Any?): ToolResult {
@@ -227,8 +313,13 @@ class JsToolManager private constructor(
         }
 
         val (packageName, functionName) = parsed
+        val runtimeParams = try {
+            convertToolParameters(tool, packageName, functionName)
+        } catch (e: ToolParameterConversionException) {
+            send(failure(tool.name, e.message ?: "Invalid tool parameters"))
+            return@channelFlow
+        }
         withEngine { engine ->
-            val runtimeParams = convertToolParameters(tool, packageName, functionName)
             val traceListener =
                 object : JsExecutionListener {
                     override fun onCallLog(callId: String, level: String, message: String) {

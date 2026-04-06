@@ -92,11 +92,11 @@ const duckduckgo = (function () {
      * @param params Search parameters including query and max_results.
      * @returns A formatted string of search results.
      */
-    async function search(params: { query: string; max_results?: string | number }): Promise<string> {
+    async function search(params: { query: string; max_results?: string }): Promise<string> {
         const { query } = params;
         let max_results = 10;
         if (params.max_results) {
-            const parsedMaxResults = parseInt(String(params.max_results), 10);
+            const parsedMaxResults = parseInt(params.max_results, 10);
             if (!isNaN(parsedMaxResults)) {
                 max_results = parsedMaxResults;
             }

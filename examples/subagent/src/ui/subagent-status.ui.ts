@@ -1,6 +1,4 @@
-/// <reference path="../../../examples/types/index.d.ts" />
-
-import { ComposeColor } from "../../../examples/types/compose-dsl";
+import type { ComposeColor, ComposeDslContext, ComposeNode } from "../../../types/compose-dsl";
 
 type RenderTone = "start" | "progress" | "success" | "failure";
 

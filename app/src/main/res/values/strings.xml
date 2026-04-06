@@ -7183,6 +7183,15 @@
     <string name="web_session_userscript_resources">@resource</string>
     <string name="web_session_userscript_update_url">更新地址</string>
     <string name="web_session_userscript_unsupported_grants">未实现的 grant：%1$s</string>
+    <string name="web_session_userscript_unknown_grants">未知 grant：%1$s</string>
+    <string name="web_session_userscript_blocked_reasons">阻塞原因：%1$s</string>
+    <string name="web_session_userscript_support_url">@supportURL</string>
+    <string name="web_session_userscript_website">Website</string>
+    <string name="web_session_userscript_icons">图标</string>
+    <string name="web_session_userscript_tags">@tag</string>
+    <string name="web_session_userscript_sandbox">@sandbox</string>
+    <string name="web_session_userscript_run_in">@run-in</string>
+    <string name="web_session_userscript_web_request">@webRequest</string>
     <string name="web_session_userscript_confirm_install">确认安装</string>
     <string name="web_session_userscript_cancel_install">取消</string>
     <string name="web_session_userscript_update_action">确认更新</string>

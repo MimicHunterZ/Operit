@@ -27,6 +27,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -540,16 +541,17 @@ internal class BrowserDownloadManager private constructor(
                 output.write(payload)
                 output.flush()
             }
+            currentCoroutineContext().ensureActive()
             inlinePayloads.remove(taskId)
-        mutateTask(taskId, forcePersist = false, forceUi = false) { current ->
-            current.downloadedBytes = payload.size.toLong()
-            current.totalBytes = payload.size.toLong()
-        }
+            mutateTask(taskId, forcePersist = false, forceUi = false) { current ->
+                current.downloadedBytes = payload.size.toLong()
+                current.totalBytes = payload.size.toLong()
+            }
             mergeCompletedTask(taskId)
         } catch (cancelled: CancellationException) {
             handleTaskCancellation(taskId, cancelled)
         } catch (error: Throwable) {
-            failTask(taskId, error)
+            handleTaskError(taskId, error)
         }
     }
 
@@ -558,6 +560,7 @@ internal class BrowserDownloadManager private constructor(
         val originalTask = synchronized(tasks) { tasks[taskId]?.snapshot() } ?: return
         try {
             val probe = HttpMultiPartDownloader.probeDownload(originalTask.sourceUrl.orEmpty(), originalTask.headers)
+            currentCoroutineContext().ensureActive()
             val supportsResume = probe.acceptRanges && probe.contentLength > 0L
             configureTaskSegments(taskId, probe.contentLength, supportsResume)
             initializeDownloadedBytes(taskId)
@@ -594,12 +597,13 @@ internal class BrowserDownloadManager private constructor(
                 downloadSegment(taskId, task, task.segments.first(), onChunk)
             }
 
+            currentCoroutineContext().ensureActive()
             updateTaskSpeed(taskId, 0L)
             mergeCompletedTask(taskId)
         } catch (cancelled: CancellationException) {
             handleTaskCancellation(taskId, cancelled)
         } catch (error: Throwable) {
-            failTask(taskId, error)
+            handleTaskError(taskId, error)
         }
     }
 
@@ -784,6 +788,22 @@ internal class BrowserDownloadManager private constructor(
             task.errorMessage = error.message ?: error::class.java.simpleName
             task.speedBytesPerSecond = 0L
         }
+    }
+
+    private suspend fun handleTaskError(taskId: String, error: Throwable) {
+        if (error is CancellationException) {
+            handleTaskCancellation(taskId, error)
+            return
+        }
+
+        if (activeControls[taskId]?.stopAction != null && !currentCoroutineContext().isActive) {
+            val cancellation = CancellationException(error.message ?: "Download cancelled")
+            cancellation.initCause(error)
+            handleTaskCancellation(taskId, cancellation)
+            return
+        }
+
+        failTask(taskId, error)
     }
 
     private fun handleTaskCancellation(taskId: String, error: CancellationException) {

@@ -90,7 +90,7 @@ const duckduckgo = (function () {
         const { query } = params;
         let max_results = 10;
         if (params.max_results) {
-            const parsedMaxResults = parseInt(String(params.max_results), 10);
+            const parsedMaxResults = parseInt(params.max_results, 10);
             if (!isNaN(parsedMaxResults)) {
                 max_results = parsedMaxResults;
             }

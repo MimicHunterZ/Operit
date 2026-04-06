@@ -110,9 +110,17 @@ class StandardBrowserSessionTools(internal val context: Context) : ToolExecutor 
                 }
             },
             onOpenTab = { url, active ->
-                runOnMainSync<Unit> {
+                runOnMainSync<String?> {
                     openUserscriptTabOnMain(context.applicationContext, url, active)
                 }
+            },
+            onActivateSession = { sessionId ->
+                runOnMainSync<Unit> {
+                    activateSessionOnMain(sessionId)
+                }
+            },
+            onCloseSession = { sessionId ->
+                closeSession(sessionId)
             },
             onDownload = { sessionId, url, fileName ->
                 runOnMainSync<Unit> {

@@ -86,8 +86,8 @@ const PdfVisionParser = (function () {
     interface ParsePdfWithVisionParams {
         pdf_path: string;
         page_prompt?: string;
-        start_page?: number | string;
-        end_page?: number | string;
+        start_page?: number;
+        end_page?: number;
     }
 
     interface FailedPageInfo {
@@ -140,22 +140,21 @@ const PdfVisionParser = (function () {
     }
 
     function parsePositiveInteger(
-        value: unknown,
+        value: number | undefined,
         fieldName: string,
         options?: { allowUndefined?: boolean }
     ): number | undefined {
-        if (value === undefined || value === null || String(value).trim() === "") {
+        if (value === undefined || value === null) {
             if (options?.allowUndefined) {
                 return undefined;
             }
             throw new Error(`${fieldName} 不能为空。`);
         }
 
-        const parsed = Number(value);
-        if (!Number.isInteger(parsed) || parsed <= 0) {
+        if (!Number.isInteger(value) || value <= 0) {
             throw new Error(`${fieldName} 必须是大于 0 的整数。`);
         }
-        return parsed;
+        return value;
     }
 
     function buildMergedText(pages: InternalPageResult[]): string {

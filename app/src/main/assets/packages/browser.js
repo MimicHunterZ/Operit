@@ -144,17 +144,6 @@
             ]
         },
         {
-            "name": "screenshot",
-            "description": { "zh": "截取页面截图。", "en": "Take a screenshot." },
-            "parameters": [
-                { "name": "type", "description": { "zh": "可选，图片类型：png/jpeg，默认 png。", "en": "Optional image type: png/jpeg. Defaults to png." }, "type": "string", "required": false },
-                { "name": "filename", "description": { "zh": "可选，保存截图的文件名。", "en": "Optional screenshot output file name." }, "type": "string", "required": false },
-                { "name": "element", "description": { "zh": "可选，元素描述。", "en": "Optional element description." }, "type": "string", "required": false },
-                { "name": "ref", "description": { "zh": "可选，元素 ref。", "en": "Optional element ref." }, "type": "string", "required": false },
-                { "name": "fullPage", "description": { "zh": "可选，是否截取整页。", "en": "Optional full-page screenshot." }, "type": "boolean", "required": false }
-            ]
-        },
-        {
             "name": "type",
             "description": { "zh": "向可编辑元素输入文本。", "en": "Type text into an editable element." },
             "parameters": [
@@ -203,78 +192,31 @@ const TOOL_NAMES = [
     "run_code",
     "select_option",
     "snapshot",
-    "screenshot",
     "type",
     "wait_for",
     "tabs"
 ];
-function assertObject(params, toolName) {
-    if (params === undefined || params === null) {
-        return {};
-    }
-    if (typeof params !== "object" || Array.isArray(params)) {
-        throw new Error(toolName + " expects one parameter object");
-    }
-    return params;
-}
-function requireString(value, name) {
-    const normalized = typeof value === "string" ? value.trim() : String(value || "").trim();
-    if (!normalized) {
-        throw new Error(name + " is required");
-    }
-    return normalized;
-}
-function optionalString(value) {
-    if (value === undefined || value === null) {
+function normalizeOptionalString(value) {
+    if (value === undefined) {
         return undefined;
     }
-    const normalized = String(value).trim();
+    const normalized = value.trim();
     return normalized ? normalized : undefined;
-}
-function optionalBoolean(value, name) {
-    if (value === undefined) {
-        return undefined;
-    }
-    if (typeof value !== "boolean") {
-        throw new Error(name + " must be a boolean");
-    }
-    return value;
-}
-function requireNumber(value, name) {
-    const normalized = Number(value);
-    if (!Number.isFinite(normalized)) {
-        throw new Error(name + " must be a number");
-    }
-    return normalized;
-}
-function optionalArray(value, name) {
-    if (value === undefined) {
-        return undefined;
-    }
-    if (!Array.isArray(value)) {
-        throw new Error(name + " must be an array");
-    }
-    return value;
-}
-function requireStringArray(value, name) {
-    const array = optionalArray(value, name);
-    if (!array || array.length === 0) {
-        throw new Error(name + " must be a non-empty array");
-    }
-    return array.map((item) => requireString(item, name + "[]"));
 }
 function buildLargeOutputFilename(prefix, extension) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
     const rand = Math.floor(Math.random() * 1000000);
     return OPERIT_CLEAN_ON_EXIT_DIR + "/browser_" + prefix + "_" + timestamp + "_" + rand + "." + extension;
 }
-async function maybePersistLargeText(nativeName, params, result, prefix, extension) {
-    if (typeof result !== "string" || result.length <= MAX_INLINE_BROWSER_TEXT_CHARS || params.filename) {
+async function maybePersistLargeBrowserResponse(result, prefix, extension = "md") {
+    if (typeof result !== "string" || result.length <= MAX_INLINE_BROWSER_TEXT_CHARS) {
         return result;
     }
     await Tools.Files.mkdir(OPERIT_CLEAN_ON_EXIT_DIR, true);
     const filename = buildLargeOutputFilename(prefix, extension);
-    return toolCall(nativeName, toToolParams({ ...params, filename: filename }));
+    await Tools.Files.write(filename, result, false);
+    const normalizedPath = filename.replace(/\\/g, "/");
+    return "Large browser response saved to:\n- [Browser Output](" + normalizedPath + ")";
 }
 function toToolParams(params) {
     return params;
@@ -283,62 +225,54 @@ async function callBrowser(nativeName, params = {}) {
     return toolCall(nativeName, toToolParams(params));
 }
 async function click(params) {
-    const normalized = assertObject(params, "click");
     const payload = {
-        ref: requireString(normalized.ref, "ref")
+        ref: params.ref
     };
-    const element = optionalString(normalized.element);
-    const button = optionalString(normalized.button);
-    const modifiers = optionalArray(normalized.modifiers, "modifiers");
-    const doubleClick = optionalBoolean(normalized.doubleClick, "doubleClick");
+    const element = normalizeOptionalString(params.element);
+    const button = params.button;
     if (element) {
         payload.element = element;
     }
-    if (button) {
+    if (button !== undefined) {
         if (!["left", "right", "middle"].includes(button)) {
             throw new Error("button must be left, right, or middle");
         }
         payload.button = button;
     }
-    if (modifiers) {
-        payload.modifiers = modifiers.map((item) => requireString(item, "modifiers[]"));
+    if (params.modifiers !== undefined) {
+        payload.modifiers = params.modifiers;
     }
-    if (doubleClick !== undefined) {
-        payload.doubleClick = doubleClick;
+    if (params.doubleClick !== undefined) {
+        payload.doubleClick = params.doubleClick;
     }
-    return callBrowser("browser_click", payload);
+    const result = await callBrowser("browser_click", payload);
+    return maybePersistLargeBrowserResponse(result, "click");
 }
 async function close() {
-    return callBrowser("browser_close");
+    const result = await callBrowser("browser_close");
+    return maybePersistLargeBrowserResponse(result, "close");
 }
-async function console_messages(params) {
-    const normalized = assertObject(params, "console_messages");
+async function console_messages(params = {}) {
     const payload = {
-        level: optionalString(normalized.level) || "info"
+        level: normalizeOptionalString(params.level) || "info"
     };
-    const filename = optionalString(normalized.filename);
+    const filename = normalizeOptionalString(params.filename);
     if (filename) {
         payload.filename = filename;
     }
     const result = await callBrowser("browser_console_messages", payload);
-    return maybePersistLargeText("browser_console_messages", payload, result, "console_messages", "log");
+    return maybePersistLargeBrowserResponse(result, "console_messages");
 }
 async function drag(params) {
-    const normalized = assertObject(params, "drag");
-    return callBrowser("browser_drag", {
-        startElement: requireString(normalized.startElement, "startElement"),
-        startRef: requireString(normalized.startRef, "startRef"),
-        endElement: requireString(normalized.endElement, "endElement"),
-        endRef: requireString(normalized.endRef, "endRef")
-    });
+    const result = await callBrowser("browser_drag", params);
+    return maybePersistLargeBrowserResponse(result, "drag");
 }
 async function evaluate(params) {
-    const normalized = assertObject(params, "evaluate");
     const payload = {
-        function: requireString(normalized.function, "function")
+        function: params.function
     };
-    const ref = optionalString(normalized.ref);
-    const element = optionalString(normalized.element);
+    const ref = normalizeOptionalString(params.ref);
+    const element = normalizeOptionalString(params.element);
     if (element && !ref) {
         throw new Error("ref is required when element is provided");
     }
@@ -348,33 +282,35 @@ async function evaluate(params) {
     if (element) {
         payload.element = element;
     }
-    return callBrowser("browser_evaluate", payload);
+    const result = await callBrowser("browser_evaluate", payload);
+    return maybePersistLargeBrowserResponse(result, "evaluate");
 }
-async function upload(params) {
-    const normalized = assertObject(params, "upload");
+async function upload(params = {}) {
     const payload = {};
-    if (normalized.paths !== undefined) {
-        payload.paths = requireStringArray(normalized.paths, "paths");
+    if (params.paths !== undefined) {
+        payload.paths = params.paths;
     }
-    return callBrowser("browser_file_upload", payload);
+    const result = await callBrowser("browser_file_upload", payload);
+    return maybePersistLargeBrowserResponse(result, "upload");
 }
 function normalizeFormFields(fields) {
-    const array = optionalArray(fields, "fields");
-    if (!array || array.length === 0) {
+    if (fields.length === 0) {
         throw new Error("fields must be a non-empty array");
     }
-    return array.map((field, index) => {
-        if (!field || typeof field !== "object" || Array.isArray(field)) {
-            throw new Error("fields[" + index + "] must be an object");
-        }
-        const normalizedField = field;
+    return fields.map((field, index) => {
         const normalized = {
-            name: requireString(normalizedField.name, "fields[" + index + "].name"),
-            type: requireString(normalizedField.type, "fields[" + index + "].type"),
-            value: normalizedField.value
+            name: field.name.trim(),
+            type: field.type.trim(),
+            value: field.value
         };
-        const ref = optionalString(normalizedField.ref);
-        const selector = optionalString(normalizedField.selector);
+        if (!normalized.name) {
+            throw new Error("fields[" + index + "].name is required");
+        }
+        if (!normalized.type) {
+            throw new Error("fields[" + index + "].type is required");
+        }
+        const ref = normalizeOptionalString(field.ref);
+        const selector = normalizeOptionalString(field.selector);
         if (!ref && !selector) {
             throw new Error("fields[" + index + "] requires ref or selector");
         }
@@ -388,162 +324,110 @@ function normalizeFormFields(fields) {
     });
 }
 async function fill_form(params) {
-    const normalized = assertObject(params, "fill_form");
     const payload = {
-        fields: normalizeFormFields(normalized.fields)
+        fields: normalizeFormFields(params.fields)
     };
-    return callBrowser("browser_fill_form", payload);
+    const result = await callBrowser("browser_fill_form", payload);
+    return maybePersistLargeBrowserResponse(result, "fill_form");
 }
 async function handle_dialog(params) {
-    const normalized = assertObject(params, "handle_dialog");
-    if (typeof normalized.accept !== "boolean") {
-        throw new Error("accept must be a boolean");
-    }
     const payload = {
-        accept: normalized.accept
+        accept: params.accept
     };
-    const promptText = optionalString(normalized.promptText);
+    const promptText = normalizeOptionalString(params.promptText);
     if (promptText) {
         payload.promptText = promptText;
     }
-    return callBrowser("browser_handle_dialog", payload);
+    const result = await callBrowser("browser_handle_dialog", payload);
+    return maybePersistLargeBrowserResponse(result, "handle_dialog");
 }
 async function hover(params) {
-    const normalized = assertObject(params, "hover");
     const payload = {
-        ref: requireString(normalized.ref, "ref")
+        ref: params.ref
     };
-    const element = optionalString(normalized.element);
+    const element = normalizeOptionalString(params.element);
     if (element) {
         payload.element = element;
     }
-    return callBrowser("browser_hover", payload);
+    const result = await callBrowser("browser_hover", payload);
+    return maybePersistLargeBrowserResponse(result, "hover");
 }
 async function goto(params) {
-    const normalized = assertObject(params, "goto");
-    return callBrowser("browser_navigate", {
-        url: requireString(normalized.url, "url")
-    });
+    const result = await callBrowser("browser_navigate", params);
+    return maybePersistLargeBrowserResponse(result, "goto");
 }
 async function back() {
-    return callBrowser("browser_navigate_back");
+    const result = await callBrowser("browser_navigate_back");
+    return maybePersistLargeBrowserResponse(result, "back");
 }
-async function network_requests(params) {
-    const normalized = assertObject(params, "network_requests");
+async function network_requests(params = {}) {
     const payload = {};
-    const includeStatic = optionalBoolean(normalized.includeStatic, "includeStatic");
-    const filename = optionalString(normalized.filename);
-    if (includeStatic !== undefined) {
-        payload.includeStatic = includeStatic;
+    if (params.includeStatic !== undefined) {
+        payload.includeStatic = params.includeStatic;
     }
+    const filename = normalizeOptionalString(params.filename);
     if (filename) {
         payload.filename = filename;
     }
     const result = await callBrowser("browser_network_requests", payload);
-    return maybePersistLargeText("browser_network_requests", payload, result, "network_requests", "log");
+    return maybePersistLargeBrowserResponse(result, "network_requests");
 }
 async function press_key(params) {
-    const normalized = assertObject(params, "press_key");
-    return callBrowser("browser_press_key", {
-        key: requireString(normalized.key, "key")
-    });
+    const result = await callBrowser("browser_press_key", params);
+    return maybePersistLargeBrowserResponse(result, "press_key");
 }
 async function resize(params) {
-    const normalized = assertObject(params, "resize");
-    return callBrowser("browser_resize", {
-        width: requireNumber(normalized.width, "width"),
-        height: requireNumber(normalized.height, "height")
-    });
+    const result = await callBrowser("browser_resize", params);
+    return maybePersistLargeBrowserResponse(result, "resize");
 }
 async function run_code(params) {
-    const normalized = assertObject(params, "run_code");
-    return callBrowser("browser_run_code", {
-        code: requireString(normalized.code, "code")
-    });
+    const result = await callBrowser("browser_run_code", params);
+    return maybePersistLargeBrowserResponse(result, "run_code");
 }
 async function select_option(params) {
-    const normalized = assertObject(params, "select_option");
     const payload = {
-        ref: requireString(normalized.ref, "ref"),
-        values: requireStringArray(normalized.values, "values")
+        ref: params.ref,
+        values: params.values
     };
-    const element = optionalString(normalized.element);
+    const element = normalizeOptionalString(params.element);
     if (element) {
         payload.element = element;
     }
-    return callBrowser("browser_select_option", payload);
+    const result = await callBrowser("browser_select_option", payload);
+    return maybePersistLargeBrowserResponse(result, "select_option");
 }
-async function snapshot(params) {
-    const normalized = assertObject(params, "snapshot");
+async function snapshot(params = {}) {
     const payload = {};
-    const filename = optionalString(normalized.filename);
+    const filename = normalizeOptionalString(params.filename);
     if (filename) {
         payload.filename = filename;
     }
     const result = await callBrowser("browser_snapshot", payload);
-    return maybePersistLargeText("browser_snapshot", payload, result, "snapshot", "md");
-}
-async function screenshot(params) {
-    const normalized = assertObject(params, "screenshot");
-    const payload = {
-        type: optionalString(normalized.type) || "png"
-    };
-    const filename = optionalString(normalized.filename);
-    const element = optionalString(normalized.element);
-    const ref = optionalString(normalized.ref);
-    const fullPage = optionalBoolean(normalized.fullPage, "fullPage");
-    if (!["png", "jpeg", "jpg"].includes(payload.type)) {
-        throw new Error("type must be png or jpeg");
-    }
-    if (ref && !element) {
-        throw new Error("element is required when ref is provided");
-    }
-    if (element && !ref) {
-        throw new Error("ref is required when element is provided");
-    }
-    if (fullPage && ref) {
-        throw new Error("fullPage cannot be used with element screenshots");
-    }
-    if (filename) {
-        payload.filename = filename;
-    }
-    if (element) {
-        payload.element = element;
-    }
-    if (ref) {
-        payload.ref = ref;
-    }
-    if (fullPage !== undefined) {
-        payload.fullPage = fullPage;
-    }
-    return callBrowser("browser_take_screenshot", payload);
+    return maybePersistLargeBrowserResponse(result, "snapshot");
 }
 async function type(params) {
-    const normalized = assertObject(params, "type");
     const payload = {
-        ref: requireString(normalized.ref, "ref"),
-        text: requireString(normalized.text, "text")
+        ref: params.ref,
+        text: params.text
     };
-    const element = optionalString(normalized.element);
-    const submit = optionalBoolean(normalized.submit, "submit");
-    const slowly = optionalBoolean(normalized.slowly, "slowly");
+    const element = normalizeOptionalString(params.element);
     if (element) {
         payload.element = element;
     }
-    if (submit !== undefined) {
-        payload.submit = submit;
+    if (params.submit !== undefined) {
+        payload.submit = params.submit;
     }
-    if (slowly !== undefined) {
-        payload.slowly = slowly;
+    if (params.slowly !== undefined) {
+        payload.slowly = params.slowly;
     }
-    return callBrowser("browser_type", payload);
+    const result = await callBrowser("browser_type", payload);
+    return maybePersistLargeBrowserResponse(result, "type");
 }
-async function wait_for(params) {
-    const normalized = assertObject(params, "wait_for");
+async function wait_for(params = {}) {
     const payload = {};
-    const time = normalized.time !== undefined ? requireNumber(normalized.time, "time") : undefined;
-    const text = optionalString(normalized.text);
-    const textGone = optionalString(normalized.textGone);
+    const time = params.time;
+    const text = normalizeOptionalString(params.text);
+    const textGone = normalizeOptionalString(params.textGone);
     if (time === undefined && !text && !textGone) {
         throw new Error("one of time, text, or textGone is required");
     }
@@ -556,19 +440,20 @@ async function wait_for(params) {
     if (textGone) {
         payload.textGone = textGone;
     }
-    return callBrowser("browser_wait_for", payload);
+    const result = await callBrowser("browser_wait_for", payload);
+    return maybePersistLargeBrowserResponse(result, "wait_for");
 }
 async function tabs(params) {
-    const normalized = assertObject(params, "tabs");
-    const action = requireString(normalized.action, "action");
+    const action = params.action;
     if (!["list", "create", "select", "close"].includes(action)) {
         throw new Error("action must be list, create, select, or close");
     }
-    const payload = { action: action };
-    if (normalized.index !== undefined) {
-        payload.index = requireNumber(normalized.index, "index");
+    const payload = { action };
+    if (params.index !== undefined) {
+        payload.index = params.index;
     }
-    return callBrowser("browser_tabs", payload);
+    const result = await callBrowser("browser_tabs", payload);
+    return maybePersistLargeBrowserResponse(result, "tabs");
 }
 async function browserMain() {
     return "Browser package ready: " + TOOL_NAMES.join(", ");
@@ -590,7 +475,6 @@ exports.resize = resize;
 exports.run_code = run_code;
 exports.select_option = select_option;
 exports.snapshot = snapshot;
-exports.screenshot = screenshot;
 exports.type = type;
 exports.wait_for = wait_for;
 exports.tabs = tabs;

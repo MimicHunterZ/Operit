@@ -160,27 +160,27 @@
 */
 
 type RemoteOperitConfigureParams = {
-    base_url?: string;
-    token?: string;
-    timeout_ms?: number | string;
-    test_connection?: boolean | string;
+    base_url: string;
+    token: string;
+    timeout_ms?: number;
+    test_connection?: boolean;
 };
 
 type RemoteOperitTestConnectionParams = {
-    timeout_ms?: number | string;
+    timeout_ms?: number;
 };
 
 type RemoteOperitChatParams = {
-    message?: string;
+    message: string;
     request_id?: string;
     group?: string;
-    create_new_chat?: boolean | string;
+    create_new_chat?: boolean;
     chat_id?: string;
-    create_if_none?: boolean | string;
-    show_floating?: boolean | string;
-    auto_exit_after_ms?: number | string;
-    stop_after?: boolean | string;
-    timeout_ms?: number | string;
+    create_if_none?: boolean;
+    show_floating?: boolean;
+    auto_exit_after_ms?: number;
+    stop_after?: boolean;
+    timeout_ms?: number;
 };
 
 type RemoteOperitConfig = {
@@ -332,59 +332,38 @@ const remoteOperitTools = (function () {
         return `${parsed.scheme}://${parsed.host}:${port}${path}${parsed.search}${parsed.hash}`.replace(/\/+$/g, "");
     }
 
-    function parseTimeout(value: unknown, fallbackValue: number): number {
-        const raw = asText(value).trim();
-        if (!raw) {
+    function parseTimeout(value: number | undefined, fallbackValue: number): number {
+        if (value === undefined) {
             return fallbackValue;
         }
-        const parsed = Number(raw);
-        if (!Number.isFinite(parsed) || parsed <= 0) {
+        if (!Number.isFinite(value) || value <= 0) {
             throw new Error("Invalid timeout_ms: expected positive integer");
         }
-        return Math.floor(parsed);
+        return Math.floor(value);
     }
 
-    function parseOptionalBoolean(value: unknown, fieldName: string): boolean | undefined {
-        const raw = asText(value).trim().toLowerCase();
-        if (!raw) {
+    function parseOptionalBoolean(value: boolean | undefined, fieldName: string): boolean | undefined {
+        if (value === undefined) {
             return undefined;
         }
-        if (raw === "true" || raw === "1" || raw === "yes" || raw === "on") {
-            return true;
+        if (typeof value !== "boolean") {
+            throw new Error(`Invalid ${fieldName}: expected boolean`);
         }
-        if (raw === "false" || raw === "0" || raw === "no" || raw === "off") {
-            return false;
-        }
-        throw new Error(`Invalid ${fieldName}: expected boolean`);
+        return value;
     }
 
     function coerceBoolean(value: unknown): boolean | undefined {
-        if (typeof value === "boolean") {
-            return value;
-        }
-        const raw = asText(value).trim().toLowerCase();
-        if (!raw) {
-            return undefined;
-        }
-        if (raw === "true" || raw === "1" || raw === "yes" || raw === "on") {
-            return true;
-        }
-        if (raw === "false" || raw === "0" || raw === "no" || raw === "off") {
-            return false;
-        }
-        return undefined;
+        return typeof value === "boolean" ? value : undefined;
     }
 
-    function parseOptionalAutoExitMs(value: unknown): number | undefined {
-        const raw = asText(value).trim();
-        if (!raw) {
+    function parseOptionalAutoExitMs(value: number | undefined): number | undefined {
+        if (value === undefined) {
             return undefined;
         }
-        const parsed = Number(raw);
-        if (!Number.isInteger(parsed) || parsed < -1) {
+        if (!Number.isInteger(value) || value < -1) {
             throw new Error("Invalid auto_exit_after_ms: expected -1 or non-negative integer");
         }
-        return parsed;
+        return value;
     }
 
     function toHttpTimeoutSeconds(timeoutMs: number): number {
@@ -438,7 +417,7 @@ const remoteOperitTools = (function () {
         return {
             baseUrl,
             token,
-            timeoutMs: timeoutRaw.trim() ? parseTimeout(timeoutRaw, DEFAULT_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS
+            timeoutMs: timeoutRaw.trim() ? parseTimeout(toOptionalInt(timeoutRaw), DEFAULT_TIMEOUT_MS) : DEFAULT_TIMEOUT_MS
         };
     }
 
@@ -496,41 +475,30 @@ const remoteOperitTools = (function () {
         };
     }
 
-    async function remote_operit_configure(params?: RemoteOperitConfigureParams): Promise<any> {
+    async function remote_operit_configure(params: RemoteOperitConfigureParams): Promise<any> {
         try {
             const persistedKeys: string[] = [];
             const configOverrides: { baseUrl?: unknown; token?: unknown; timeoutMs?: unknown } = {};
 
-            if (hasOwn(params, "base_url")) {
-                const rawBaseUrl = asText(params && params.base_url).trim();
-                if (!rawBaseUrl) {
-                    throw new Error("Missing required parameter: base_url");
-                }
-                const normalizedBaseUrl = normalizeBaseUrl(rawBaseUrl);
-                await writeEnvVar(ENV_KEYS.baseUrl, normalizedBaseUrl);
-                persistedKeys.push(ENV_KEYS.baseUrl);
-                configOverrides.baseUrl = normalizedBaseUrl;
-            }
+            const normalizedBaseUrl = normalizeBaseUrl(params.base_url);
+            await writeEnvVar(ENV_KEYS.baseUrl, normalizedBaseUrl);
+            persistedKeys.push(ENV_KEYS.baseUrl);
+            configOverrides.baseUrl = normalizedBaseUrl;
 
-            if (hasOwn(params, "token")) {
-                const token = asText(params && params.token).trim();
-                if (!token) {
-                    throw new Error("Missing required parameter: token");
-                }
-                await writeEnvVar(ENV_KEYS.token, token);
-                persistedKeys.push(ENV_KEYS.token);
-                configOverrides.token = token;
-            }
+            const token = asText(params.token).trim();
+            await writeEnvVar(ENV_KEYS.token, token);
+            persistedKeys.push(ENV_KEYS.token);
+            configOverrides.token = token;
 
-            if (hasOwn(params, "timeout_ms")) {
-                const timeoutMs = parseTimeout(params && params.timeout_ms, DEFAULT_TIMEOUT_MS);
+            if (params.timeout_ms !== undefined) {
+                const timeoutMs = parseTimeout(params.timeout_ms, DEFAULT_TIMEOUT_MS);
                 await writeEnvVar(ENV_KEYS.timeoutMs, String(timeoutMs));
                 persistedKeys.push(ENV_KEYS.timeoutMs);
                 configOverrides.timeoutMs = timeoutMs;
             }
 
             const config = resolveConfig(configOverrides);
-            const shouldTest = parseOptionalBoolean(params && params.test_connection, "test_connection") === true;
+            const shouldTest = parseOptionalBoolean(params.test_connection, "test_connection") === true;
 
             const result: Record<string, unknown> = {
                 success: true,
@@ -561,10 +529,10 @@ const remoteOperitTools = (function () {
         }
     }
 
-    async function remote_operit_test_connection(params?: RemoteOperitTestConnectionParams): Promise<any> {
+    async function remote_operit_test_connection(params: RemoteOperitTestConnectionParams = {}): Promise<any> {
         try {
             const config = resolveConfig();
-            const timeoutMs = parseTimeout(params && params.timeout_ms, config.timeoutMs);
+            const timeoutMs = parseTimeout(params.timeout_ms, config.timeoutMs);
             return await performHealthCheck(config, timeoutMs);
         } catch (error: any) {
             return {
@@ -575,53 +543,49 @@ const remoteOperitTools = (function () {
         }
     }
 
-    function buildChatBody(params?: RemoteOperitChatParams): Record<string, unknown> {
-        const message = asText(params && params.message).trim();
-        if (!message) {
-            throw new Error("Missing required parameter: message");
-        }
-
+    function buildChatBody(params: RemoteOperitChatParams): Record<string, unknown> {
+        const message = asText(params.message).trim();
         const body: Record<string, unknown> = {
             message,
             response_mode: "sync"
         };
 
-        const requestId = asText(params && params.request_id).trim();
+        const requestId = asText(params.request_id).trim();
         if (requestId) {
             body.request_id = requestId;
         }
 
-        const group = asText(params && params.group).trim();
+        const group = asText(params.group).trim();
         if (group) {
             body.group = group;
         }
 
-        const createNewChat = parseOptionalBoolean(params && params.create_new_chat, "create_new_chat");
+        const createNewChat = parseOptionalBoolean(params.create_new_chat, "create_new_chat");
         if (createNewChat !== undefined) {
             body.create_new_chat = createNewChat;
         }
 
-        const chatId = asText(params && params.chat_id).trim();
+        const chatId = asText(params.chat_id).trim();
         if (chatId) {
             body.chat_id = chatId;
         }
 
-        const createIfNone = parseOptionalBoolean(params && params.create_if_none, "create_if_none");
+        const createIfNone = parseOptionalBoolean(params.create_if_none, "create_if_none");
         if (createIfNone !== undefined) {
             body.create_if_none = createIfNone;
         }
 
-        const showFloating = parseOptionalBoolean(params && params.show_floating, "show_floating");
+        const showFloating = parseOptionalBoolean(params.show_floating, "show_floating");
         if (showFloating !== undefined) {
             body.show_floating = showFloating;
         }
 
-        const autoExitAfterMs = parseOptionalAutoExitMs(params && params.auto_exit_after_ms);
+        const autoExitAfterMs = parseOptionalAutoExitMs(params.auto_exit_after_ms);
         if (autoExitAfterMs !== undefined) {
             body.auto_exit_after_ms = autoExitAfterMs;
         }
 
-        const stopAfter = parseOptionalBoolean(params && params.stop_after, "stop_after");
+        const stopAfter = parseOptionalBoolean(params.stop_after, "stop_after");
         if (stopAfter !== undefined) {
             body.stop_after = stopAfter;
         }
@@ -629,12 +593,12 @@ const remoteOperitTools = (function () {
         return body;
     }
 
-    async function remote_operit_chat(params?: RemoteOperitChatParams): Promise<any> {
+    async function remote_operit_chat(params: RemoteOperitChatParams): Promise<any> {
         let config: RemoteOperitConfig | null = null;
         let requestBody: Record<string, unknown> | null = null;
         try {
             config = resolveConfig();
-            const timeoutMs = parseTimeout(params && params.timeout_ms, config.timeoutMs);
+            const timeoutMs = parseTimeout(params.timeout_ms, config.timeoutMs);
             requestBody = buildChatBody(params);
 
             const response = await httpRequest(

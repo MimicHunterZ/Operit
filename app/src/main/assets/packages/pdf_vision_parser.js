@@ -86,17 +86,16 @@ const PdfVisionParser = (function () {
         return String(value ?? "").trim();
     }
     function parsePositiveInteger(value, fieldName, options) {
-        if (value === undefined || value === null || String(value).trim() === "") {
+        if (value === undefined || value === null) {
             if (options?.allowUndefined) {
                 return undefined;
             }
             throw new Error(`${fieldName} 不能为空。`);
         }
-        const parsed = Number(value);
-        if (!Number.isInteger(parsed) || parsed <= 0) {
+        if (!Number.isInteger(value) || value <= 0) {
             throw new Error(`${fieldName} 必须是大于 0 的整数。`);
         }
-        return parsed;
+        return value;
     }
     function buildMergedText(pages) {
         return pages

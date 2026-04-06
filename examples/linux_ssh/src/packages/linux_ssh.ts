@@ -201,6 +201,36 @@ const linuxSshTools = (function () {
         timeoutMs: "LINUX_SSH_TIMEOUT_MS"
     };
 
+    /**
+     * Tool params are pre-converted by Kotlin based on metadata.
+     * Keep only business-rule validation in TS.
+     */
+    /**
+     * @typedef {{
+     *   host?: string;
+     *   port?: number;
+     *   username?: string;
+     *   password?: string;
+     *   private_key_path?: string;
+     *   timeout_ms?: number;
+     *   test_connection?: boolean;
+     * }} LinuxSshConfigureParams
+     */
+
+    /**
+     * @typedef {{ timeout_ms?: number }} LinuxSshTestConnectionParams
+     * @typedef {{ command: string; timeout_ms?: number }} LinuxSshExecParams
+     * @typedef {{ command: string; workdir?: string; window_name?: string }} LinuxSshTmuxRunParams
+     * @typedef {{ window_name?: string; max_lines?: number }} LinuxSshTmuxCaptureParams
+     * @typedef {{ window_name: string; input?: string; control?: string }} LinuxSshTmuxInputParams
+     * @typedef {{ window_name: string }} LinuxSshTmuxCloseParams
+     * @typedef {{ input?: string; control?: string }} LinuxSshTerminalInputParams
+     * @typedef {{ path?: string }} LinuxSshLsParams
+     * @typedef {{ path: string; line_start?: number; line_end?: number; sudo?: boolean }} LinuxSshReadParams
+     * @typedef {{ path: string; content: string; append?: boolean; sudo?: boolean }} LinuxSshWriteParams
+     * @typedef {{ path: string; old_text: string; new_text: string; expected_replacements?: number; sudo?: boolean }} LinuxSshEditParams
+     */
+
     function asText(value) {
         return String(value == null ? "" : value);
     }
@@ -269,32 +299,6 @@ const linuxSshTools = (function () {
             operit_clean_on_exit_dir: source.operit_clean_on_exit_dir,
             hint: source.hint || LARGE_OUTPUT_HINT
         };
-    }
-
-    function parseOptionalPositiveInt(value, fieldName) {
-        const raw = asText(value).trim();
-        if (!raw) {
-            return undefined;
-        }
-        const parsed = Number(raw);
-        if (!Number.isFinite(parsed) || parsed <= 0) {
-            throw new Error(`Invalid ${fieldName}: expected positive integer`);
-        }
-        return Math.floor(parsed);
-    }
-
-    function parseBoolean(value, fallbackValue) {
-        const raw = asText(value).trim().toLowerCase();
-        if (!raw) {
-            return fallbackValue;
-        }
-        if (raw === "true" || raw === "1" || raw === "yes" || raw === "on") {
-            return true;
-        }
-        if (raw === "false" || raw === "0" || raw === "no" || raw === "off") {
-            return false;
-        }
-        return fallbackValue;
     }
 
     function readEnv(name) {
@@ -821,7 +825,7 @@ const linuxSshTools = (function () {
                 allowParamConnection: true,
                 allowParamAuth: true
             });
-            const testConnection = parseBoolean(params && params.test_connection, false);
+            const testConnection = params?.test_connection === true;
 
             let connection: unknown = null;
             if (testConnection) {
@@ -851,7 +855,7 @@ const linuxSshTools = (function () {
                 allowParamConnection: false,
                 allowParamAuth: false
             });
-            const timeoutMs = parsePositiveInt(params && params.timeout_ms, config.timeoutMs);
+            const timeoutMs = params?.timeout_ms ?? config.timeoutMs;
             const command = [
                 "printf '__OPERIT_CONNECT_BEGIN__\\n'",
                 "echo \"user=$(whoami)\"",
@@ -884,9 +888,9 @@ const linuxSshTools = (function () {
 
     async function linux_ssh_exec(params) {
         try {
-            const command = asText(params && params.command).trim();
+            const command = asText(params?.command).trim();
             if (!command) {
-                throw new Error("Missing required parameter: command");
+                throw new Error("command cannot be empty");
             }
 
             const config = await resolveSshConfig(params, {
@@ -895,7 +899,7 @@ const linuxSshTools = (function () {
                 allowParamConnection: false,
                 allowParamAuth: false
             });
-            const timeoutMs = parsePositiveInt(params && params.timeout_ms, config.timeoutMs);
+            const timeoutMs = params?.timeout_ms ?? config.timeoutMs;
             const result = await runRemoteCommandHidden(config, command, timeoutMs, "remote");
             const success = result.exitCode === 0 && !result.timedOut;
 
@@ -947,9 +951,9 @@ const linuxSshTools = (function () {
 
     async function linux_ssh_tmux_run(params) {
         try {
-            const command = asText(params && params.command).trim();
+            const command = asText(params?.command).trim();
             if (!command) {
-                throw new Error("Missing required parameter: command");
+                throw new Error("command cannot be empty");
             }
 
             const config = await resolveSshConfig(params, {
@@ -959,8 +963,8 @@ const linuxSshTools = (function () {
                 allowParamAuth: false
             });
             const tmuxSessionName = DEFAULT_TMUX_SESSION_NAME;
-            const requestedWindowName = asText(params && params.window_name).trim();
-            const workdir = asText(params && params.workdir).trim();
+            const requestedWindowName = asText(params?.window_name).trim();
+            const workdir = asText(params?.workdir).trim();
 
             const tmuxReady = await ensureRemoteTmux(config);
             if (!tmuxReady.success) {
@@ -1049,8 +1053,8 @@ const linuxSshTools = (function () {
                 allowParamAuth: false
             });
             const tmuxSessionName = DEFAULT_TMUX_SESSION_NAME;
-            const windowName = asText(params && params.window_name).trim();
-            const maxLines = parsePositiveInt(params && params.max_lines, 200);
+            const windowName = asText(params?.window_name).trim();
+            const maxLines = params?.max_lines ?? 200;
 
             const tmuxReady = await ensureRemoteTmux(config);
             if (!tmuxReady.success) {
@@ -1177,16 +1181,16 @@ const linuxSshTools = (function () {
 
     async function linux_ssh_tmux_input(params) {
         try {
-            const requestedWindowName = asText(params && params.window_name).trim();
-            const inputText = params && params.input !== undefined && params.input !== null
+            const requestedWindowName = asText(params?.window_name).trim();
+            const inputText = params?.input !== undefined && params?.input !== null
                 ? asText(params.input)
                 : "";
-            const controlKey = params && params.control !== undefined && params.control !== null
+            const controlKey = params?.control !== undefined && params?.control !== null
                 ? normalizeTmuxControlKey(params.control)
                 : "";
 
             if (!requestedWindowName) {
-                throw new Error("Missing required parameter: window_name");
+                throw new Error("window_name cannot be empty");
             }
             if (!inputText && !controlKey) {
                 throw new Error("At least one of input/control is required");
@@ -1272,9 +1276,9 @@ const linuxSshTools = (function () {
     async function linux_ssh_tmux_close(params) {
         try {
             const tmuxSessionName = DEFAULT_TMUX_SESSION_NAME;
-            const windowName = asText(params && params.window_name).trim();
+            const windowName = asText(params?.window_name).trim();
             if (!windowName) {
-                throw new Error("Missing required parameter: window_name");
+                throw new Error("window_name cannot be empty");
             }
 
             const config = await resolveSshConfig(params, {
@@ -1342,8 +1346,8 @@ const linuxSshTools = (function () {
 
     async function linux_ssh_terminal_input(params) {
         try {
-            const input = params && params.input;
-            const control = params && params.control;
+            const input = params?.input;
+            const control = params?.control;
             if (input === undefined && control === undefined) {
                 throw new Error("At least one of input/control is required");
             }
@@ -1398,7 +1402,7 @@ const linuxSshTools = (function () {
                 allowParamConnection: false,
                 allowParamAuth: false
             });
-            const path = asText(params && params.path).trim();
+            const path = asText(params?.path).trim();
             const displayPath = firstNonBlank(path, "~");
             const script = [
                 "raw_path=\"$1\"",
@@ -1433,9 +1437,9 @@ const linuxSshTools = (function () {
 
     async function linux_ssh_read(params) {
         try {
-            const path = asText(params && params.path).trim();
+            const path = asText(params?.path).trim();
             if (!path) {
-                throw new Error("Missing required parameter: path");
+                throw new Error("path cannot be empty");
             }
 
             const config = await resolveSshConfig(params, {
@@ -1444,9 +1448,9 @@ const linuxSshTools = (function () {
                 allowParamConnection: false,
                 allowParamAuth: false
             });
-            const lineStart = parseOptionalPositiveInt(params && params.line_start, "line_start");
-            const lineEnd = parseOptionalPositiveInt(params && params.line_end, "line_end");
-            const useSudo = parseBoolean(params && params.sudo, false);
+            const lineStart = params?.line_start;
+            const lineEnd = params?.line_end;
+            const useSudo = params?.sudo === true;
             if (lineStart !== undefined && lineEnd !== undefined && lineEnd < lineStart) {
                 throw new Error("line_end must be greater than or equal to line_start");
             }
@@ -1471,12 +1475,12 @@ const linuxSshTools = (function () {
 
     async function linux_ssh_write(params) {
         try {
-            const path = asText(params && params.path).trim();
+            const path = asText(params?.path).trim();
             if (!path) {
-                throw new Error("Missing required parameter: path");
+                throw new Error("path cannot be empty");
             }
-            if (!params || params.content === undefined || params.content === null) {
-                throw new Error("Missing required parameter: content");
+            if (params?.content === undefined || params?.content === null) {
+                throw new Error("content cannot be null");
             }
 
             const config = await resolveSshConfig(params, {
@@ -1486,8 +1490,8 @@ const linuxSshTools = (function () {
                 allowParamAuth: false
             });
             const content = asText(params.content);
-            const append = parseBoolean(params && params.append, false);
-            const useSudo = parseBoolean(params && params.sudo, false);
+            const append = params?.append === true;
+            const useSudo = params?.sudo === true;
             await writeRemoteFileContent(config, path, content, append, useSudo);
 
             return {
@@ -1508,16 +1512,16 @@ const linuxSshTools = (function () {
 
     async function linux_ssh_edit(params) {
         try {
-            const path = asText(params && params.path).trim();
+            const path = asText(params?.path).trim();
             if (!path) {
-                throw new Error("Missing required parameter: path");
+                throw new Error("path cannot be empty");
             }
-            const oldText = asText(params && params.old_text);
+            const oldText = asText(params?.old_text);
             if (!oldText) {
-                throw new Error("Missing required parameter: old_text");
+                throw new Error("old_text cannot be empty");
             }
-            if (!params || params.new_text === undefined || params.new_text === null) {
-                throw new Error("Missing required parameter: new_text");
+            if (params?.new_text === undefined || params?.new_text === null) {
+                throw new Error("new_text cannot be null");
             }
 
             const config = await resolveSshConfig(params, {
@@ -1527,8 +1531,8 @@ const linuxSshTools = (function () {
                 allowParamAuth: false
             });
             const newText = asText(params.new_text);
-            const expectedReplacements = parsePositiveInt(params && params.expected_replacements, 1);
-            const useSudo = parseBoolean(params && params.sudo, false);
+            const expectedReplacements = params?.expected_replacements ?? 1;
+            const useSudo = params?.sudo === true;
 
             const readResult = await readRemoteFileContent(config, path, undefined, undefined, useSudo);
             const source = readResult.content;

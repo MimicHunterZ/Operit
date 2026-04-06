@@ -633,29 +633,9 @@ const dailyLife = (function () {
             if (params.hour === undefined || params.minute === undefined) {
                 throw new Error("Hour and minute are required for setting an alarm");
             }
-            if (typeof params.hour === 'string') {
-                params.hour = Number(params.hour);
-            }
-            if (typeof params.minute === 'string') {
-                params.minute = Number(params.minute);
-            }
-            if (params.days) {
-                if (typeof params.days === 'string') {
-                    params.days = JSON.parse(params.days);
-                }
-                if (Array.isArray(params.days)) {
-                    params.days = params.days.map(day => {
-                        if (typeof day === 'string') {
-                            return Number(day);
-                        }
-                        return day;
-                    });
-                }
-                else {
-                    console.error("Invalid days format");
-                    params.days = [];
-                }
-            }
+            const repeatDays = Array.isArray(params.days)
+                ? params.days.filter((day) => typeof day === 'number')
+                : [];
             if (params.hour < 0 || params.hour > 23) {
                 throw new Error("Hour must be between 0 and 23");
             }
@@ -673,8 +653,8 @@ const dailyLife = (function () {
             // 添加标签
             intent.putExtra("android.intent.extra.alarm.MESSAGE", params.message);
             // 设置重复日期（如果提供）
-            if (params.days && params.days.length > 0) {
-                intent.putExtra("android.intent.extra.alarm.DAYS", params.days);
+            if (repeatDays.length > 0) {
+                intent.putExtra("android.intent.extra.alarm.DAYS", repeatDays);
             }
             // 不跳过UI确认 - 这可能是问题所在，某些设备需要用户确认
             // intent.putExtra("android.intent.extra.alarm.SKIP_UI", true);
@@ -864,10 +844,8 @@ const dailyLife = (function () {
             console.log(`拨打电话: ${params.phone_number}`);
             // 选择合适的Intent Action
             // 如果是紧急电话，使用ACTION_CALL_EMERGENCY，否则使用ACTION_DIAL
-            if (typeof params.emergency === 'string') {
-                params.emergency = params.emergency === 'true';
-            }
-            const action = params.emergency ? "android.intent.action.CALL_EMERGENCY" /* IntentAction.ACTION_CALL_EMERGENCY */ : "android.intent.action.DIAL" /* IntentAction.ACTION_DIAL */;
+            const isEmergency = params.emergency === true;
+            const action = isEmergency ? "android.intent.action.CALL_EMERGENCY" /* IntentAction.ACTION_CALL_EMERGENCY */ : "android.intent.action.DIAL" /* IntentAction.ACTION_DIAL */;
             // 创建拨号Intent
             const intent = new Intent(action);
             // 设置电话URI
@@ -879,9 +857,9 @@ const dailyLife = (function () {
             const result = await intent.start();
             return {
                 success: true,
-                message: params.emergency ? "紧急电话已拨打" : "拨号界面已打开",
+                message: isEmergency ? "紧急电话已拨打" : "拨号界面已打开",
                 phone_number: params.phone_number,
-                is_emergency: params.emergency || false,
+                is_emergency: isEmergency,
                 raw_result: result
             };
         }
@@ -891,7 +869,7 @@ const dailyLife = (function () {
                 success: false,
                 message: `拨打电话失败: ${error.message}`,
                 phone_number: params.phone_number,
-                is_emergency: params.emergency || false
+                is_emergency: params.emergency === true
             };
         }
     }
@@ -950,12 +928,9 @@ const dailyLife = (function () {
                 throw new Error("Invalid action. Must be 'up', 'down', or 'mute'");
             }
             // Parse count parameter
-            let count = 1;
-            if (params.count !== undefined) {
-                count = typeof params.count === 'string' ? Number(params.count) : params.count;
-                if (isNaN(count) || count < 1 || count > 20) {
-                    throw new Error("Count must be a number between 1 and 20");
-                }
+            let count = params.count === undefined ? 1 : params.count;
+            if (!Number.isFinite(count) || count < 1 || count > 20) {
+                throw new Error("Count must be a number between 1 and 20");
             }
             console.log(`调节音量: ${action === 'up' ? '增加' : action === 'down' ? '减小' : '静音'}, 次数: ${count}`);
             // Map action to Android key code string
@@ -1143,11 +1118,10 @@ const dailyLife = (function () {
      * @param ms 等待的毫秒数
      */
     async function sleep(ms) {
-        const sleepTime = Number(ms);
-        if (isNaN(sleepTime)) {
-            throw new Error("Invalid sleep time");
+        if (!Number.isFinite(ms) || ms < 0) {
+            throw new Error("Sleep duration must be a non-negative number");
         }
-        return new Promise(resolve => setTimeout(resolve, sleepTime));
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
     /**
      * Test and demonstrate all daily life functions

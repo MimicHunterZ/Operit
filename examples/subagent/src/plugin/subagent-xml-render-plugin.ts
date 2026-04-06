@@ -1,6 +1,5 @@
-/// <reference path="../../../examples/types/index.d.ts" />
-
 import SubagentStatusScreen from "../ui/subagent-status.ui";
+import type { ToolPkg } from "../../../types";
 
 const SUBAGENT_TOOL_NAME = "subagent_run";
 

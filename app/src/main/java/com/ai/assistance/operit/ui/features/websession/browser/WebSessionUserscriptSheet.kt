@@ -208,6 +208,7 @@ private fun PendingInstallCard(
     onConfirmInstall: () -> Unit,
     onCancelInstall: () -> Unit
 ) {
+    val previewBlockedReasons = preview.blockedReasons.filterNot { it.startsWith("Unknown grants:") }
     WebSessionItemCard(highlighted = true) {
         Column(
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
@@ -246,12 +247,69 @@ private fun PendingInstallCard(
                 label = stringResource(R.string.web_session_userscript_update_url),
                 value = preview.metadata.updateUrl ?: preview.metadata.downloadUrl ?: preview.sourceUrl ?: "-"
             )
-            if (preview.unsupportedGrants.isNotEmpty()) {
+            preview.metadata.website?.takeIf { it.isNotBlank() }?.let { website ->
+                PreviewMetaLine(
+                    label = stringResource(R.string.web_session_userscript_website),
+                    value = website
+                )
+            }
+            preview.metadata.supportUrl?.takeIf { it.isNotBlank() }?.let { supportUrl ->
+                PreviewMetaLine(
+                    label = stringResource(R.string.web_session_userscript_support_url),
+                    value = supportUrl
+                )
+            }
+            preview.metadata.tags.takeIf { it.isNotEmpty() }?.let { tags ->
+                PreviewMetaLine(
+                    label = stringResource(R.string.web_session_userscript_tags),
+                    value = tags.joinToString()
+                )
+            }
+            preview.metadata.sandbox?.takeIf { it.isNotBlank() }?.let { sandbox ->
+                PreviewMetaLine(
+                    label = stringResource(R.string.web_session_userscript_sandbox),
+                    value = sandbox
+                )
+            }
+            preview.metadata.runIn?.takeIf { it.isNotBlank() }?.let { runIn ->
+                PreviewMetaLine(
+                    label = stringResource(R.string.web_session_userscript_run_in),
+                    value = runIn
+                )
+            }
+            preview.metadata.webRequestRules.takeIf { it.isNotEmpty() }?.let { rules ->
+                PreviewMetaLine(
+                    label = stringResource(R.string.web_session_userscript_web_request),
+                    value = rules.joinToString()
+                )
+            }
+            formatIconSummary(
+                preview.metadata.icons.icon,
+                preview.metadata.icons.icon64,
+                preview.metadata.icons.defaultIcon
+            )?.let { icons ->
+                PreviewMetaLine(
+                    label = stringResource(R.string.web_session_userscript_icons),
+                    value = icons
+                )
+            }
+            if (preview.unknownGrants.isNotEmpty()) {
                 Text(
                     text =
                         stringResource(
-                            R.string.web_session_userscript_unsupported_grants,
-                            preview.unsupportedGrants.joinToString()
+                            R.string.web_session_userscript_unknown_grants,
+                            preview.unknownGrants.joinToString()
+                        ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            if (previewBlockedReasons.isNotEmpty()) {
+                Text(
+                    text =
+                        stringResource(
+                            R.string.web_session_userscript_blocked_reasons,
+                            previewBlockedReasons.joinToString()
                         ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error
@@ -296,6 +354,7 @@ private fun InstalledUserscriptCard(
     onCheckUpdate: (Long) -> Unit
 ) {
     var expanded by rememberSaveable(script.id) { mutableStateOf(false) }
+    val scriptBlockedReasons = script.blockedReasons.filterNot { it.startsWith("Unknown grants:") }
 
     WebSessionItemCard(onClick = { expanded = !expanded }) {
         Column(
@@ -377,12 +436,77 @@ private fun InstalledUserscriptCard(
                     )
                 }
 
-                if (script.unsupportedGrants.isNotEmpty()) {
+                script.website?.takeIf { it.isNotBlank() }?.let { website ->
+                    PreviewMetaLine(
+                        label = stringResource(R.string.web_session_userscript_website),
+                        value = website
+                    )
+                }
+
+                script.supportUrl?.takeIf { it.isNotBlank() }?.let { supportUrl ->
+                    PreviewMetaLine(
+                        label = stringResource(R.string.web_session_userscript_support_url),
+                        value = supportUrl
+                    )
+                }
+
+                script.tags.takeIf { it.isNotEmpty() }?.let { tags ->
+                    PreviewMetaLine(
+                        label = stringResource(R.string.web_session_userscript_tags),
+                        value = tags.joinToString()
+                    )
+                }
+
+                script.sandbox?.takeIf { it.isNotBlank() }?.let { sandbox ->
+                    PreviewMetaLine(
+                        label = stringResource(R.string.web_session_userscript_sandbox),
+                        value = sandbox
+                    )
+                }
+
+                script.runIn?.takeIf { it.isNotBlank() }?.let { runIn ->
+                    PreviewMetaLine(
+                        label = stringResource(R.string.web_session_userscript_run_in),
+                        value = runIn
+                    )
+                }
+
+                script.webRequestRules.takeIf { it.isNotEmpty() }?.let { rules ->
+                    PreviewMetaLine(
+                        label = stringResource(R.string.web_session_userscript_web_request),
+                        value = rules.joinToString()
+                    )
+                }
+
+                formatIconSummary(
+                    script.icons.icon,
+                    script.icons.icon64,
+                    script.icons.defaultIcon
+                )?.let { icons ->
+                    PreviewMetaLine(
+                        label = stringResource(R.string.web_session_userscript_icons),
+                        value = icons
+                    )
+                }
+
+                if (script.unknownGrants.isNotEmpty()) {
                     Text(
                         text =
                             stringResource(
-                                R.string.web_session_userscript_unsupported_grants,
-                                script.unsupportedGrants.joinToString()
+                                R.string.web_session_userscript_unknown_grants,
+                                script.unknownGrants.joinToString()
+                            ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                if (scriptBlockedReasons.isNotEmpty()) {
+                    Text(
+                        text =
+                            stringResource(
+                                R.string.web_session_userscript_blocked_reasons,
+                                scriptBlockedReasons.joinToString()
                             ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
@@ -476,11 +600,20 @@ private fun fallbackStatusFor(script: UserscriptListItem): UserscriptPageRuntime
     when {
         !script.enabled ->
             UserscriptPageRuntimeStatus(UserscriptPageRuntimeState.DISABLED)
-        script.unsupportedGrants.isNotEmpty() ->
+        script.blockedReasons.isNotEmpty() ->
             UserscriptPageRuntimeStatus(UserscriptPageRuntimeState.UNSUPPORTED)
         else ->
             UserscriptPageRuntimeStatus(UserscriptPageRuntimeState.NOT_MATCHED)
     }
+
+private fun formatIconSummary(vararg values: String?): String? =
+    values
+        .filterNotNull()
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .distinct()
+        .takeIf { it.isNotEmpty() }
+        ?.joinToString()
 
 @Composable
 private fun PreviewMetaLine(

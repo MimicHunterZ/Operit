@@ -69,7 +69,7 @@ function Screen(ctx) {
     const [detail] = ctx.useState("detail", "");
     const [badge] = ctx.useState("badge", "");
     const [tone] = ctx.useState("tone", "progress");
-    const colors = resolveTone(ctx, tone);
+    const colors = resolveTone(ctx, String(tone || ""));
     const bodyChildren = [
         buildHeader(ctx, colors, String(title || "Subagent"), String(badge || "").trim()),
     ];

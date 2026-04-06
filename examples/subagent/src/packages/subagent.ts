@@ -60,8 +60,7 @@
     ]
 }
 */
-
-/// <reference path="../../../examples/types/index.d.ts" />
+import "../../../types/quickjs-runtime.js";
 
 const EnhancedAIService = Java.com.ai.assistance.operit.api.chat.EnhancedAIService;
 const FunctionType = Java.com.ai.assistance.operit.data.model.FunctionType;
@@ -94,10 +93,10 @@ interface ExecutionSettings {
 }
 
 interface SubagentParams {
-  task?: unknown;
-  context_text?: unknown;
-  target_paths_json?: unknown;
-  max_tool_calls?: unknown;
+  task: string;
+  context_text?: string;
+  target_paths_json?: string;
+  max_tool_calls?: number;
 }
 
 function asText(value: unknown): string {
@@ -150,7 +149,7 @@ function readBridgeValue(target: any, key: string): unknown {
     if (value !== undefined) {
       return value;
     }
-  } catch (_error) {}
+  } catch (_error) { }
 
   const capitalized = key.charAt(0).toUpperCase() + key.slice(1);
   const getterNames = ["get" + capitalized, "is" + capitalized];
@@ -159,7 +158,7 @@ function readBridgeValue(target: any, key: string): unknown {
       if (typeof target[getterName] === "function") {
         return target[getterName]();
       }
-    } catch (_error) {}
+    } catch (_error) { }
   }
 
   return undefined;
@@ -243,9 +242,9 @@ async function sendMessage(
   const onNonFatalError = (_value: string) => Unit.INSTANCE;
   const onToolInvocation = options.onToolInvocation
     ? (toolName: string) => {
-        options.onToolInvocation?.(toolName);
-        return Unit.INSTANCE;
-      }
+      options.onToolInvocation?.(toolName);
+      return Unit.INSTANCE;
+    }
     : null;
 
   const stream = await enhancedAIService.callSuspend(
@@ -296,21 +295,8 @@ function createRunId(): string {
   return "s" + now + random;
 }
 
-function parseRequiredTask(params: SubagentParams): string {
-  const task = asText(params && params.task).trim();
-  if (!task) {
-    throw new Error("Missing required parameter: task");
-  }
-  return task;
-}
-
-function parseOptionalText(params: SubagentParams, key: keyof SubagentParams): string {
-  const value = asText(params && params[key]).trim();
-  return value || "";
-}
-
 function parseTargetPaths(params: SubagentParams): string[] {
-  const raw = asText(params && params.target_paths_json).trim();
+  const raw = asText(params.target_paths_json).trim();
   if (!raw) {
     return [];
   }
@@ -324,7 +310,7 @@ function parseTargetPaths(params: SubagentParams): string[] {
 }
 
 function parseMaxToolCalls(params: SubagentParams): number {
-  const raw = params && params.max_tool_calls;
+  const raw = params.max_tool_calls;
   if (raw === undefined || raw === null || String(raw).trim() === "") {
     return 8;
   }
@@ -476,8 +462,8 @@ async function runSubagent(params: SubagentParams): Promise<string> {
   let toolCount = 0;
 
   try {
-    const task = parseRequiredTask(params);
-    const contextText = parseOptionalText(params, "context_text");
+    const task = asText(params.task).trim();
+    const contextText = asText(params.context_text).trim();
     const targetPaths = parseTargetPaths(params);
     const maxToolCalls = parseMaxToolCalls(params);
 

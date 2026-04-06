@@ -63,6 +63,13 @@ class TokenCacheManager {
     fun addOutputTokens(tokens: Int) {
         _outputTokenCount += tokens
     }
+
+    /**
+     * 使用API返回的实际输出token数量覆盖当前估算值
+     */
+    fun setOutputTokens(tokens: Int) {
+        _outputTokenCount = tokens.coerceAtLeast(0)
+    }
     
     /**
      * 使用API返回的实际token数据更新计数

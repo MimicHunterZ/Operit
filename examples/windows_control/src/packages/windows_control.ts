@@ -380,73 +380,73 @@
 type ShellMode = "powershell" | "pwsh" | "cmd";
 
 type WindowsExecParams = {
-    command?: string;
+    command: string;
     shell?: string;
-    timeout_ms?: number | string;
+    timeout_ms?: number;
 };
 
 type WindowsTestConnectionParams = {
-    timeout_ms?: number | string;
+    timeout_ms?: number;
 };
 
 type WindowsReadParams = {
-    path?: string;
+    path: string;
     encoding?: string;
-    offset?: number | string;
-    length?: number | string;
-    line_start?: number | string;
-    line_end?: number | string;
-    timeout_ms?: number | string;
+    offset?: number;
+    length?: number;
+    line_start?: number;
+    line_end?: number;
+    timeout_ms?: number;
 };
 
 type WindowsWriteParams = {
-    path?: string;
-    content?: string;
+    path: string;
+    content: string;
     encoding?: string;
-    timeout_ms?: number | string;
+    timeout_ms?: number;
 };
 
 type WindowsEditParams = {
-    path?: string;
-    old_text?: string;
-    new_text?: string;
-    expected_replacements?: number | string;
+    path: string;
+    old_text: string;
+    new_text: string;
+    expected_replacements?: number;
     encoding?: string;
-    timeout_ms?: number | string;
+    timeout_ms?: number;
 };
 
 type WindowsProcessStartParams = {
     command?: string;
     shell?: string;
-    max_runtime_ms?: number | string;
-    timeout_ms?: number | string;
+    max_runtime_ms?: number;
+    timeout_ms?: number;
 };
 
 type WindowsProcessReadParams = {
-    session_id?: string;
-    stdout_offset?: number | string;
-    stderr_offset?: number | string;
-    max_chars?: number | string;
-    timeout_ms?: number | string;
+    session_id: string;
+    stdout_offset?: number;
+    stderr_offset?: number;
+    max_chars?: number;
+    timeout_ms?: number;
 };
 
 type WindowsProcessWriteParams = {
-    session_id?: string;
+    session_id: string;
     input?: string;
     control?: string;
-    repeat?: number | string;
-    timeout_ms?: number | string;
+    repeat?: number;
+    timeout_ms?: number;
 };
 
 type WindowsProcessTerminateParams = {
-    session_id?: string;
-    remove?: boolean | string;
-    timeout_ms?: number | string;
+    session_id: string;
+    remove?: boolean;
+    timeout_ms?: number;
 };
 
 type WindowsProcessListParams = {
-    include_exited?: boolean | string;
-    timeout_ms?: number | string;
+    include_exited?: boolean;
+    timeout_ms?: number;
 };
 
 type AgentConfig = {
@@ -603,56 +603,30 @@ const windowsControl = (function () {
         return seconds >= 1 ? seconds : 1;
     }
 
-    function parseOptionalNonNegativeInt(value: unknown, fieldName: string): number | undefined {
-        const raw = asText(value).trim();
-        if (!raw) {
+    function validateOptionalNonNegativeInt(value: number | undefined, fieldName: string): number | undefined {
+        if (value === undefined) {
             return undefined;
         }
-
-        const parsed = Number(raw);
-        if (!Number.isFinite(parsed) || parsed < 0) {
+        if (!Number.isFinite(value) || value < 0) {
             throw new Error(`Invalid ${fieldName}, expected non-negative integer`);
         }
-
-        return Math.floor(parsed);
+        return Math.floor(value);
     }
 
-    function parseOptionalPositiveInt(value: unknown, fieldName: string): number | undefined {
-        const raw = asText(value).trim();
-        if (!raw) {
+    function validateOptionalPositiveInt(value: number | undefined, fieldName: string): number | undefined {
+        if (value === undefined) {
             return undefined;
         }
-
-        const parsed = Number(raw);
-        if (!Number.isFinite(parsed) || parsed < 1) {
+        if (!Number.isFinite(value) || value < 1) {
             throw new Error(`Invalid ${fieldName}, expected integer >= 1`);
         }
-
-        return Math.floor(parsed);
+        return Math.floor(value);
     }
 
-    function parseOptionalBoolean(value: unknown, fieldName: string): boolean | undefined {
-        const raw = asText(value).trim();
-        if (!raw) {
-            return undefined;
-        }
-
-        const normalized = raw.toLowerCase();
-        if (normalized === "true" || normalized === "1" || normalized === "yes" || normalized === "on") {
-            return true;
-        }
-
-        if (normalized === "false" || normalized === "0" || normalized === "no" || normalized === "off") {
-            return false;
-        }
-
-        throw new Error(`Invalid ${fieldName}, expected boolean`);
-    }
-
-    function requireSessionId(value: unknown): string {
+    function requireSessionId(value: string): string {
         const sessionId = asText(value).trim();
         if (!sessionId) {
-            throw new Error("Missing required parameter: session_id");
+            throw new Error("session_id cannot be empty");
         }
         return sessionId;
     }
@@ -913,13 +887,13 @@ const windowsControl = (function () {
     async function windows_exec(params?: WindowsExecParams): Promise<WindowsExecResult> {
         try {
             const config = resolveAgentConfig();
-            const command = asText(params && params.command).trim();
+            const command = asText(params?.command).trim();
             if (!command) {
-                throw new Error("Missing required parameter: command");
+                throw new Error("command cannot be empty");
             }
 
-            const shell = normalizeShell(params && params.shell, config.defaultShell);
-            const timeoutMs = parseTimeout(params && params.timeout_ms, config.timeoutMs);
+            const shell = normalizeShell(params?.shell, config.defaultShell);
+            const timeoutMs = parseTimeout(params?.timeout_ms, config.timeoutMs);
             const versionCheck = await ensureVersionCompatible(config, timeoutMs);
             const data = await postCommand(config, { command, shell }, timeoutMs);
             const persistedResult = await persistWindowsExecOutputIfTooLong(command, shell, data, config, versionCheck);
@@ -954,7 +928,7 @@ const windowsControl = (function () {
         try {
             const config = resolveAgentConfig();
             const timeoutMs = Math.min(
-                parseTimeout(params && params.timeout_ms, CONNECTION_TEST_TIMEOUT_MS),
+                parseTimeout(params?.timeout_ms, CONNECTION_TEST_TIMEOUT_MS),
                 CONNECTION_TEST_TIMEOUT_MS
             );
             const startAt = Date.now();
@@ -1123,11 +1097,11 @@ const windowsControl = (function () {
     async function windows_process_start(params?: WindowsProcessStartParams): Promise<WindowsProcessResult> {
         try {
             const config = resolveAgentConfig();
-            const timeoutMs = parseTimeout(params && params.timeout_ms, config.timeoutMs);
+            const timeoutMs = parseTimeout(params?.timeout_ms, config.timeoutMs);
             const versionCheck = await ensureVersionCompatible(config, timeoutMs);
-            const shell = normalizeShell(params && params.shell, config.defaultShell);
-            const command = asText(params && params.command);
-            const maxRuntimeMs = parseOptionalPositiveInt(params && params.max_runtime_ms, "max_runtime_ms");
+            const shell = normalizeShell(params?.shell, config.defaultShell);
+            const command = asText(params?.command);
+            const maxRuntimeMs = validateOptionalPositiveInt(params?.max_runtime_ms, "max_runtime_ms");
 
             const data = await postProcessApi(
                 config,
@@ -1153,12 +1127,12 @@ const windowsControl = (function () {
     async function windows_process_read(params?: WindowsProcessReadParams): Promise<WindowsProcessResult> {
         try {
             const config = resolveAgentConfig();
-            const timeoutMs = parseTimeout(params && params.timeout_ms, config.timeoutMs);
+            const timeoutMs = parseTimeout(params?.timeout_ms, config.timeoutMs);
             const versionCheck = await ensureVersionCompatible(config, timeoutMs);
-            const sessionId = requireSessionId(params && params.session_id);
-            const stdoutOffset = parseOptionalNonNegativeInt(params && params.stdout_offset, "stdout_offset");
-            const stderrOffset = parseOptionalNonNegativeInt(params && params.stderr_offset, "stderr_offset");
-            const maxChars = parseOptionalPositiveInt(params && params.max_chars, "max_chars");
+            const sessionId = requireSessionId(asText(params?.session_id));
+            const stdoutOffset = validateOptionalNonNegativeInt(params?.stdout_offset, "stdout_offset");
+            const stderrOffset = validateOptionalNonNegativeInt(params?.stderr_offset, "stderr_offset");
+            const maxChars = validateOptionalPositiveInt(params?.max_chars, "max_chars");
 
             const data = await postProcessApi(
                 config,
@@ -1185,9 +1159,9 @@ const windowsControl = (function () {
     async function windows_process_write(params?: WindowsProcessWriteParams): Promise<WindowsProcessResult> {
         try {
             const config = resolveAgentConfig();
-            const timeoutMs = parseTimeout(params && params.timeout_ms, config.timeoutMs);
+            const timeoutMs = parseTimeout(params?.timeout_ms, config.timeoutMs);
             const versionCheck = await ensureVersionCompatible(config, timeoutMs);
-            const sessionId = requireSessionId(params && params.session_id);
+            const sessionId = requireSessionId(asText(params?.session_id));
 
             const hasInput = !!(params && params.input !== undefined && params.input !== null);
             const hasControl = !!(params && params.control !== undefined && params.control !== null && String(params.control).trim() !== "");
@@ -1198,7 +1172,7 @@ const windowsControl = (function () {
 
             const input = hasInput ? asText(params && params.input) : undefined;
             const control = hasControl ? asText(params && params.control) : undefined;
-            const repeat = parseOptionalPositiveInt(params && params.repeat, "repeat");
+            const repeat = validateOptionalPositiveInt(params?.repeat, "repeat");
 
             const data = await postProcessApi(
                 config,
@@ -1225,10 +1199,10 @@ const windowsControl = (function () {
     async function windows_process_terminate(params?: WindowsProcessTerminateParams): Promise<WindowsProcessResult> {
         try {
             const config = resolveAgentConfig();
-            const timeoutMs = parseTimeout(params && params.timeout_ms, config.timeoutMs);
+            const timeoutMs = parseTimeout(params?.timeout_ms, config.timeoutMs);
             const versionCheck = await ensureVersionCompatible(config, timeoutMs);
-            const sessionId = requireSessionId(params && params.session_id);
-            const remove = parseOptionalBoolean(params && params.remove, "remove");
+            const sessionId = requireSessionId(asText(params?.session_id));
+            const remove = params?.remove;
 
             const data = await postProcessApi(
                 config,
@@ -1253,9 +1227,9 @@ const windowsControl = (function () {
     async function windows_process_list(params?: WindowsProcessListParams): Promise<WindowsProcessResult> {
         try {
             const config = resolveAgentConfig();
-            const timeoutMs = parseTimeout(params && params.timeout_ms, config.timeoutMs);
+            const timeoutMs = parseTimeout(params?.timeout_ms, config.timeoutMs);
             const versionCheck = await ensureVersionCompatible(config, timeoutMs);
-            const includeExited = parseOptionalBoolean(params && params.include_exited, "include_exited");
+            const includeExited = params?.include_exited;
 
             const data = await postProcessApi(
                 config,
@@ -1279,19 +1253,19 @@ const windowsControl = (function () {
     async function read(params?: WindowsReadParams): Promise<WindowsFileResult> {
         try {
             const config = resolveAgentConfig();
-            const timeoutMs = parseTimeout(params && params.timeout_ms, config.timeoutMs);
+            const timeoutMs = parseTimeout(params?.timeout_ms, config.timeoutMs);
             const versionCheck = await ensureVersionCompatible(config, timeoutMs);
 
-            const path = asText(params && params.path).trim();
+            const path = asText(params?.path).trim();
             if (!path) {
-                throw new Error("Missing required parameter: path");
+                throw new Error("path cannot be empty");
             }
 
-            const encoding = asText(params && params.encoding).trim();
-            const offset = parseOptionalNonNegativeInt(params && params.offset, "offset");
-            const length = parseOptionalNonNegativeInt(params && params.length, "length");
-            const lineStart = parseOptionalPositiveInt(params && params.line_start, "line_start");
-            const lineEnd = parseOptionalPositiveInt(params && params.line_end, "line_end");
+            const encoding = asText(params?.encoding).trim();
+            const offset = validateOptionalNonNegativeInt(params?.offset, "offset");
+            const length = validateOptionalNonNegativeInt(params?.length, "length");
+            const lineStart = validateOptionalPositiveInt(params?.line_start, "line_start");
+            const lineEnd = validateOptionalPositiveInt(params?.line_end, "line_end");
 
             const useSegment = offset !== undefined || length !== undefined;
             const useLineRange = lineStart !== undefined || lineEnd !== undefined;
@@ -1383,20 +1357,16 @@ const windowsControl = (function () {
     async function write(params?: WindowsWriteParams): Promise<WindowsFileResult> {
         try {
             const config = resolveAgentConfig();
-            const timeoutMs = parseTimeout(params && params.timeout_ms, config.timeoutMs);
+            const timeoutMs = parseTimeout(params?.timeout_ms, config.timeoutMs);
             const versionCheck = await ensureVersionCompatible(config, timeoutMs);
 
-            const path = asText(params && params.path).trim();
+            const path = asText(params?.path).trim();
             if (!path) {
-                throw new Error("Missing required parameter: path");
+                throw new Error("path cannot be empty");
             }
 
-            if (!params || params.content === undefined || params.content === null) {
-                throw new Error("Missing required parameter: content");
-            }
-
-            const content = asText(params.content);
-            const encoding = asText(params && params.encoding).trim();
+            const content = asText(params?.content);
+            const encoding = asText(params?.encoding).trim();
             const data = await postTextFileApi(
                 config,
                 "/api/file/write",
@@ -1429,26 +1399,22 @@ const windowsControl = (function () {
     async function edit(params?: WindowsEditParams): Promise<WindowsFileResult> {
         try {
             const config = resolveAgentConfig();
-            const timeoutMs = parseTimeout(params && params.timeout_ms, config.timeoutMs);
+            const timeoutMs = parseTimeout(params?.timeout_ms, config.timeoutMs);
             const versionCheck = await ensureVersionCompatible(config, timeoutMs);
 
-            const path = asText(params && params.path).trim();
+            const path = asText(params?.path).trim();
             if (!path) {
-                throw new Error("Missing required parameter: path");
+                throw new Error("path cannot be empty");
             }
 
-            const oldText = asText(params && params.old_text);
+            const oldText = asText(params?.old_text);
             if (!oldText) {
-                throw new Error("Missing required parameter: old_text");
+                throw new Error("old_text cannot be empty");
             }
 
-            if (!params || params.new_text === undefined || params.new_text === null) {
-                throw new Error("Missing required parameter: new_text");
-            }
-
-            const newText = asText(params.new_text);
-            const expectedReplacements = parseExpectedReplacements(params && params.expected_replacements);
-            const encoding = asText(params && params.encoding).trim();
+            const newText = asText(params?.new_text);
+            const expectedReplacements = parseExpectedReplacements(params?.expected_replacements);
+            const encoding = asText(params?.encoding).trim();
 
             const data = await postTextFileApi(
                 config,

@@ -1,4 +1,6 @@
 "use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.subagent_run = subagent_run;
 /* METADATA
 {
     "name": "subagent",
@@ -61,8 +63,7 @@
     ]
 }
 */
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.subagent_run = subagent_run;
+require("../../../types/quickjs-runtime.js");
 const EnhancedAIService = Java.com.ai.assistance.operit.api.chat.EnhancedAIService;
 const FunctionType = Java.com.ai.assistance.operit.data.model.FunctionType;
 const PromptFunctionType = Java.com.ai.assistance.operit.data.model.PromptFunctionType;
@@ -155,7 +156,9 @@ function extractFinalNonToolAssistantContent(raw) {
     while ((match = lastToolLike.exec(noThinking)) !== null) {
         lastMatch = match;
     }
-    const tail = lastMatch ? noThinking.substring((lastMatch.index || 0) + lastMatch[0].length) : noThinking;
+    const tail = lastMatch
+        ? noThinking.substring((lastMatch.index || 0) + lastMatch[0].length)
+        : noThinking;
     const tailStripped = stripMarkup(tail);
     if (tailStripped) {
         return tailStripped;
@@ -164,7 +167,10 @@ function extractFinalNonToolAssistantContent(raw) {
     if (!fullStripped) {
         return "";
     }
-    const parts = fullStripped.split(/\n\s*\n+/).map((item) => item.trim()).filter(Boolean);
+    const parts = fullStripped
+        .split(/\n\s*\n+/)
+        .map((item) => item.trim())
+        .filter(Boolean);
     return parts.length > 0 ? parts[parts.length - 1] : fullStripped;
 }
 function toKotlinPairList(history) {
@@ -191,7 +197,7 @@ async function sendMessage(enhancedAIService, options) {
     const onNonFatalError = (_value) => Unit.INSTANCE;
     const onToolInvocation = options.onToolInvocation
         ? (toolName) => {
-            options.onToolInvocation(toolName);
+            options.onToolInvocation?.(toolName);
             return Unit.INSTANCE;
         }
         : null;
@@ -206,22 +212,13 @@ function getAppContext() {
 }
 function createRunId() {
     const now = Date.now().toString(36).slice(-6);
-    const random = Math.floor(Math.random() * 1296).toString(36).padStart(2, "0");
+    const random = Math.floor(Math.random() * 1296)
+        .toString(36)
+        .padStart(2, "0");
     return "s" + now + random;
 }
-function parseRequiredTask(params) {
-    const task = asText(params && params.task).trim();
-    if (!task) {
-        throw new Error("Missing required parameter: task");
-    }
-    return task;
-}
-function parseOptionalText(params, key) {
-    const value = asText(params && params[key]).trim();
-    return value || "";
-}
 function parseTargetPaths(params) {
-    const raw = asText(params && params.target_paths_json).trim();
+    const raw = asText(params.target_paths_json).trim();
     if (!raw) {
         return [];
     }
@@ -232,7 +229,7 @@ function parseTargetPaths(params) {
     return parsed.map((item) => asText(item).trim()).filter(Boolean);
 }
 function parseMaxToolCalls(params) {
-    const raw = params && params.max_tool_calls;
+    const raw = params.max_tool_calls;
     if (raw === undefined || raw === null || String(raw).trim() === "") {
         return 8;
     }
@@ -244,7 +241,10 @@ function parseMaxToolCalls(params) {
 }
 function stageUpdateXml(runId, stage, message, attrs) {
     const extraAttrs = attrs || {};
-    const attrSegments = [`run="${escapeXmlAttr(runId)}"`, `stage="${escapeXmlAttr(stage)}"`];
+    const attrSegments = [
+        `run="${escapeXmlAttr(runId)}"`,
+        `stage="${escapeXmlAttr(stage)}"`,
+    ];
     Object.keys(extraAttrs).forEach((key) => {
         const value = extraAttrs[key];
         if (value !== undefined && value !== null && String(value).trim() !== "") {
@@ -276,7 +276,9 @@ function resolveExecutionSettings(enhancedAIService) {
             maxTokens: Number.isFinite(contextLength) && contextLength > 0
                 ? Math.floor(contextLength * 1024)
                 : 48 * 1024,
-            tokenUsageThreshold: Number.isFinite(threshold) && threshold > 0 && threshold <= 1 ? threshold : 0.7,
+            tokenUsageThreshold: Number.isFinite(threshold) && threshold > 0 && threshold <= 1
+                ? threshold
+                : 0.7,
         };
     })
         .catch((error) => {
@@ -332,15 +334,17 @@ function internalToolUpdateText(toolName) {
     if (!raw || raw === "package_proxy") {
         return "已触发内部工具";
     }
-    const shortName = raw.includes(":") ? raw.substring(raw.lastIndexOf(":") + 1).trim() : raw;
+    const shortName = raw.includes(":")
+        ? raw.substring(raw.lastIndexOf(":") + 1).trim()
+        : raw;
     return shortName ? `已调用 ${shortName}` : "已触发内部工具";
 }
 async function runSubagent(params) {
     const runId = createRunId();
     let toolCount = 0;
     try {
-        const task = parseRequiredTask(params);
-        const contextText = parseOptionalText(params, "context_text");
+        const task = asText(params.task).trim();
+        const contextText = asText(params.context_text).trim();
         const targetPaths = parseTargetPaths(params);
         const maxToolCalls = parseMaxToolCalls(params);
         emitIntermediate(stageUpdateXml(runId, "accepted", "已接受任务"));
@@ -360,7 +364,9 @@ async function runSubagent(params) {
             customSystemPromptTemplate: buildCustomSystemPromptTemplate(),
             onToolInvocation: (toolName) => {
                 toolCount += 1;
-                emitIntermediate(stageUpdateXml(runId, "tool", internalToolUpdateText(toolName), { count: toolCount }));
+                emitIntermediate(stageUpdateXml(runId, "tool", internalToolUpdateText(toolName), {
+                    count: toolCount,
+                }));
             },
         });
         emitIntermediate(stageUpdateXml(runId, "summarizing", "正在汇总结果"));

@@ -10,12 +10,14 @@ internal object UserscriptMetadataParser {
             ?: throw IllegalArgumentException("Missing userscript metadata block")
         val block = match.groupValues[1]
         val fields = linkedMapOf<String, MutableList<String>>()
+        val rawHeaders = mutableListOf<UserscriptHeaderEntry>()
 
         block.lineSequence().forEach { line ->
             val lineMatch = metadataLineRegex.find(line) ?: return@forEach
             val key = lineMatch.groupValues[1].trim()
             val value = lineMatch.groupValues.getOrNull(2)?.trim().orEmpty()
             fields.getOrPut(key) { mutableListOf() }.add(value)
+            rawHeaders += UserscriptHeaderEntry(key = key, value = value)
         }
 
         val name = fields.firstValue("name")?.takeIf { it.isNotBlank() }
@@ -51,6 +53,11 @@ internal object UserscriptMetadataParser {
                 fields.firstValue("homepage")
                     ?.takeIf { it.isNotBlank() }
                     ?: fields.firstValue("homepageURL")?.takeIf { it.isNotBlank() },
+            website =
+                fields.firstValue("website")
+                    ?.takeIf { it.isNotBlank() }
+                    ?: fields.firstValue("source")?.takeIf { it.isNotBlank() },
+            supportUrl = fields.firstValue("supportURL")?.takeIf { it.isNotBlank() },
             downloadUrl = fields.firstValue("downloadURL")?.takeIf { it.isNotBlank() },
             updateUrl = fields.firstValue("updateURL")?.takeIf { it.isNotBlank() },
             runAt = UserscriptRunAt.fromRaw(fields.firstValue("run-at")),
@@ -66,6 +73,24 @@ internal object UserscriptMetadataParser {
                     value.trim().takeIf { it.isNotBlank() }?.let(::UserscriptRequireEntry)
                 },
             resources = resourceEntries,
+            icons =
+                UserscriptIconSet(
+                    icon = fields.firstValue("icon")?.takeIf { it.isNotBlank() },
+                    icon64 =
+                        fields.firstValue("icon64")
+                            ?.takeIf { it.isNotBlank() }
+                            ?: fields.firstValue("icon64URL")?.takeIf { it.isNotBlank() },
+                    defaultIcon = fields.firstValue("defaulticon")?.takeIf { it.isNotBlank() }
+                ),
+            tags = fields["tag"].orEmpty().map { it.trim() }.filter { it.isNotBlank() }.distinct(),
+            sandbox = fields.firstValue("sandbox")?.takeIf { it.isNotBlank() },
+            runIn = fields.firstValue("run-in")?.takeIf { it.isNotBlank() },
+            unwrap =
+                fields.containsKey("unwrap") ||
+                    fields["unwrap"]?.any { it.equals("true", ignoreCase = true) } == true,
+            webRequestRules =
+                fields["webRequest"].orEmpty().map { it.trim() }.filter { it.isNotBlank() }.distinct(),
+            rawHeaders = rawHeaders,
             noFrames = noFrames,
             metadataBlock = block.trim()
         )
