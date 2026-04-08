@@ -1761,42 +1761,175 @@ class MemoryRepository(private val context: Context, profileId: String) {
     }
 
     suspend fun rebuildVectorIndices(onProgress: (EmbeddingRebuildProgress) -> Unit): EmbeddingRebuildProgress = withContext(Dispatchers.IO) {
+        val cloudConfig = searchSettingsPreferences.loadCloudEmbedding()
+        if (!cloudConfig.isReady()) {
+            throw IllegalStateException(context.getString(R.string.memory_embedding_rebuild_requires_config))
+        }
+
         val memories = memoryBox.all
-        val total =
-            memories.count { createMemoryIndexItem(it) != null } +
-                memories.filter { it.isDocumentNode }.sumOf { memory ->
-                    countDocumentChunkIndexableItems(memory)
+        val documentChunksByMemoryId = memories
+            .filter { it.isDocumentNode }
+            .associate { memory -> memory.id to loadChunksForDocument(memory) }
+        val probeMemory = memories.firstOrNull { generateTextForEmbedding(it).isNotBlank() }
+        val probeChunk = if (probeMemory == null) {
+            documentChunksByMemoryId.values.asSequence()
+                .flatten()
+                .firstOrNull { it.content.isNotBlank() }
+        } else {
+            null
+        }
+        val probeText = probeMemory
+            ?.let(::generateTextForEmbedding)
+            ?.trim()
+            ?: probeChunk?.content?.trim()
+
+        if (probeText.isNullOrBlank()) {
+            onProgress(
+                EmbeddingRebuildProgress(
+                    total = 0,
+                    processed = 0,
+                    failed = 0,
+                    currentStage = "done"
+                )
+            )
+            return@withContext EmbeddingRebuildProgress(
+                total = 0,
+                processed = 0,
+                failed = 0,
+                currentStage = "done"
+            )
+        }
+
+        val probeEmbedding = generateEmbedding(probeText, cloudConfig)
+            ?: throw IllegalStateException(context.getString(R.string.memory_embedding_rebuild_probe_failed))
+        val targetDimension = probeEmbedding.vector.size
+        if (targetDimension <= 0) {
+            throw IllegalStateException(context.getString(R.string.memory_embedding_rebuild_probe_failed))
+        }
+
+        memories.forEach { memory ->
+            val textForEmbedding = generateTextForEmbedding(memory).trim()
+            if (textForEmbedding.isBlank() && memory.embedding != null) {
+                memory.embedding = null
+                memoryBox.put(memory)
+            }
+        }
+        documentChunksByMemoryId.values.forEach { chunks ->
+            val updatedBlankChunks = chunks.filter { chunk ->
+                chunk.content.isBlank() && chunk.embedding != null
+            }
+            if (updatedBlankChunks.isNotEmpty()) {
+                updatedBlankChunks.forEach { it.embedding = null }
+                chunkBox.put(updatedBlankChunks)
+            }
+        }
+
+        val memoriesNeedingEmbedding = memories.filter { memory ->
+            val textForEmbedding = generateTextForEmbedding(memory).trim()
+            if (textForEmbedding.isBlank()) {
+                false
+            } else {
+                val vector = memory.embedding?.vector
+                vector == null || vector.isEmpty() || vector.size != targetDimension
+            }
+        }
+        val chunksNeedingEmbedding = documentChunksByMemoryId.values
+            .asSequence()
+            .flatten()
+            .filter { chunk ->
+                val textForEmbedding = chunk.content.trim()
+                if (textForEmbedding.isBlank()) {
+                    false
+                } else {
+                    val vector = chunk.embedding?.vector
+                    vector == null || vector.isEmpty() || vector.size != targetDimension
                 }
+            }
+            .toList()
+
+        var total = memoriesNeedingEmbedding.size + chunksNeedingEmbedding.size
         var processed = 0
+        var failed = 0
 
         fun report(stage: String) {
             onProgress(
                 EmbeddingRebuildProgress(
                     total = total,
                     processed = processed,
-                    failed = 0,
+                    failed = failed,
                     currentStage = stage
                 )
             )
         }
 
         report("preparing")
+
+        report("memory_embedding")
+        memoriesNeedingEmbedding.forEach { memory ->
+            val textForEmbedding = generateTextForEmbedding(memory).trim()
+            val embedding = if (probeMemory?.id == memory.id) {
+                probeEmbedding
+            } else {
+                generateEmbedding(textForEmbedding, cloudConfig)
+            }
+            if (embedding == null) {
+                failed += 1
+            }
+            memory.embedding = embedding
+            memoryBox.put(memory)
+
+            processed += 1
+            report("memory_embedding")
+        }
+
+        report("chunk_embedding")
+        val chunksNeedingEmbeddingByMemoryId = chunksNeedingEmbedding.groupBy { it.memory.targetId }
+        chunksNeedingEmbeddingByMemoryId.forEach { (_, chunks) ->
+            val updatedChunks = chunks.map { chunk ->
+                val textForEmbedding = chunk.content.trim()
+                val embedding = if (probeChunk?.id == chunk.id) {
+                    probeEmbedding
+                } else {
+                    generateEmbedding(textForEmbedding, cloudConfig)
+                }
+                if (embedding == null) {
+                    failed += 1
+                }
+                chunk.embedding = embedding
+
+                processed += 1
+                report("chunk_embedding")
+                chunk
+            }
+
+            if (updatedChunks.isNotEmpty()) {
+                chunkBox.put(updatedChunks)
+            }
+        }
+
+        total += memories.count { createMemoryIndexItem(it) != null } +
+            memories.filter { it.isDocumentNode }.sumOf { memory ->
+                countDocumentChunkIndexableItems(memory)
+            }
+
         report("memory_index")
         rebuildAllMemoryVectorIndices {
             processed += 1
             report("memory_index")
         }
+
         report("chunk_index")
         rebuildAllDocumentChunkIndices {
             processed += 1
             report("chunk_index")
         }
+
         processed = total
         report("done")
         EmbeddingRebuildProgress(
             total = total,
             processed = processed,
-            failed = 0,
+            failed = failed,
             currentStage = "done"
         )
     }

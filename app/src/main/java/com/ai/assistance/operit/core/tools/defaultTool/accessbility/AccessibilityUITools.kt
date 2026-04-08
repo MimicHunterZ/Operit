@@ -1,6 +1,7 @@
 package com.ai.assistance.operit.core.tools.defaultTool.accessbility
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.ai.assistance.operit.util.AppLogger
 import com.ai.assistance.operit.core.tools.SimplifiedUINode
@@ -750,6 +751,17 @@ open class AccessibilityUITools(context: Context) : StandardUITools(context) {
 
     override suspend fun captureScreenshot(tool: AITool): Pair<String?, Pair<Int, Int>?> {
         return captureScreenshotToFile(tool)
+    }
+
+    override suspend fun captureScreenshotBitmap(tool: AITool): Pair<Bitmap?, Pair<Int, Int>?> {
+        val (filePath, dimensions) = captureScreenshot(tool)
+        if (filePath == null) {
+            return Pair(null, dimensions)
+        }
+
+        val bitmap = BitmapFactory.decodeFile(filePath) ?: return Pair(null, dimensions)
+        val resolvedDimensions = dimensions ?: Pair(bitmap.width, bitmap.height)
+        return Pair(bitmap, resolvedDimensions)
     }
 
     private fun parseBounds(boundsString: String): android.graphics.Rect {

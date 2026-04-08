@@ -379,6 +379,8 @@ private fun SliderSettingItem(
 private fun stageText(stage: String): String {
     return when (stage) {
         "preparing" -> stringResource(R.string.memory_embedding_stage_preparing)
+        "memory_embedding" -> stringResource(R.string.memory_embedding_stage_memory_embedding)
+        "chunk_embedding" -> stringResource(R.string.memory_embedding_stage_chunk_embedding)
         "memory_index" -> stringResource(R.string.memory_embedding_stage_memory_index)
         "chunk_index" -> stringResource(R.string.memory_embedding_stage_chunk_index)
         "done" -> stringResource(R.string.memory_embedding_stage_done)

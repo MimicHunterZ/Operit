@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import java.io.File
 import com.ai.assistance.operit.util.AppLogger
@@ -525,6 +526,17 @@ open class DebuggerUITools(context: Context) : AccessibilityUITools(context) {
 
     override suspend fun captureScreenshot(tool: AITool): Pair<String?, Pair<Int, Int>?> {
         return captureScreenshotToFile(tool)
+    }
+
+    override suspend fun captureScreenshotBitmap(tool: AITool): Pair<Bitmap?, Pair<Int, Int>?> {
+        val (filePath, dimensions) = captureScreenshot(tool)
+        if (filePath == null) {
+            return Pair(null, dimensions)
+        }
+
+        val bitmap = BitmapFactory.decodeFile(filePath) ?: return Pair(null, dimensions)
+        val resolvedDimensions = dimensions ?: Pair(bitmap.width, bitmap.height)
+        return Pair(bitmap, resolvedDimensions)
     }
 
     /** 使用Shell命令获取页面信息 */
