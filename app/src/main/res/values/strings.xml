@@ -4876,6 +4876,10 @@
     <string name="apply_group">应用分组</string>
     <string name="apply_character_card">应用角色卡</string>
     <string name="apply_character_group">应用角色群聊</string>
+    <string name="delete_selected_chats">删除选中的聊天记录 (%1$d)</string>
+    <string name="delete_selected_chats_confirmation">确定要删除选中的 %1$d 条聊天记录吗？\n\n已锁定的对话会被跳过，此操作不可撤销。</string>
+    <string name="deleted_selected_chats_count">已删除 %1$d 条聊天记录</string>
+    <string name="deleted_selected_chats_with_skipped_locked">已删除 %1$d 条聊天记录，跳过 %2$d 条锁定对话</string>
     <string name="unbound_workspaces_title">无绑定工作区</string>
     <string name="unbound_workspaces_subtitle">管理未被任何对话使用的工作区文件夹</string>
     <string name="no_unbound_workspaces">暂无无绑定的工作区文件夹</string>
@@ -6711,7 +6715,7 @@
     <string name="enhanced_tool_warning">警告：工具调用和等待用户响应不能同时存在。工具调用被处理了，但这是极具危险性的。</string>
     <string name="enhanced_pure_thinking_only_warning">警告：请输出正文内容，禁止仅输出思考内容。</string>
     <string name="enhanced_truncated_tool_call_warning">警告：检测到工具调用输出被截断。本轮所有工具调用均已作废且不会执行。请尝试减少单次输出、拆分任务，或更换更合适的模型/供应商后重试。</string>
-    <string name="status_warning_ai_error_summary">ai犯了一个错误</string>
+    <string name="status_warning_ai_error_summary">AI犯了一个错误</string>
     <string name="status_warning_ai_error_detail_title">AI错误原因</string>
     <string name="enhanced_receiving_tool_result">正在接收工具执行后的AI响应...</string>
     <string name="enhanced_process_tool_result_failed">处理工具执行结果失败: %1$s</string>

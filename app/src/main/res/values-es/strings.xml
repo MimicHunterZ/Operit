@@ -1302,6 +1302,10 @@
     <string name="multi_select">Selección múltiple</string>
     <string name="exit_multi_select">Salir de selección múltiple</string>
     <string name="delete_selected">Eliminar seleccionados</string>
+    <string name="delete_selected_chats">Eliminar chats seleccionados (%1$d)</string>
+    <string name="delete_selected_chats_confirmation">¿Seguro que quieres eliminar los %1$d chats seleccionados?\n\nLos chats bloqueados se omitirán. Esta acción no se puede deshacer.</string>
+    <string name="deleted_selected_chats_count">Se eliminaron %1$d chats</string>
+    <string name="deleted_selected_chats_with_skipped_locked">Se eliminaron %1$d chats y se omitieron %2$d chats bloqueados</string>
     <string name="share_selected">Compartir</string>
     <string name="selected_count">%d seleccionados</string>
     <string name="generating_image">Generando imagen...</string>

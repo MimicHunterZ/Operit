@@ -13,12 +13,15 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddComment
@@ -351,6 +354,7 @@ fun FloatingFullscreenMode(floatContext: FloatContext) {
     )
     val fullscreenScrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = fullscreenBgAlpha)
     val noiseBitmap = rememberNoiseBitmap()
+    val topInsetPadding = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -401,7 +405,7 @@ fun FloatingFullscreenMode(floatContext: FloatContext) {
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .zIndex(10f)
-                .padding(16.dp),
+                .padding(start = 16.dp, top = topInsetPadding + 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
     ) {
@@ -430,7 +434,7 @@ fun FloatingFullscreenMode(floatContext: FloatContext) {
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .zIndex(10f)
-                .padding(16.dp),
+                .padding(end = 16.dp, top = topInsetPadding + 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {

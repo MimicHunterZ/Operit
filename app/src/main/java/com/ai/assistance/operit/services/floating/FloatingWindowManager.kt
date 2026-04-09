@@ -428,6 +428,7 @@ class FloatingWindowManager(
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
+                applyFullscreenOverlayWindowPolicy(this, true)
             }
             StatusIndicatorStyle.TOP_BAR -> WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
@@ -608,7 +609,9 @@ class FloatingWindowManager(
             FloatingMode.FULLSCREEN, FloatingMode.SCREEN_OCR -> {
                 params.width = WindowManager.LayoutParams.MATCH_PARENT
                 params.height = WindowManager.LayoutParams.MATCH_PARENT
-                params.flags = 0 // Focusable
+                params.flags =
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                 state.x = 0
                 state.y = 0
             }
@@ -670,12 +673,28 @@ class FloatingWindowManager(
         params.softInputMode = resolveSoftInputModeForMode(state.currentMode.value)
         params.x = state.x
         params.y = state.y
+        applyFullscreenOverlayWindowPolicy(
+            params,
+            state.currentMode.value == FloatingMode.FULLSCREEN ||
+                state.currentMode.value == FloatingMode.SCREEN_OCR
+        )
 
         applyFullscreenBlur(params, state.currentMode.value == FloatingMode.FULLSCREEN)
 
         state.isAtEdge.value = isAtEdge(params.x, params.width)
 
         return params
+    }
+
+    private fun applyFullscreenOverlayWindowPolicy(
+        params: WindowManager.LayoutParams,
+        enabled: Boolean
+    ) {
+        if (!enabled) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            params.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
     }
 
     private fun setPrivateFlag(params: WindowManager.LayoutParams, flags: Int) {
@@ -925,9 +944,11 @@ class FloatingWindowManager(
                 }
                 
                 TargetParams(width, height, finalX, finalY, flags)
-                }
-                FloatingMode.FULLSCREEN, FloatingMode.SCREEN_OCR -> {
-                val flags = 0 // Remove all flags, making it focusable
+            }
+            FloatingMode.FULLSCREEN, FloatingMode.SCREEN_OCR -> {
+                val flags =
+                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
                 TargetParams(
                     screenWidth,
                     screenHeight,
@@ -992,6 +1013,7 @@ class FloatingWindowManager(
                         params.flags = target.flags
                         params.gravity = target.gravity
                         params.softInputMode = resolveSoftInputModeForMode(newMode)
+                        applyFullscreenOverlayWindowPolicy(params, willFullscreen)
                         applyFullscreenBlur(params, target.blurEnabled)
                         
                         // Sync state with params
@@ -1015,6 +1037,7 @@ class FloatingWindowManager(
                         params.flags = target.flags
                         params.gravity = target.gravity
                         params.softInputMode = resolveSoftInputModeForMode(newMode)
+                        applyFullscreenOverlayWindowPolicy(params, willFullscreen)
                         applyFullscreenBlur(params, target.blurEnabled)
                         
                         // Sync state with params
@@ -1035,6 +1058,7 @@ class FloatingWindowManager(
                     params.flags = target.flags
                     params.gravity = target.gravity
                     params.softInputMode = resolveSoftInputModeForMode(newMode)
+                    applyFullscreenOverlayWindowPolicy(params, willFullscreen)
                     applyFullscreenBlur(params, target.blurEnabled)
                     
                     // Sync state with params
@@ -1057,6 +1081,7 @@ class FloatingWindowManager(
                 params.flags = target.flags
                 params.gravity = target.gravity
                 params.softInputMode = resolveSoftInputModeForMode(newMode)
+                applyFullscreenOverlayWindowPolicy(params, willFullscreen)
                 applyFullscreenBlur(params, target.blurEnabled)
 
                 // Sync state with params

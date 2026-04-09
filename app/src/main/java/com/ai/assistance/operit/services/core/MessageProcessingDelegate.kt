@@ -945,15 +945,9 @@ class MessageProcessingDelegate(
                 }
 
                 runCatching {
-                    val turnService =
-                        service.getAIServiceForFunction(
-                            functionType = FunctionType.CHAT,
-                            chatModelConfigIdOverride = chatModelConfigIdOverride,
-                            chatModelIndexOverride = chatModelIndexOverride
-                        )
-                    turnInputTokens = turnService.inputTokenCount
-                    turnOutputTokens = turnService.outputTokenCount
-                    turnCachedInputTokens = turnService.cachedInputTokenCount
+                    turnInputTokens = service.getCurrentInputTokenCount()
+                    turnOutputTokens = service.getCurrentOutputTokenCount()
+                    turnCachedInputTokens = service.getCurrentCachedInputTokenCount()
                 }.onFailure {
                     AppLogger.w(TAG, "读取本轮 token 统计失败", it)
                 }

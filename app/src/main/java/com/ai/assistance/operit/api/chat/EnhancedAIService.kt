@@ -12,6 +12,8 @@ import com.ai.assistance.operit.api.chat.enhance.FileBindingService
 import com.ai.assistance.operit.api.chat.enhance.MultiServiceManager
 import com.ai.assistance.operit.api.chat.enhance.ToolExecutionManager
 import com.ai.assistance.operit.api.chat.llmprovider.AIService
+import com.ai.assistance.operit.core.chat.logMessageTiming
+import com.ai.assistance.operit.core.chat.messageTimingNow
 import com.ai.assistance.operit.core.chat.hooks.PromptHookContext
 import com.ai.assistance.operit.core.chat.hooks.PromptHookRegistry
 import com.ai.assistance.operit.core.chat.hooks.toPromptMessages
@@ -398,6 +400,7 @@ class EnhancedAIService private constructor(private val context: Context) {
 
     private var accumulatedInputTokenCount = 0
     private var accumulatedOutputTokenCount = 0
+    private var accumulatedCachedInputTokenCount = 0
 
     // Callbacks
     private var currentResponseCallback: ((content: String, thinking: String?) -> Unit)? = null
@@ -572,6 +575,7 @@ class EnhancedAIService private constructor(private val context: Context) {
         )
         accumulatedInputTokenCount = 0
         accumulatedOutputTokenCount = 0
+        accumulatedCachedInputTokenCount = 0
 
         val eventChannel = MutableSharedStream<TextStreamEvent>(replay = Int.MAX_VALUE)
         val wrappedStream = stream {
@@ -598,7 +602,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                         }
                     }
 
-                    val startTime = System.currentTimeMillis()
+                    val startTime = messageTimingNow()
 
                     // Prepare conversation history with system prompt
                     val preparedHistory =
@@ -621,7 +625,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                                     chatModelConfigIdOverride,
                                     chatModelIndexOverride
                             )
-                    val tAfterPrepareHistory = System.currentTimeMillis()
+                    val tAfterPrepareHistory = messageTimingNow()
                     AppLogger.d(TAG, "sendMessage本地耗时: prepareConversationHistory=${tAfterPrepareHistory - startTime}ms")
                     
                     // 关键修复：用准备好的历史记录（包含了系统提示）去同步更新内部的 conversationHistory 状态
@@ -641,7 +645,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                         chatModelConfigIdOverride = chatModelConfigIdOverride,
                         chatModelIndexOverride = chatModelIndexOverride
                     )
-                    val tAfterModelParams = System.currentTimeMillis()
+                    val tAfterModelParams = messageTimingNow()
                     AppLogger.d(TAG, "sendMessage本地耗时: getModelParametersForFunction=${tAfterModelParams - tAfterPrepareHistory}ms")
 
                     // 获取对应功能类型的AIService实例
@@ -650,7 +654,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                         chatModelConfigIdOverride = chatModelConfigIdOverride,
                         chatModelIndexOverride = chatModelIndexOverride
                     )
-                    val tAfterGetService = System.currentTimeMillis()
+                    val tAfterGetService = messageTimingNow()
                     AppLogger.d(TAG, "sendMessage本地耗时: getAIServiceForFunction=${tAfterGetService - tAfterModelParams}ms")
 
                     // 清空之前的单次请求token计数
@@ -663,7 +667,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                         chatModelConfigIdOverride = chatModelConfigIdOverride,
                         chatModelIndexOverride = chatModelIndexOverride
                     )
-                    val tAfterGetTools = System.currentTimeMillis()
+                    val tAfterGetTools = messageTimingNow()
                     AppLogger.d(TAG, "sendMessage本地耗时: getAvailableToolsForFunction=${tAfterGetTools - tAfterGetService}ms")
 
                     var finalProcessedInput = message
@@ -710,7 +714,8 @@ class EnhancedAIService private constructor(private val context: Context) {
                     execContext.conversationHistory.addAll(finalPreparedHistory)
                     
                     // 使用新的Stream API
-                    AppLogger.d(TAG, "调用AI服务，处理时间: ${tAfterGetTools - startTime}ms, 流式输出: $stream")
+                    AppLogger.d(TAG, "sendMessage请求前准备耗时: ${tAfterGetTools - startTime}ms, 流式输出: $stream")
+                    val requestStartTime = messageTimingNow()
                     val responseStream =
                             serviceForFunction.sendMessage(
                                     context = this@EnhancedAIService.context,
@@ -738,8 +743,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                     // 从原始stream收集内容并处理
                     var chunkCount = 0
                     var totalChars = 0
-                    var lastLogTime = System.currentTimeMillis()
-                    val streamStartTime = System.currentTimeMillis()
+                    var lastLogTime = messageTimingNow()
 
                     coroutineScope {
                         val revisionJob =
@@ -779,7 +783,11 @@ class EnhancedAIService private constructor(private val context: Context) {
                                         }
                                     }
                                     isFirstChunk = false
-                                    AppLogger.d(TAG, "首次响应耗时: ${System.currentTimeMillis() - streamStartTime}ms")
+                                    logMessageTiming(
+                                        stage = "enhanced.sendMessage.firstResponseChunk",
+                                        startTimeMs = requestStartTime,
+                                        details = "functionType=$functionType, stream=$stream"
+                                    )
                                 }
 
                                 // 累计统计
@@ -787,7 +795,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                                 totalChars += content.length
 
                                 // 周期性日志
-                                val currentTime = System.currentTimeMillis()
+                                val currentTime = messageTimingNow()
                                 if (currentTime - lastLogTime > 5000) { // 每5秒记录一次
                                     AppLogger.d(TAG, "已接收 $chunkCount 个内容块，总计 $totalChars 个字符")
                                     lastLogTime = currentTime
@@ -823,6 +831,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                     val outputTokens = serviceForFunction.outputTokenCount
                     accumulatedInputTokenCount += inputTokens
                     accumulatedOutputTokenCount += outputTokens
+                    accumulatedCachedInputTokenCount += cachedInputTokens
                     apiPreferences.updateTokensForProviderModel(serviceForFunction.providerModel, inputTokens, outputTokens, cachedInputTokens)
                     
                     // Update request count
@@ -830,11 +839,12 @@ class EnhancedAIService private constructor(private val context: Context) {
 
                     AppLogger.d(
                             TAG,
-                            "Token count updated for $functionType. Input: $inputTokens, Output: $outputTokens. Turn Accumulated: $accumulatedInputTokenCount, $accumulatedOutputTokenCount"
+                            "Token count updated for $functionType. Input: $inputTokens, Output: $outputTokens, CachedInput: $cachedInputTokens. Turn Accumulated: $accumulatedInputTokenCount, $accumulatedOutputTokenCount, $accumulatedCachedInputTokenCount"
                     )
-                    AppLogger.d(
-                            TAG,
-                            "流收集完成，总计 $totalChars 字符，耗时: ${System.currentTimeMillis() - streamStartTime}ms"
+                    logMessageTiming(
+                        stage = "enhanced.sendMessage.streamComplete",
+                        startTimeMs = requestStartTime,
+                        details = "functionType=$functionType, totalChars=$totalChars, stream=$stream"
                     )
                 }
             } catch (e: CancellationException) {
@@ -1309,7 +1319,7 @@ class EnhancedAIService private constructor(private val context: Context) {
             enableGroupOrchestrationHint: Boolean = false
     ) {
         try {
-            val startTime = System.currentTimeMillis()
+            val startTime = messageTimingNow()
             // If conversation is no longer active, return immediately
             if (!context.isConversationActive.get()) {
                 return
@@ -1516,9 +1526,10 @@ class EnhancedAIService private constructor(private val context: Context) {
 
                 // Add current assistant message to conversation history
 
-                AppLogger.d(
-                        TAG,
-                        "检测到 ${extractedToolInvocations.size} 个工具调用，处理时间: ${System.currentTimeMillis() - startTime}ms"
+                logMessageTiming(
+                    stage = "enhanced.processStreamCompletion.detectToolInvocations",
+                    startTimeMs = startTime,
+                    details = "count=${extractedToolInvocations.size}"
                 )
                 handleToolInvocation(
                         extractedToolInvocations,
@@ -1562,7 +1573,10 @@ class EnhancedAIService private constructor(private val context: Context) {
                 characterName = characterName,
                 avatarUri = avatarUri
             )
-            AppLogger.d(TAG, "流完成处理耗时: ${System.currentTimeMillis() - startTime}ms")
+            logMessageTiming(
+                stage = "enhanced.processStreamCompletion.complete",
+                startTimeMs = startTime
+            )
         } catch (e: Exception) {
             // Catch any exceptions in the processing flow
             AppLogger.e(TAG, "处理流完成时发生错误", e)
@@ -1673,7 +1687,7 @@ class EnhancedAIService private constructor(private val context: Context) {
         enableGroupOrchestrationHint: Boolean = false,
         toolResultOverrideMessage: String? = null
     ) {
-        val startTime = System.currentTimeMillis()
+        val startTime = messageTimingNow()
 
         toolInvocations.forEach { invocation ->
             onToolInvocation?.invoke(invocation.tool.name)
@@ -1732,6 +1746,12 @@ class EnhancedAIService private constructor(private val context: Context) {
                     toolResultMessageOverride = toolResultOverrideMessage
                 )
             }
+
+            logMessageTiming(
+                stage = "enhanced.handleToolInvocation.complete",
+                startTimeMs = startTime,
+                details = "toolCount=${toolInvocations.size}"
+            )
         }
 
         val invocationId = java.util.UUID.randomUUID().toString()
@@ -1769,7 +1789,7 @@ class EnhancedAIService private constructor(private val context: Context) {
             enableGroupOrchestrationHint: Boolean = false,
             toolResultMessageOverride: String? = null
     ) {
-        val startTime = System.currentTimeMillis()
+        val startTime = messageTimingNow()
         val toolNames = results.joinToString(", ") { it.toolName }
         val toolResultMessage = toolResultMessageOverride ?: results.joinToString("\n") {
             ConversationMarkupManager.formatToolResultForMessage(it)
@@ -1874,7 +1894,7 @@ class EnhancedAIService private constructor(private val context: Context) {
         withContext(Dispatchers.IO) {
             try {
                 // 发送消息并获取响应流
-                val aiStartTime = System.currentTimeMillis()
+                val aiStartTime = messageTimingNow()
                 val responseStream =
                         serviceForFunction.sendMessage(
                                 context = this@EnhancedAIService.context,
@@ -1901,7 +1921,8 @@ class EnhancedAIService private constructor(private val context: Context) {
                 // 处理流
                 var chunkCount = 0
                 var totalChars = 0
-                var lastLogTime = System.currentTimeMillis()
+                var lastLogTime = messageTimingNow()
+                var isFirstChunk = true
                 val revisableStream = responseStream as? TextStreamEventCarrier
                 val revisionTracker = TextStreamRevisionTracker()
                 val revisionMutex = Mutex()
@@ -1935,6 +1956,15 @@ class EnhancedAIService private constructor(private val context: Context) {
 
                     try {
                         responseStream.collect { content ->
+                            if (isFirstChunk) {
+                                isFirstChunk = false
+                                logMessageTiming(
+                                    stage = "enhanced.processToolResults.firstResponseChunk",
+                                    startTimeMs = aiStartTime,
+                                    details = "toolNames=$displayToolNames, stream=$stream"
+                                )
+                            }
+
                             revisionMutex.withLock {
                                 revisionTracker.append(content)
                             }
@@ -1950,7 +1980,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                             totalChars += content.length
 
                             // 定期记录日志
-                            val currentTime = System.currentTimeMillis()
+                            val currentTime = messageTimingNow()
                             if (currentTime - lastLogTime > 5000) { // 每5秒记录一次
                                 lastLogTime = currentTime
                             }
@@ -1969,6 +1999,7 @@ class EnhancedAIService private constructor(private val context: Context) {
                 val outputTokens = serviceForFunction.outputTokenCount
                 accumulatedInputTokenCount += inputTokens
                 accumulatedOutputTokenCount += outputTokens
+                accumulatedCachedInputTokenCount += cachedInputTokens
                 apiPreferences.updateTokensForProviderModel(serviceForFunction.providerModel, inputTokens, outputTokens, cachedInputTokens)
                 
                 // Update request count
@@ -1976,11 +2007,14 @@ class EnhancedAIService private constructor(private val context: Context) {
 
                 AppLogger.d(
                         TAG,
-                        "Token count updated after tool result for $functionType. Input: $inputTokens, Output: $outputTokens."
+                        "Token count updated after tool result for $functionType. Input: $inputTokens, Output: $outputTokens, CachedInput: $cachedInputTokens. Turn Accumulated: $accumulatedInputTokenCount, $accumulatedOutputTokenCount, $accumulatedCachedInputTokenCount"
                 )
 
-                val processingTime = System.currentTimeMillis() - aiStartTime
-                AppLogger.d(TAG, "工具结果AI处理完成，收到 $totalChars 字符，耗时: ${processingTime}ms")
+                logMessageTiming(
+                    stage = "enhanced.processToolResults.aiResponseComplete",
+                    startTimeMs = aiStartTime,
+                    details = "toolNames=$displayToolNames, totalChars=$totalChars"
+                )
 
                 // 流处理完成，处理完成逻辑
                 processStreamCompletion(
@@ -2013,6 +2047,12 @@ class EnhancedAIService private constructor(private val context: Context) {
                     _inputProcessingState.value =
                             InputProcessingState.Error(this@EnhancedAIService.context.getString(R.string.enhanced_process_tool_result_failed, e.message ?: ""))
                 }
+            } finally {
+                logMessageTiming(
+                    stage = "enhanced.processToolResults.complete",
+                    startTimeMs = startTime,
+                    details = "toolNames=$displayToolNames, resultCount=${results.size}"
+                )
             }
         }
     }
@@ -2030,6 +2070,14 @@ class EnhancedAIService private constructor(private val context: Context) {
      */
     fun getCurrentOutputTokenCount(): Int {
         return accumulatedOutputTokenCount
+    }
+
+    /**
+     * Get the current cached input token count accumulated across the current turn
+     * @return The number of cached input tokens used in the current turn
+     */
+    fun getCurrentCachedInputTokenCount(): Int {
+        return accumulatedCachedInputTokenCount
     }
 
     /** Reset token counters to zero Use this when starting a new conversation */
@@ -2235,6 +2283,9 @@ class EnhancedAIService private constructor(private val context: Context) {
 
         // Reset per-request token counts
         _perRequestTokenCounts.value = null
+        accumulatedInputTokenCount = 0
+        accumulatedOutputTokenCount = 0
+        accumulatedCachedInputTokenCount = 0
 
         // Clear callback references
         currentResponseCallback = null

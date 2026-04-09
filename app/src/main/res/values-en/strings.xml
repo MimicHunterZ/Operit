@@ -4872,6 +4872,10 @@
     <string name="apply_changes">Apply Changes</string>
     <string name="apply_group">Apply Group</string>
     <string name="apply_character_card">Apply Card</string>
+    <string name="delete_selected_chats">Delete Selected Chats (%1$d)</string>
+    <string name="delete_selected_chats_confirmation">Are you sure you want to delete the selected %1$d chat record(s)?\n\nLocked chats will be skipped. This action cannot be undone.</string>
+    <string name="deleted_selected_chats_count">Deleted %1$d chat record(s)</string>
+    <string name="deleted_selected_chats_with_skipped_locked">Deleted %1$d chat record(s), skipped %2$d locked chat(s)</string>
     <string name="unbound_workspaces_title">Unbound Workspaces</string>
     <string name="unbound_workspaces_subtitle">Manage workspace folders not used by any chat</string>
     <string name="no_unbound_workspaces">No unbound workspace folders</string>

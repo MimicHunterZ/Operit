@@ -1163,6 +1163,8 @@ private fun ChatHistoryBatchSelectorCard(
     var targetGroupIsUnbind by remember { mutableStateOf(false) }
     var targetGroupName by remember { mutableStateOf("") }
     var submitting by remember { mutableStateOf(false) }
+    var deleteInProgress by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
     val normalizedQuery = searchQuery.trim()
     val characterGroupNameById = remember(characterGroups) {
@@ -1225,7 +1227,11 @@ private fun ChatHistoryBatchSelectorCard(
     val hasTargetSelection = targetIsUnbind || !selectedTargetName.isNullOrBlank()
     val hasTargetGroupSelection = targetGroupIsUnbind || !selectedTargetGroupId.isNullOrBlank()
     val hasTargetGroup = targetGroupName.isNotBlank()
-    val canSubmit = hasSelection && (hasTargetSelection || hasTargetGroupSelection || hasTargetGroup) && !submitting
+    val canSubmit =
+        hasSelection &&
+            (hasTargetSelection || hasTargetGroupSelection || hasTargetGroup) &&
+            !submitting &&
+            !deleteInProgress
 
     ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -1287,13 +1293,13 @@ private fun ChatHistoryBatchSelectorCard(
                                 val ids = filteredHistories.map { it.id }
                                 selectedChatIds = selectedChatIds.toMutableSet().apply { addAll(ids) }
                             },
-                            enabled = filteredHistories.isNotEmpty()
+                            enabled = filteredHistories.isNotEmpty() && !submitting && !deleteInProgress
                         ) {
                             Text(context.getString(R.string.select_all_current_list))
                         }
                         TextButton(
                             onClick = { selectedChatIds = emptySet() },
-                            enabled = selectedChatIds.isNotEmpty()
+                            enabled = selectedChatIds.isNotEmpty() && !submitting && !deleteInProgress
                         ) {
                             Text(context.getString(R.string.clear_selection))
                         }
@@ -1314,6 +1320,9 @@ private fun ChatHistoryBatchSelectorCard(
                             characterGroupName = groupName,
                             selected = selectedChatIds.contains(history.id),
                             onSelectionChange = { selected ->
+                                if (submitting || deleteInProgress) {
+                                    return@ChatHistorySelectableRow
+                                }
                                 selectedChatIds = if (selected) {
                                     selectedChatIds + history.id
                                 } else {
@@ -1326,6 +1335,28 @@ private fun ChatHistoryBatchSelectorCard(
                         }
                     }
                 }
+            }
+
+            Button(
+                onClick = { showDeleteConfirmDialog = true },
+                enabled = hasSelection && !submitting && !deleteInProgress,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
+            ) {
+                if (deleteInProgress) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(18.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onError
+                    )
+                } else {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(context.getString(R.string.delete_selected_chats, selectedChatIds.size))
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -1514,7 +1545,7 @@ private fun ChatHistoryBatchSelectorCard(
                         onClick = {
                             selectedChatIds = emptySet()
                         },
-                        enabled = selectedChatIds.isNotEmpty(),
+                        enabled = selectedChatIds.isNotEmpty() && !deleteInProgress,
                         modifier = Modifier.align(Alignment.CenterVertically)
                     ) {
                         Text(context.getString(R.string.cancel_selection))
@@ -1522,6 +1553,87 @@ private fun ChatHistoryBatchSelectorCard(
                 }
             }
         }
+    }
+
+    if (showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!deleteInProgress) {
+                    showDeleteConfirmDialog = false
+                }
+            },
+            title = { Text(context.getString(R.string.confirm_delete)) },
+            text = {
+                Text(
+                    context.getString(
+                        R.string.delete_selected_chats_confirmation,
+                        selectedChatIds.size
+                    )
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val targets = selectedChatIds.toList()
+                        scope.launch {
+                            deleteInProgress = true
+                            try {
+                                val result = deleteSelectedChatHistories(context, targets)
+                                val message =
+                                    if (result.skippedLockedCount > 0) {
+                                        context.getString(
+                                            R.string.deleted_selected_chats_with_skipped_locked,
+                                            result.deletedCount,
+                                            result.skippedLockedCount
+                                        )
+                                    } else {
+                                        context.getString(
+                                            R.string.deleted_selected_chats_count,
+                                            result.deletedCount
+                                        )
+                                    }
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                                selectedChatIds = emptySet()
+                                showDeleteConfirmDialog = false
+                            } catch (e: Exception) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(
+                                        R.string.delete_failed,
+                                        e.localizedMessage ?: e.toString()
+                                    ),
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            } finally {
+                                deleteInProgress = false
+                            }
+                        }
+                    },
+                    enabled = !deleteInProgress,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    if (deleteInProgress) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else {
+                        Text(context.getString(R.string.delete))
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showDeleteConfirmDialog = false },
+                    enabled = !deleteInProgress
+                ) {
+                    Text(context.getString(R.string.cancel))
+                }
+            }
+        )
     }
 }
 
@@ -1848,4 +1960,33 @@ private fun UnboundWorkspaceRow(
         )
     }
 }
+
+private data class DeleteSelectedChatsResult(
+    val deletedCount: Int,
+    val skippedLockedCount: Int
+)
+
+private suspend fun deleteSelectedChatHistories(
+    context: Context,
+    selectedChatIds: List<String>
+): DeleteSelectedChatsResult =
+    withContext(Dispatchers.IO) {
+        val chatHistoryManager = ChatHistoryManager.getInstance(context)
+        var deletedCount = 0
+        var skippedLockedCount = 0
+
+        selectedChatIds.forEach { chatId ->
+            val deleted = chatHistoryManager.deleteChatHistory(chatId)
+            if (deleted) {
+                deletedCount++
+            } else {
+                skippedLockedCount++
+            }
+        }
+
+        DeleteSelectedChatsResult(
+            deletedCount = deletedCount,
+            skippedLockedCount = skippedLockedCount
+        )
+    }
 
