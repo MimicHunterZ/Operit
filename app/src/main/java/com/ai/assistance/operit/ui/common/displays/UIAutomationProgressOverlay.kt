@@ -8,12 +8,20 @@ import android.os.Looper
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -38,7 +46,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathOperation
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ComposeView
@@ -77,8 +92,10 @@ class UIAutomationProgressOverlay private constructor(private val context: Conte
 
     private var windowManager: WindowManager? = null
     private var overlayView: ComposeView? = null
+    private var borderView: ComposeView? = null
     private var lifecycleOwner: ServiceLifecycleOwner? = null
     private var layoutParams: WindowManager.LayoutParams? = null
+    private var borderLayoutParams: WindowManager.LayoutParams? = null
     private val handler = Handler(Looper.getMainLooper())
 
     data class ProgressInfo(
@@ -91,6 +108,7 @@ class UIAutomationProgressOverlay private constructor(private val context: Conte
     private var isPaused by mutableStateOf(false)
     private var cancelCallback: (() -> Unit)? = null
     private var takeOverToggleCallback: ((Boolean) -> Unit)? = null
+    private var borderEnabled = false
 
     private fun runOnMainThread(action: () -> Unit) {
         if (Looper.myLooper() == Looper.getMainLooper()) {
@@ -107,69 +125,152 @@ class UIAutomationProgressOverlay private constructor(private val context: Conte
     }
 
     private fun ensureOverlay() {
-        if (overlayView != null) return
-
         try {
-            windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+            ensureOverlayInfrastructure()
 
-            val params = WindowManager.LayoutParams().apply {
-                width = WindowManager.LayoutParams.MATCH_PARENT
-                height = WindowManager.LayoutParams.WRAP_CONTENT
-                type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                } else {
-                    @Suppress("DEPRECATION")
-                    WindowManager.LayoutParams.TYPE_PHONE
+            if (overlayView == null) {
+                val params = WindowManager.LayoutParams().apply {
+                    width = WindowManager.LayoutParams.MATCH_PARENT
+                    height = WindowManager.LayoutParams.WRAP_CONTENT
+                    type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                    } else {
+                        @Suppress("DEPRECATION")
+                        WindowManager.LayoutParams.TYPE_PHONE
+                    }
+                    // 不获取输入焦点，但允许点击卡片区域
+                    flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                    format = PixelFormat.TRANSLUCENT
+                    gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                    y = (16 * context.resources.displayMetrics.density).toInt()
                 }
-                // 不获取输入焦点，但允许点击卡片区域
-                flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-                format = PixelFormat.TRANSLUCENT
-                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                y = (16 * context.resources.displayMetrics.density).toInt()
+
+                layoutParams = params
+
+                overlayView = ComposeView(context).apply {
+                    setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+                    setViewTreeLifecycleOwner(lifecycleOwner)
+                    setViewTreeViewModelStoreOwner(lifecycleOwner)
+                    setViewTreeSavedStateRegistryOwner(lifecycleOwner)
+
+                    setContent {
+                        val info = progressInfo
+                        val paused = isPaused
+                        Box(modifier = Modifier.fillMaxWidth()) {
+                            if (info != null) {
+                                ProgressCard(
+                                    info = info,
+                                    isPaused = paused,
+                                    onCancel = { cancelCallback?.invoke() },
+                                    onToggleTakeOver = { newPaused ->
+                                        isPaused = newPaused
+                                        takeOverToggleCallback?.invoke(newPaused)
+                                    },
+                                    onDragBy = { dy -> moveOverlayBy(dy) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                windowManager?.addView(overlayView, params)
             }
 
-            layoutParams = params
+            if (borderEnabled) {
+                ensureBorderOverlay()
+            }
+        } catch (e: Exception) {
+            AppLogger.e(TAG, "Error creating UIAutomationProgressOverlay", e)
+            overlayView = null
+            borderView = null
+            lifecycleOwner = null
+            windowManager = null
+        }
+    }
 
+    private fun ensureOverlayInfrastructure() {
+        if (windowManager == null) {
+            windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        }
+        if (lifecycleOwner == null) {
             lifecycleOwner = ServiceLifecycleOwner().apply {
                 handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
                 handleLifecycleEvent(Lifecycle.Event.ON_START)
                 handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
             }
+        }
+    }
 
-            overlayView = ComposeView(context).apply {
-                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
-                setViewTreeLifecycleOwner(lifecycleOwner)
-                setViewTreeViewModelStoreOwner(lifecycleOwner)
-                setViewTreeSavedStateRegistryOwner(lifecycleOwner)
+    private fun ensureBorderOverlay() {
+        if (borderView != null) return
 
-                setContent {
-                    val info = progressInfo
-                    val paused = isPaused
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        if (info != null) {
-                            ProgressCard(
-                                info = info,
-                                isPaused = paused,
-                                onCancel = { cancelCallback?.invoke() },
-                                onToggleTakeOver = { newPaused ->
-                                    isPaused = newPaused
-                                    takeOverToggleCallback?.invoke(newPaused)
-                                },
-                                onDragBy = { dy -> moveOverlayBy(dy) }
-                            )
-                        }
+        val wm = windowManager ?: return
+        ensureOverlayInfrastructure()
+
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.MATCH_PARENT,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_PHONE
+            },
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS or
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.FLAG_FULLSCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+
+        borderLayoutParams = params
+        borderView = ComposeView(context).apply {
+            setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+            setViewTreeLifecycleOwner(lifecycleOwner)
+            setViewTreeViewModelStoreOwner(lifecycleOwner)
+            setViewTreeSavedStateRegistryOwner(lifecycleOwner)
+            setContent {
+                FullscreenRainbowBorder()
+            }
+            visibility = if (progressInfo != null) View.VISIBLE else View.GONE
+            alpha = if (progressInfo != null) 1f else 0f
+        }
+
+        wm.addView(borderView, params)
+    }
+
+    fun setBorderEnabled(enabled: Boolean) {
+        runOnMainThread {
+            borderEnabled = enabled
+            if (enabled) {
+                try {
+                    ensureOverlay()
+                    borderView?.visibility = if (progressInfo != null) View.VISIBLE else View.GONE
+                    borderView?.alpha = if (progressInfo != null) 1f else 0f
+                } catch (e: Exception) {
+                    AppLogger.e(TAG, "Error enabling rainbow border overlay", e)
+                }
+            } else {
+                borderView?.let { view ->
+                    try {
+                        windowManager?.removeView(view)
+                    } catch (e: Exception) {
+                        AppLogger.e(TAG, "Error removing rainbow border overlay", e)
                     }
                 }
+                borderView = null
+                borderLayoutParams = null
             }
-
-            windowManager?.addView(overlayView, params)
-        } catch (e: Exception) {
-            AppLogger.e(TAG, "Error creating UIAutomationProgressOverlay", e)
-            overlayView = null
-            lifecycleOwner = null
-            windowManager = null
         }
     }
 
@@ -185,6 +286,11 @@ class UIAutomationProgressOverlay private constructor(private val context: Conte
             takeOverToggleCallback = onToggleTakeOver
             isPaused = false
             progressInfo = ProgressInfo(currentStep = 1, totalSteps = totalSteps, statusText = initialStatus)
+            if (borderEnabled) {
+                ensureBorderOverlay()
+                borderView?.visibility = View.VISIBLE
+                borderView?.alpha = 1f
+            }
             overlayView?.visibility = View.VISIBLE
             overlayView?.alpha = 1f
         }
@@ -218,10 +324,20 @@ class UIAutomationProgressOverlay private constructor(private val context: Conte
                     }
                 }
 
+                borderView?.let { view ->
+                    try {
+                        windowManager?.removeView(view)
+                    } catch (e: Exception) {
+                        AppLogger.e(TAG, "Error removing progress border overlay view", e)
+                    }
+                }
+
                 overlayView = null
+                borderView = null
                 lifecycleOwner = null
                 windowManager = null
                 layoutParams = null
+                borderLayoutParams = null
             } catch (e: Exception) {
                 AppLogger.e(TAG, "Error hiding UIAutomationProgressOverlay", e)
             }
@@ -256,6 +372,10 @@ class UIAutomationProgressOverlay private constructor(private val context: Conte
                 }
 
                 layoutParams = params
+                borderView?.let { border ->
+                    border.alpha = if (shouldHide) 0f else 1f
+                    border.visibility = if (shouldHide) View.GONE else View.VISIBLE
+                }
             }
         } catch (e: Exception) {
             AppLogger.e(TAG, "Error setting overlay visibility", e)
@@ -298,6 +418,11 @@ class UIAutomationProgressOverlay private constructor(private val context: Conte
         val resourceId = context.resources.getIdentifier("status_bar_height", "dimen", "android")
         return if (resourceId > 0) context.resources.getDimensionPixelSize(resourceId) else 0
     }
+}
+
+@Composable
+private fun FullscreenRainbowBorder() {
+    RainbowBorderOverlay()
 }
 
 @Composable

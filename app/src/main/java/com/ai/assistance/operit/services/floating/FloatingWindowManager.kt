@@ -69,6 +69,7 @@ import com.ai.assistance.operit.data.model.ChatMessage
 import com.ai.assistance.operit.data.model.InputProcessingState
 import com.ai.assistance.operit.data.model.PromptFunctionType
 import com.ai.assistance.operit.services.FloatingChatService
+import com.ai.assistance.operit.ui.common.displays.RainbowBorderOverlay
 import com.ai.assistance.operit.ui.floating.FloatingChatWindow
 import com.ai.assistance.operit.ui.floating.FloatingMode
 import com.ai.assistance.operit.ui.floating.FloatingWindowTheme
@@ -483,107 +484,7 @@ class FloatingWindowManager(
 
     @Composable
     private fun FullscreenRainbowStatusIndicator() {
-        val infiniteTransition = rememberInfiniteTransition(label = "status_indicator_rainbow")
-        val animatedProgress by infiniteTransition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 4000, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse
-            ),
-            label = "status_indicator_progress"
-        )
-
-        val rainbowColors = listOf(
-            Color(0xFFFF5F6D),
-            Color(0xFFFFC371),
-            Color(0xFF47CF73),
-            Color(0xFF00C6FF),
-            Color(0xFF845EF7),
-            Color(0xFFFF5F6D)
-        )
-
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                val strokeWidth = size.minDimension * 0.025f
-                val innerCornerRadius = CornerRadius(strokeWidth * 1.5f, strokeWidth * 1.5f)
-
-                // Animated colorful border brush (moves back and forth smoothly)
-                val phase = animatedProgress * size.maxDimension
-                val borderBrush = Brush.linearGradient(
-                    colors = rainbowColors,
-                    start = Offset(-phase, 0f),
-                    end = Offset(size.width - phase, size.height)
-                )
-
-                // Inner rounded rectangle used for the inner edge of the ring
-                val innerRoundRect = RoundRect(
-                    left = strokeWidth,
-                    top = strokeWidth,
-                    right = size.width - strokeWidth,
-                    bottom = size.height - strokeWidth,
-                    cornerRadius = innerCornerRadius
-                )
-                val innerPath = Path().apply {
-                    addRoundRect(innerRoundRect)
-                }
-
-                // Create a path for the ring shape (outer square, inner round)
-                val outerPath = Path().apply {
-                    addRect(Rect(Offset.Zero, size))
-                }
-                val ringPath = Path().apply {
-                    op(outerPath, innerPath, PathOperation.Difference)
-                }
-
-                // Fill inside the inner edge with bands that shrink toward the center and fade to transparent,
-                // keeping each band's edge as a rounded rectangle.
-                clipPath(innerPath) {
-                    val bandSteps = 5
-                    val innerBandWidth = strokeWidth * 3f
-                    val singleBandWidth = innerBandWidth / bandSteps
-                    val maxAlpha = 0.32f
-
-                    for (i in 0 until bandSteps) {
-                        val t = i / (bandSteps - 1).coerceAtLeast(1).toFloat()
-                        val alpha = (1f - t) * maxAlpha
-
-                        // Each band is an inset rounded rectangle, shrinking toward the center
-                        val inset = i * singleBandWidth + singleBandWidth / 2f
-
-                        val bandLeft = innerRoundRect.left + inset
-                        val bandTop = innerRoundRect.top + inset
-                        val bandRight = innerRoundRect.right - inset
-                        val bandBottom = innerRoundRect.bottom - inset
-                        if (bandRight <= bandLeft || bandBottom <= bandTop) break
-
-                        val bandCornerRadius = CornerRadius(
-                            (innerCornerRadius.x - inset).coerceAtLeast(0f),
-                            (innerCornerRadius.y - inset).coerceAtLeast(0f)
-                        )
-
-                        drawRoundRect(
-                            brush = borderBrush,
-                            topLeft = Offset(bandLeft, bandTop),
-                            size = Size(bandRight - bandLeft, bandBottom - bandTop),
-                            cornerRadius = bandCornerRadius,
-                            style = Stroke(width = singleBandWidth),
-                            alpha = alpha
-                        )
-                    }
-                }
-
-                // Draw the outer ring on top to keep the edge crisp
-                drawPath(
-                    path = ringPath,
-                    brush = borderBrush,
-                    alpha = 0.7f
-                )
-            }
-        }
+        RainbowBorderOverlay()
     }
 
     private fun createLayoutParams(): WindowManager.LayoutParams {

@@ -165,6 +165,12 @@ class PhoneAgent(
         }
     }
 
+    private fun shouldUseShowerUi(hasShowerDisplay: Boolean): Boolean {
+        // Main-screen Shower only borrows Shower for capture/input; the visible agent UI
+        // should stay aligned with the regular main-screen automation experience.
+        return !isMainScreenAgent && hasShowerDisplay
+    }
+
     private suspend fun ensureRequiredVirtualScreenOrError(): String? {
         if (!requiresVirtualScreen) return null
 
@@ -382,7 +388,7 @@ class PhoneAgent(
         }
         hasShowerDisplayAtStart = prewarmedShowerDisplay
 
-        var useShowerUi = hasShowerDisplayAtStart
+        var useShowerUi = shouldUseShowerUi(hasShowerDisplayAtStart)
         val progressOverlay = UIAutomationProgressOverlay.getInstance(context)
         var showerOverlay: VirtualDisplayOverlay? = if (useShowerUi) try {
             VirtualDisplayOverlay.getInstance(context, agentId)
@@ -399,7 +405,7 @@ class PhoneAgent(
             if (useShowerUi) {
                 useShowerIndicatorForAgent(context, agentId)
             } else {
-                useFullscreenStatusIndicatorForAgent()
+                useFullscreenStatusIndicatorForAgent(context, agentId)
             }
             if (useShowerUi) {
                 showerOverlay?.showAutomationControls(
@@ -444,7 +450,7 @@ class PhoneAgent(
             if (!useShowerUi) {
                 val hasShowerNow = hasShowerDisplay("Error re-checking Shower virtual display state after first step")
 
-                if (hasShowerNow) {
+                if (shouldUseShowerUi(hasShowerNow)) {
                     useShowerUi = true
                     try {
                         progressOverlay.hide()
@@ -513,7 +519,7 @@ class PhoneAgent(
                 if (!useShowerUi) {
                     val hasShowerNow = hasShowerDisplay("Error re-checking Shower state in loop")
 
-                    if (hasShowerNow) {
+                    if (shouldUseShowerUi(hasShowerNow)) {
                         useShowerUi = true
                         progressOverlay.hide()
                         showerOverlay = VirtualDisplayOverlay.getInstance(context, agentId)
@@ -718,12 +724,18 @@ class PhoneAgent(
     }
 }
 
-private suspend fun useFullscreenStatusIndicatorForAgent() {
+private suspend fun useFullscreenStatusIndicatorForAgent(context: Context, agentId: String) {
     val floatingService = FloatingChatService.getInstance()
-    floatingService?.setStatusIndicatorVisible(true)
+    if (floatingService != null) {
+        floatingService.setStatusIndicatorVisible(true)
+    } else {
+        AppLogger.d("PhoneAgent", "[$agentId] No FloatingChatService instance, using standalone rainbow border overlay")
+        UIAutomationProgressOverlay.getInstance(context).setBorderEnabled(true)
+    }
 }
 
 private suspend fun useShowerIndicatorForAgent(context: Context, agentId: String) {
+    UIAutomationProgressOverlay.getInstance(context).setBorderEnabled(false)
     try {
         val overlay = VirtualDisplayOverlay.getInstance(context, agentId)
         overlay.setShowerBorderVisible(true)
@@ -735,6 +747,7 @@ private suspend fun useShowerIndicatorForAgent(context: Context, agentId: String
 }
 
 private suspend fun clearAgentIndicators(context: Context, agentId: String) {
+    UIAutomationProgressOverlay.getInstance(context).setBorderEnabled(false)
     try {
         val overlay = VirtualDisplayOverlay.getInstance(context, agentId)
         overlay.setShowerBorderVisible(false)

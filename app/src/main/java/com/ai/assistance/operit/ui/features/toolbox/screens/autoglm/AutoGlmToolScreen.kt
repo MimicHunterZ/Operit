@@ -46,60 +46,64 @@ private fun AutoGlmToolContent(
     val logScrollState = rememberScrollState()
 
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
+        modifier = Modifier.fillMaxSize()
     ) {
-        OutlinedTextField(
-            value = task,
-            onValueChange = onTaskChange,
-            label = { Text("Enter Task") },
-            modifier = Modifier.fillMaxWidth(),
-            maxLines = 5
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+        Column(
+            modifier = Modifier.padding(16.dp)
         ) {
-            Text(stringResource(R.string.autoglm_virtual_screen))
-            Switch(
-                checked = useVirtualScreen,
-                onCheckedChange = { onUseVirtualScreenChange(it) },
-                enabled = !uiState.isLoading
+            OutlinedTextField(
+                value = task,
+                onValueChange = onTaskChange,
+                label = { Text("Enter Task") },
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 5
             )
-        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-        Button(
-            onClick = {
-                if (uiState.isLoading) {
-                    onCancel()
-                } else {
-                    onExecute(task)
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (uiState.isLoading) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             )
-        ) {
-            Text(if (uiState.isLoading) "Cancel" else "Execute")
+            {
+                Text(stringResource(R.string.autoglm_virtual_screen))
+                Switch(
+                    checked = useVirtualScreen,
+                    onCheckedChange = { onUseVirtualScreenChange(it) },
+                    enabled = !uiState.isLoading
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = {
+                    if (uiState.isLoading) {
+                        onCancel()
+                    } else {
+                        onExecute(task)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (uiState.isLoading) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                )
+            ) {
+                Text(if (uiState.isLoading) "Cancel" else "Execute")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text("Execution Log", style = MaterialTheme.typography.titleMedium)
+
+            Spacer(modifier = Modifier.height(8.dp))
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text("Execution Log", style = MaterialTheme.typography.titleMedium)
-
-        Spacer(modifier = Modifier.height(8.dp))
 
         Box(
             modifier = Modifier
-                .fillMaxSize()
+                .fillMaxWidth()
+                .weight(1f)
                 .background(MaterialTheme.colorScheme.surfaceVariant)
                 .padding(8.dp)
         ) {
