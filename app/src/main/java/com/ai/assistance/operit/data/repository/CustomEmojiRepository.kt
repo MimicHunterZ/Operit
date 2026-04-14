@@ -2,6 +2,7 @@ package com.ai.assistance.operit.data.repository
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import com.ai.assistance.operit.R
 import com.ai.assistance.operit.data.model.ActivePrompt
@@ -374,16 +375,49 @@ class CustomEmojiRepository private constructor(private val context: Context) {
 
     private fun getFileExtension(uri: Uri): String? {
         return try {
-            if ("content" == uri.scheme) {
-                val mimeType = context.contentResolver.getType(uri)
-                MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
-            } else {
-                val path = uri.path
-                path?.substringAfterLast('.', "")?.takeIf { it.isNotEmpty() }
-            }
+            val extensionFromMimeType =
+                if ("content" == uri.scheme) {
+                    val mimeType = context.contentResolver.getType(uri)
+                    MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)
+                } else {
+                    null
+                }
+
+            extensionFromMimeType
+                ?.takeIf { it.isNotBlank() }
+                ?.lowercase()
+                ?: getFileNameFromUri(uri)
+                    ?.substringAfterLast('.', "")
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.lowercase()
+                ?: uri.path
+                    ?.substringAfterLast('.', "")
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.lowercase()
         } catch (e: Exception) {
             AppLogger.e(TAG, "Error getting file extension", e)
             null
+        }
+    }
+
+    private fun getFileNameFromUri(uri: Uri): String? {
+        if ("content" != uri.scheme) {
+            return uri.lastPathSegment
+        }
+
+        return context.contentResolver.query(
+            uri,
+            arrayOf(OpenableColumns.DISPLAY_NAME),
+            null,
+            null,
+            null
+        )?.use { cursor ->
+            val columnIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (columnIndex >= 0 && cursor.moveToFirst()) {
+                cursor.getString(columnIndex)
+            } else {
+                null
+            }
         }
     }
 }

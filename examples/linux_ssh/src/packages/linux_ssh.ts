@@ -627,6 +627,21 @@ const linuxSshTools = (function () {
         return `${base} ${shellQuote(remoteCommand)}`;
     }
 
+    function ensureTrailingNewline(value) {
+        const text = asText(value);
+        if (!text) {
+            return "\n";
+        }
+        return text.endsWith("\n") ? text : `${text}\n`;
+    }
+
+    function buildLocalPipeCommand(stdinText, downstreamCommand, appendTrailingNewline) {
+        const normalizedInput = appendTrailingNewline
+            ? ensureTrailingNewline(stdinText)
+            : asText(stdinText);
+        return `printf '%s' ${shellQuote(normalizedInput)} | ${downstreamCommand}`;
+    }
+
     async function runRemoteCommandHidden(config, remoteCommand, timeoutMs, scope) {
         const effectiveScope = firstNonBlank(scope, "remote");
         const runner = async function execute(command, commandTimeoutMs) {
@@ -634,6 +649,18 @@ const linuxSshTools = (function () {
         };
         await ensureLocalSshDependencies(config, runner);
         const command = buildSshCommand(config, remoteCommand, false);
+        const result = await runner(command, timeoutMs || config.timeoutMs);
+        return result;
+    }
+
+    async function runRemoteCommandWithLocalStdinHidden(config, stdinText, remoteCommand, timeoutMs, scope, appendTrailingNewline) {
+        const effectiveScope = firstNonBlank(scope, "remote");
+        const runner = async function execute(command, commandTimeoutMs) {
+            return await runLocalHiddenCommand(command, commandTimeoutMs, effectiveScope);
+        };
+        await ensureLocalSshDependencies(config, runner);
+        const sshCommand = buildSshCommand(config, remoteCommand, false);
+        const command = buildLocalPipeCommand(stdinText, sshCommand, appendTrailingNewline === true);
         const result = await runner(command, timeoutMs || config.timeoutMs);
         return result;
     }
@@ -724,6 +751,14 @@ const linuxSshTools = (function () {
         return `${prefix}sh -c ${shellQuote(script)} sh${argv ? ` ${argv}` : ""}`;
     }
 
+    function buildRemoteUserShellCommand() {
+        const script = [
+            'user_shell="${SHELL:-/bin/sh}"',
+            'exec "$user_shell" -s --'
+        ].join("\n");
+        return buildRemoteShellCommand(script, [], false);
+    }
+
     function buildRemotePathResolveLines(rawVarName, resolvedVarName, options) {
         const opts = options || {};
         const fallbackToHome = !!opts.fallbackToHome;
@@ -768,7 +803,12 @@ const linuxSshTools = (function () {
             "exit 7"
         ].join("\n");
 
-        const result = await runRemoteCommandHidden(config, installScript, 240_000, "tmux");
+        const result = await runRemoteCommandHidden(
+            config,
+            buildRemoteShellCommand(installScript, [], false),
+            240_000,
+            "tmux"
+        );
         const success = result.exitCode === 0 && result.output.includes("__TMUX_READY__");
         return await persistResultOutputIfTooLong({
             success,
@@ -861,11 +901,18 @@ const linuxSshTools = (function () {
             "raw_path=\"$1\"",
             ...buildRemotePathResolveLines("raw_path", "resolved_path", { fallbackToHome: false }),
             "mkdir -p \"$(dirname -- \"$resolved_path\")\"",
-            `printf '%s' \"$2\" ${redirectOperator} \"$resolved_path\"`
+            `cat ${redirectOperator} \"$resolved_path\"`
         ].join("\n");
 
-        const command = buildRemoteShellCommand(script, [path, content], useSudo);
-        const result = await runRemoteCommandHidden(config, command, config.timeoutMs, "fs");
+        const command = buildRemoteShellCommand(script, [path], useSudo);
+        const result = await runRemoteCommandWithLocalStdinHidden(
+            config,
+            content,
+            command,
+            config.timeoutMs,
+            "fs",
+            false
+        );
         if (result.exitCode !== 0 || result.timedOut) {
             throw new Error(`Failed to write remote file: ${result.output}`);
         }
@@ -895,7 +942,12 @@ const linuxSshTools = (function () {
                 "printf '__OPERIT_CONNECT_END__\\n'"
             ].join("\n");
 
-            const result = await runRemoteCommandHidden(config, command, timeoutMs, "remote");
+            const result = await runRemoteCommandHidden(
+                config,
+                buildRemoteShellCommand(command, [], false),
+                timeoutMs,
+                "remote"
+            );
             const success = result.exitCode === 0 && !result.timedOut;
             const block = extractBlock(result.output, "__OPERIT_CONNECT_BEGIN__", "__OPERIT_CONNECT_END__");
 
@@ -919,7 +971,14 @@ const linuxSshTools = (function () {
 
             const config = await resolveStoredSshConfig(params);
             const timeoutMs = params?.timeout_ms ?? config.timeoutMs;
-            const result = await runRemoteCommandHidden(config, command, timeoutMs, "remote");
+            const result = await runRemoteCommandWithLocalStdinHidden(
+                config,
+                command,
+                buildRemoteUserShellCommand(),
+                timeoutMs,
+                "remote",
+                true
+            );
             const success = result.exitCode === 0 && !result.timedOut;
 
             return await persistToolResult("linux_ssh_exec_output", {
@@ -995,24 +1054,40 @@ const linuxSshTools = (function () {
             const script = [
                 "target_window=\"$1\"",
                 "raw_workdir=\"$2\"",
-                "run_command=\"$3\"",
+                "user_shell=\"${SHELL:-/bin/sh}\"",
+                "payload_file=$(mktemp)",
+                "launcher_file=$(mktemp)",
+                "cleanup_now() {",
+                "  rm -f -- \"$payload_file\" \"$launcher_file\"",
+                "}",
+                "trap cleanup_now EXIT INT TERM HUP",
+                "cat > \"$payload_file\"",
                 ...buildRemotePathResolveLines("raw_workdir", "resolved_workdir", { fallbackToHome: false }),
-                "run_line=\"$run_command\"",
+                "escaped_user_shell=$(printf '%s' \"$user_shell\" | sed \"s/'/'\\\"'\\\"'/g\")",
+                "escaped_payload_file=$(printf '%s' \"$payload_file\" | sed \"s/'/'\\\"'\\\"'/g\")",
+                "escaped_launcher_file=$(printf '%s' \"$launcher_file\" | sed \"s/'/'\\\"'\\\"'/g\")",
+                "launcher_cleanup_line=\"  rm -f -- '$escaped_payload_file' '$escaped_launcher_file'\"",
                 "if [ -n \"$raw_workdir\" ]; then",
                 "  escaped_workdir=$(printf '%s' \"$resolved_workdir\" | sed \"s/'/'\\\"'\\\"'/g\")",
-                "  run_line=\"cd -- '$escaped_workdir' && $run_command\"",
+                "  printf '%s\\n' '#!/bin/sh' 'cleanup() {' \"$launcher_cleanup_line\" '}' 'trap cleanup EXIT' \"cd -- '$escaped_workdir' || exit 1\" \"'$escaped_user_shell' '$escaped_payload_file'\" > \"$launcher_file\"",
                 "fi",
-                "tmux send-keys -t \"$target_window\" \"$run_line\" C-m",
+                "if [ -z \"$raw_workdir\" ]; then",
+                "  printf '%s\\n' '#!/bin/sh' 'cleanup() {' \"$launcher_cleanup_line\" '}' 'trap cleanup EXIT' \"'$escaped_user_shell' '$escaped_payload_file'\" > \"$launcher_file\"",
+                "fi",
+                "tmux send-keys -t \"$target_window\" \"sh '$escaped_launcher_file'\" C-m",
+                "trap - EXIT INT TERM HUP",
                 "printf '__OPERIT_TMUX_RUN_OK__\\n'",
                 `echo "session=${tmuxSessionName}"`,
                 `echo "window=${windowName}"`
             ].join("\n");
 
-            const result = await runRemoteCommandHidden(
+            const result = await runRemoteCommandWithLocalStdinHidden(
                 config,
-                buildRemoteShellCommand(script, [targetWindow, workdir, command], false),
+                command,
+                buildRemoteShellCommand(script, [targetWindow, workdir], false),
                 config.timeoutMs,
-                "tmux"
+                "tmux",
+                true
             );
             const success = result.exitCode === 0 && !result.timedOut && result.output.includes("__OPERIT_TMUX_RUN_OK__");
 
@@ -1059,7 +1134,12 @@ const linuxSshTools = (function () {
                 "printf '\\n__OPERIT_TMUX_CAPTURE_END__\\n'"
             ].join("\n");
 
-            const result = await runRemoteCommandHidden(config, script, config.timeoutMs, "tmux");
+            const result = await runRemoteCommandHidden(
+                config,
+                buildRemoteShellCommand(script, [], false),
+                config.timeoutMs,
+                "tmux"
+            );
             const success = result.exitCode === 0 && !result.timedOut;
             const content = extractBlock(result.output, "__OPERIT_TMUX_CAPTURE_BEGIN__", "__OPERIT_TMUX_CAPTURE_END__");
 
@@ -1103,7 +1183,12 @@ const linuxSshTools = (function () {
                 "printf '__OPERIT_TMUX_WINDOWS_END__\\n'"
             ].join("; ");
 
-            const result = await runRemoteCommandHidden(config, script, config.timeoutMs, "tmux");
+            const result = await runRemoteCommandHidden(
+                config,
+                buildRemoteShellCommand(script, [], false),
+                config.timeoutMs,
+                "tmux"
+            );
             const notFound = hasExactMarkerLine(result.output, "__OPERIT_TMUX_NOT_FOUND__");
             const success = result.exitCode === 0 && !result.timedOut && !notFound;
             const block = extractBlock(result.output, "__OPERIT_TMUX_WINDOWS_BEGIN__", "__OPERIT_TMUX_WINDOWS_END__");
@@ -1201,7 +1286,12 @@ const linuxSshTools = (function () {
             }
             scriptLines.push("printf '__OPERIT_TMUX_INPUT_OK__\\n'");
 
-            const result = await runRemoteCommandHidden(config, scriptLines.join("\n"), config.timeoutMs, "tmux");
+            const result = await runRemoteCommandHidden(
+                config,
+                buildRemoteShellCommand(scriptLines.join("\n"), [], false),
+                config.timeoutMs,
+                "tmux"
+            );
             const success = result.exitCode === 0 && !result.timedOut && result.output.includes("__OPERIT_TMUX_INPUT_OK__");
 
             return await persistToolResult("linux_ssh_tmux_input_output", {
@@ -1253,7 +1343,12 @@ const linuxSshTools = (function () {
                 "printf '__OPERIT_TMUX_CLOSE_OK__\\n'"
             ].join("\n");
 
-            const result = await runRemoteCommandHidden(config, script, config.timeoutMs, "tmux");
+            const result = await runRemoteCommandHidden(
+                config,
+                buildRemoteShellCommand(script, [], false),
+                config.timeoutMs,
+                "tmux"
+            );
             const sessionExists = !hasExactMarkerLine(result.output, "__OPERIT_TMUX_NOT_FOUND__");
             const windowExists = !hasExactMarkerLine(result.output, "__OPERIT_TMUX_WINDOW_NOT_FOUND__");
             const success = result.exitCode === 0 && !result.timedOut && sessionExists && windowExists && result.output.includes("__OPERIT_TMUX_CLOSE_OK__");

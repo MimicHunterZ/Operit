@@ -56,7 +56,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 41
-        versionName = "1.10.0+12"
+        versionName = "1.10.0+13"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -268,6 +268,7 @@ dependencies {
     // 图片加载库
     implementation(libs.coil)
     implementation(libs.coil.compose)
+    implementation(libs.coil.gif)
     
     // LaTeX rendering libraries
     implementation(libs.jlatexmath)

@@ -134,7 +134,7 @@ internal fun ChatScrollNavigator(
         enter = fadeIn(animationSpec = tween(180)) + slideInHorizontally(initialOffsetX = { it / 2 }),
         exit = fadeOut(animationSpec = tween(120)) + slideOutHorizontally(targetOffsetX = { it / 2 }),
     ) {
-        val bubbleColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f)
+        val bubbleColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.56f)
         val anchorLineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
         val anchorDotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
         val progress =
@@ -295,7 +295,7 @@ internal fun ChatScrollNavigator(
         enter = fadeIn(animationSpec = tween(180)) + slideInHorizontally(initialOffsetX = { it / 2 }),
         exit = fadeOut(animationSpec = tween(120)) + slideOutHorizontally(targetOffsetX = { it / 2 }),
     ) {
-        val bubbleColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.84f)
+        val bubbleColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.56f)
         val anchorLineColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f)
         val anchorDotColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.92f)
         val progress =

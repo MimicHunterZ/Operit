@@ -3289,9 +3289,6 @@ Agora é possível usar o modo AutoGLM na interface de diálogo.</string>
     <string name="enable_google_search_desc">Quando ativado, o Gemini usará a Pesquisa Google para aprimorar as respostas (podem ser aplicadas taxas adicionais)</string>
     <string name="enable_tool_call">Modelo suporta ToolCall</string>
     <string name="enable_tool_call_desc">Quando fechado, o mecanismo de chamada de ferramenta dentro do software será usado e a chamada de ferramenta também poderá ser concluída. Uma vez habilitada, a interface dedicada da API será usada para fazer chamadas de ferramentas nativas (é necessário suporte ao modelo)</string>
-    <string name="strict_tool_call">chamada de ferramenta estrita</string>
-    <string name="strict_tool_call_desc">Ative a chamada de ferramenta estrita quando a chamada de ferramenta for suportada, mas um erro for relatado. Esta opção alterará a estabilidade da operação do toolcall até certo ponto. Não ative-o, a menos que seja necessário.</string>
-    <string name="strict_tool_call_required">Precisa ativar a chamada de ferramenta estrita</string>
     <string name="enable_deepseek_reasoning">Habilitar modo de inferência DeepSeek</string>
     <string name="enable_deepseek_reasoning_desc">Quando ativado, o conteúdo da tag &lt;think&gt; será enviado ao modelo DeepSeek como reasoning_content para suportar chamadas de ferramentas de modelos de raciocínio como DeepSeek-R1.</string>
     <string name="search_sources">Fonte de pesquisa</string>

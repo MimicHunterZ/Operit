@@ -54,6 +54,8 @@ object LatexCache {
      */
     @Synchronized
     fun getDrawable(formula: String, builder: JLatexMathDrawable.Builder): JLatexMathDrawable {
+        JLatexMathCompatibility.ensureRegistered()
+
         // Create a cache key that includes the formula and rendering properties
         val cacheKey = buildCacheKey(formula, builder)
 

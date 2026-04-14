@@ -99,7 +99,9 @@ internal data class WebSessionBrowserHostState(
     val isEditingUrl: Boolean = false,
     val urlDraft: String = WebSessionBrowserState().currentUrl,
     val externalOpenPrompt: ExternalOpenPromptState? = null,
-    val downloadUiState: BrowserDownloadUiState = BrowserDownloadUiState()
+    val downloadUiState: BrowserDownloadUiState = BrowserDownloadUiState(),
+    val viewportWidthPx: Int? = null,
+    val viewportHeightPx: Int? = null
 )
 
 @Serializable

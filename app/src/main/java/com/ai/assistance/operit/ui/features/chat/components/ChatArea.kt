@@ -115,7 +115,7 @@ private fun cleanXmlTags(content: String): String {
         .trim()
 }
 
-private const val MAX_VISIBLE_CHAT_PAGES = 3
+private const val MAX_VISIBLE_CHAT_PAGES = 2
 
 private data class PaginationState(
     val pageStartIndices: List<Int>,

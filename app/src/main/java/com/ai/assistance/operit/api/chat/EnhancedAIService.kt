@@ -577,6 +577,31 @@ class EnhancedAIService private constructor(private val context: Context) {
 
     private fun bypassPromptHooks(context: PromptHookContext): PromptHookContext = context
 
+    private fun applyFinalizedCurrentUserTurn(
+        preparedHistory: List<PromptTurn>,
+        originalCurrentMessage: String,
+        finalizedCurrentMessage: String
+    ): List<PromptTurn> {
+        if (finalizedCurrentMessage.isBlank()) {
+            return preparedHistory
+        }
+
+        val lastTurn = preparedHistory.lastOrNull()
+        return when {
+            lastTurn?.kind == PromptTurnKind.USER &&
+                lastTurn.content == finalizedCurrentMessage -> {
+                preparedHistory
+            }
+            lastTurn?.kind == PromptTurnKind.USER &&
+                lastTurn.content == originalCurrentMessage -> {
+                preparedHistory.dropLast(1) + lastTurn.copy(content = finalizedCurrentMessage)
+            }
+            else -> {
+                preparedHistory.appendUserTurnIfMissing(finalizedCurrentMessage)
+            }
+        }
+    }
+
     suspend fun estimateRequestWindowFromMemory(
         message: String,
         chatHistory: List<PromptTurn>,
@@ -686,9 +711,16 @@ class EnhancedAIService private constructor(private val context: Context) {
             finalPreparedHistory = ChatUtils.stripGeminiThoughtSignatureMetaTurns(finalPreparedHistory)
         }
 
+        val requestHistory =
+            applyFinalizedCurrentUserTurn(
+                preparedHistory = finalPreparedHistory,
+                originalCurrentMessage = message,
+                finalizedCurrentMessage = finalProcessedInput
+            )
+
         return estimatePreparedRequestWindow(
             serviceForFunction = serviceForFunction,
-            preparedHistory = finalPreparedHistory.appendUserTurnIfMissing(finalProcessedInput),
+            preparedHistory = requestHistory,
             availableTools = availableTools,
             publishEstimate = publishEstimate
         )
@@ -864,7 +896,12 @@ class EnhancedAIService private constructor(private val context: Context) {
                         finalProcessedInput = ChatUtils.stripGeminiThoughtSignatureMeta(finalProcessedInput)
                         finalPreparedHistory = ChatUtils.stripGeminiThoughtSignatureMetaTurns(finalPreparedHistory)
                     }
-                    val requestHistory = finalPreparedHistory.appendUserTurnIfMissing(finalProcessedInput)
+                    val requestHistory =
+                        applyFinalizedCurrentUserTurn(
+                            preparedHistory = finalPreparedHistory,
+                            originalCurrentMessage = message,
+                            finalizedCurrentMessage = finalProcessedInput
+                        )
                     execContext.conversationHistory.clear()
                     execContext.conversationHistory.addAll(requestHistory)
                     estimatePreparedRequestWindow(

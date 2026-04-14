@@ -20,11 +20,14 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.TextUnit
 import com.ai.assistance.operit.ui.common.displays.LatexCache
+import com.ai.assistance.operit.util.AppLogger
 import com.ai.assistance.operit.util.markdown.MarkdownNodeStable
 import com.ai.assistance.operit.util.markdown.MarkdownProcessorType
 import com.ai.assistance.operit.util.streamnative.NativeMarkdownSplitter
 import kotlin.math.ceil
 import ru.noties.jlatexmath.JLatexMathDrawable
+
+private const val TAG = "MarkdownInlineSpannable"
 
 private object NestedInlineNodeCache {
     private const val MAX_ENTRIES = 256
@@ -155,6 +158,13 @@ private fun extractInlineLatexContent(content: String): String {
     }
 }
 
+private fun appendInlineLatexFallback(
+    builder: SpannableStringBuilder,
+    rawContent: String
+) {
+    builder.append(rawContent)
+}
+
 private fun resolveNestedInlineText(node: MarkdownNodeStable): String {
     return when (node.type) {
         MarkdownProcessorType.LINK -> extractLinkText(node.content)
@@ -265,31 +275,36 @@ private fun appendInlineNode(
             val latexContent = extractInlineLatexContent(content.trim())
 
             if (density != null && fontSize != null) {
-                val textSizePx = with(density) { fontSize.toPx() }
-                val drawable =
-                    LatexCache.getDrawable(
-                        latexContent,
-                        JLatexMathDrawable.builder(latexContent)
-                            .textSize(textSizePx)
-                            .padding(2)
-                            .color(textColor.toArgb())
-                            .background(0x00000000)
-                            .align(JLatexMathDrawable.ALIGN_LEFT)
+                try {
+                    val textSizePx = with(density) { fontSize.toPx() }
+                    val drawable =
+                        LatexCache.getDrawable(
+                            latexContent,
+                            JLatexMathDrawable.builder(latexContent)
+                                .textSize(textSizePx)
+                                .padding(2)
+                                .color(textColor.toArgb())
+                                .background(0x00000000)
+                                .align(JLatexMathDrawable.ALIGN_LEFT)
+                        )
+
+                    drawable.setBounds(0, 0, drawable.intrinsicWidth, drawable.intrinsicHeight)
+
+                    val start = builder.length
+                    builder.append(" ")
+                    val end = builder.length
+                    builder.setSpan(
+                        ImageSpan(drawable, ImageSpan.ALIGN_BASELINE),
+                        start,
+                        end,
+                        Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
                     )
-
-                drawable.setBounds(0, 0, drawable.intrinsicWidth, drawable.intrinsicHeight)
-
-                val start = builder.length
-                builder.append(" ")
-                val end = builder.length
-                builder.setSpan(
-                    ImageSpan(drawable, ImageSpan.ALIGN_BASELINE),
-                    start,
-                    end,
-                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE
-                )
+                } catch (e: Exception) {
+                    AppLogger.w(TAG, "Inline LaTeX render failed, fallback to raw text: $latexContent", e)
+                    appendInlineLatexFallback(builder, content)
+                }
             } else {
-                builder.append("[$latexContent]")
+                appendInlineLatexFallback(builder, content)
             }
         }
 

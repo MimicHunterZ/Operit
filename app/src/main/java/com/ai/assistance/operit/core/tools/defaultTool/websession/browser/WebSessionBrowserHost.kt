@@ -93,9 +93,6 @@ internal class WebSessionBrowserHost(
 
     private var isExpanded: Boolean = false
     private var hostState by mutableStateOf(WebSessionBrowserHostState())
-    private var expandedWidthPx: Int? = null
-    private var expandedHeightPx: Int? = null
-
     fun ensureCreated(initialExpanded: Boolean = false) {
         if (rootView != null) {
             if (isExpanded != initialExpanded) {
@@ -245,56 +242,21 @@ internal class WebSessionBrowserHost(
     fun isExpanded(): Boolean = isExpanded
 
     fun setViewportSize(width: Int, height: Int) {
-        expandedWidthPx = width.coerceAtLeast(dp(240))
-        expandedHeightPx = height.coerceAtLeast(dp(320))
-        if (isExpanded) {
-            rootView?.let { root ->
-                overlayParams?.let { params ->
-                    applyExpandedLayoutParams(params)
-                    overlayParams = params
-                    if (root.windowToken != null) {
-                        windowManager.updateViewLayout(root, params)
-                    }
-                }
-            }
-        }
+        hostState =
+            hostState.copy(
+                viewportWidthPx = width.coerceAtLeast(dp(240)),
+                viewportHeightPx = height.coerceAtLeast(dp(320))
+            )
     }
 
     fun clearViewportSizeOverride() {
-        expandedWidthPx = null
-        expandedHeightPx = null
-        if (isExpanded) {
-            rootView?.let { root ->
-                overlayParams?.let { params ->
-                    applyExpandedLayoutParams(params)
-                    overlayParams = params
-                    if (root.windowToken != null) {
-                        windowManager.updateViewLayout(root, params)
-                    }
-                }
-            }
-        }
+        hostState = hostState.copy(viewportWidthPx = null, viewportHeightPx = null)
     }
 
     fun currentViewportSize(): Pair<Int, Int> {
-        val params = overlayParams
         val metrics = appContext.resources.displayMetrics
-        val width =
-            if (isExpanded) {
-                params?.width?.takeIf { it != WindowManager.LayoutParams.MATCH_PARENT }
-                    ?: expandedWidthPx
-                    ?: metrics.widthPixels
-            } else {
-                metrics.widthPixels
-            }
-        val height =
-            if (isExpanded) {
-                params?.height?.takeIf { it != WindowManager.LayoutParams.MATCH_PARENT }
-                    ?: expandedHeightPx
-                    ?: metrics.heightPixels
-            } else {
-                metrics.heightPixels
-            }
+        val width = hostState.viewportWidthPx ?: metrics.widthPixels
+        val height = hostState.viewportHeightPx ?: metrics.heightPixels
         return width to height
     }
 
@@ -360,8 +322,8 @@ internal class WebSessionBrowserHost(
     }
 
     private fun applyExpandedLayoutParams(params: WindowManager.LayoutParams) {
-        params.width = expandedWidthPx ?: WindowManager.LayoutParams.MATCH_PARENT
-        params.height = expandedHeightPx ?: WindowManager.LayoutParams.MATCH_PARENT
+        params.width = WindowManager.LayoutParams.MATCH_PARENT
+        params.height = WindowManager.LayoutParams.MATCH_PARENT
         params.gravity = Gravity.CENTER
         params.x = 0
         params.y = 0

@@ -12,6 +12,8 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import androidx.work.Configuration as WorkConfiguration
 import androidx.work.WorkManager
+import coil.decode.GifDecoder
+import coil.decode.ImageDecoderDecoder
 import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
@@ -277,6 +279,13 @@ class OperitApplication : Application(), ImageLoaderFactory, WorkConfiguration.P
         globalImageLoader =
                 ImageLoader.Builder(this)
                         .okHttpClient(imageOkHttpClient) // 使用自定义 OkHttp 客户端
+                        .components {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                                add(ImageDecoderDecoder.Factory())
+                            } else {
+                                add(GifDecoder.Factory())
+                            }
+                        }
                         .crossfade(true)
                         .respectCacheHeaders(true)
                         .memoryCachePolicy(CachePolicy.ENABLED)

@@ -188,6 +188,33 @@ private fun calculateCanvasLineSpacingMultiplier(lineHeightMultiplier: Float): F
     return DEFAULT_CANVAS_LINE_SPACING_MULTIPLIER * lineHeightMultiplier
 }
 
+private fun createSafeInlineStaticLayout(
+    children: List<MarkdownNodeStable>,
+    fallbackText: CharSequence,
+    textColor: Color,
+    primaryColor: Color,
+    density: Density?,
+    fontSize: TextUnit?,
+    textPaint: TextPaint,
+    width: Int,
+    lineSpacingMultiplier: Float,
+    contextLabel: String
+): StaticLayout {
+    return try {
+        val spannable = buildSpannableFromChildren(
+            children = children,
+            textColor = textColor,
+            primaryColor = primaryColor,
+            density = density,
+            fontSize = fontSize
+        )
+        createStaticLayout(spannable, textPaint, width, lineSpacingMultiplier)
+    } catch (t: Throwable) {
+        AppLogger.w(TAG, "Inline markdown layout failed in $contextLabel, fallback to plain text", t)
+        createStaticLayout(fallbackText, textPaint, width, lineSpacingMultiplier)
+    }
+}
+
 private object LayoutCache {
     private data class LayoutKey(
         val text: String,
@@ -632,8 +659,10 @@ private fun renderNodeContent(
                                     drawable.setBounds(0, 0, drawable.intrinsicWidth, drawable.intrinsicHeight)
                                     textView.setCompoundDrawables(null, drawable, null, null)
                                 } catch (e: Exception) {
-                                    // 渲染失败时回退到纯文本显示
-                                    textView.text = e.message ?: textView.context.getString(R.string.common_render_failed)
+                                    AppLogger.w(TAG, "Block LaTeX render failed, fallback to raw text: $latexContent", e)
+                                    // 渲染失败时回退到公式原文显示，避免整页闪退
+                                    textView.setCompoundDrawables(null, null, null, null)
+                                    textView.text = content.trimAll()
                                     textView.setTextColor(textColor.toArgb())
                                     textView.textSize = 16f
                                     textView.typeface = android.graphics.Typeface.MONOSPACE
@@ -1104,15 +1133,19 @@ private fun calculateLayout(
                 val newContent = firstChild.content.trimStart('#', ' ')
                 val newFirstChild = MarkdownNodeStable(firstChild.type, content = newContent, children = firstChild.children)
                 modifiedChildren[0] = newFirstChild
-                
-                val spannable = buildSpannableFromChildren(
-                    modifiedChildren, 
-                    textColor, 
-                    primaryColor,
+
+                createSafeInlineStaticLayout(
+                    children = modifiedChildren,
+                    fallbackText = headerText,
+                    textColor = textColor,
+                    primaryColor = primaryColor,
                     density = density,
-                    fontSize = fontSize
+                    fontSize = fontSize,
+                    textPaint = textPaint,
+                    width = safeAvailableWidthPx,
+                    lineSpacingMultiplier = lineSpacingMultiplier,
+                    contextLabel = "header"
                 )
-                createStaticLayout(spannable, textPaint, safeAvailableWidthPx, lineSpacingMultiplier)
             } else {
                 LayoutCache.getLayout(
                     headerText,
@@ -1171,20 +1204,24 @@ private fun calculateLayout(
                 val modifiedChildren = node.children.toMutableList()
                 val firstChild = modifiedChildren[0]
                 val newContent = numberMatch?.let {
-                    val startIndex = (it.range.last + 1).coerceAtMost(firstChild.content.length)
-                    firstChild.content.substring(startIndex)
-                } ?: firstChild.content
+                val startIndex = (it.range.last + 1).coerceAtMost(firstChild.content.length)
+                firstChild.content.substring(startIndex)
+            } ?: firstChild.content
                 val newFirstChild = MarkdownNodeStable(firstChild.type, content = newContent, children = firstChild.children)
                 modifiedChildren[0] = newFirstChild
-                
-                val spannable = buildSpannableFromChildren(
-                    modifiedChildren, 
-                    textColor, 
-                    primaryColor,
+
+                createSafeInlineStaticLayout(
+                    children = modifiedChildren,
+                    fallbackText = itemText,
+                    textColor = textColor,
+                    primaryColor = primaryColor,
                     density = density,
-                    fontSize = bodyMediumSize
+                    fontSize = bodyMediumSize,
+                    textPaint = textPaint,
+                    width = contentWidth,
+                    lineSpacingMultiplier = lineSpacingMultiplier,
+                    contextLabel = "ordered-list"
                 )
-                createStaticLayout(spannable, textPaint, contentWidth, lineSpacingMultiplier)
             } else {
                 LayoutCache.getLayout(
                     itemText,
@@ -1237,20 +1274,24 @@ private fun calculateLayout(
                 val modifiedChildren = node.children.toMutableList()
                 val firstChild = modifiedChildren[0]
                 val newContent = markerMatch?.let {
-                    val startIndex = (it.range.last + 1).coerceAtMost(firstChild.content.length)
-                    firstChild.content.substring(startIndex)
-                } ?: firstChild.content
+                val startIndex = (it.range.last + 1).coerceAtMost(firstChild.content.length)
+                firstChild.content.substring(startIndex)
+            } ?: firstChild.content
                 val newFirstChild = MarkdownNodeStable(firstChild.type, content = newContent, children = firstChild.children)
                 modifiedChildren[0] = newFirstChild
-                
-                val spannable = buildSpannableFromChildren(
-                    modifiedChildren, 
-                    textColor, 
-                    primaryColor,
+
+                createSafeInlineStaticLayout(
+                    children = modifiedChildren,
+                    fallbackText = itemText,
+                    textColor = textColor,
+                    primaryColor = primaryColor,
                     density = density,
-                    fontSize = bodyMediumSize
+                    fontSize = bodyMediumSize,
+                    textPaint = textPaint,
+                    width = contentWidth,
+                    lineSpacingMultiplier = lineSpacingMultiplier,
+                    contextLabel = "unordered-list"
                 )
-                createStaticLayout(spannable, textPaint, contentWidth, lineSpacingMultiplier)
             } else {
                 LayoutCache.getLayout(
                     itemText,
@@ -1287,14 +1328,18 @@ private fun calculateLayout(
             )
             
             val layout = if (node.children.isNotEmpty()) {
-                val spannable = buildSpannableFromChildren(
-                    node.children, 
-                    textColor, 
-                    primaryColor,
+                createSafeInlineStaticLayout(
+                    children = node.children,
+                    fallbackText = content.trimAll(),
+                    textColor = textColor,
+                    primaryColor = primaryColor,
                     density = density,
-                    fontSize = bodyMediumSize
+                    fontSize = bodyMediumSize,
+                    textPaint = textPaint,
+                    width = safeAvailableWidthPx,
+                    lineSpacingMultiplier = lineSpacingMultiplier,
+                    contextLabel = "plain-text"
                 )
-                createStaticLayout(spannable, textPaint, safeAvailableWidthPx, lineSpacingMultiplier)
             } else {
                 if (disableLayoutCache) {
                     val trimmed = content.trimAll()
