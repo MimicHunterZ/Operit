@@ -16,6 +16,7 @@ import com.ai.assistance.operit.core.tools.FileOperationData
 import com.ai.assistance.operit.core.tools.FilePartContentData
 import com.ai.assistance.operit.core.tools.FindFilesResultData
 import com.ai.assistance.operit.core.tools.StringResultData
+import com.ai.assistance.operit.core.tools.ToolExecutionLimits
 import com.ai.assistance.operit.core.tools.defaultTool.accessbility.AccessibilityFileSystemTools
 import com.ai.assistance.operit.core.tools.system.AndroidShellExecutor
 import com.ai.assistance.operit.data.model.AITool
@@ -48,12 +49,6 @@ import kotlinx.coroutines.flow.collect
 
 /** 调试者级别的文件系统工具，继承无障碍版本 */
 open class DebuggerFileSystemTools(context: Context) : AccessibilityFileSystemTools(context) {
-
-    // ApiPreferences 实例，用于动态获取配置
-    /*private val apiPreferences: ApiPreferences by lazy {
-        ApiPreferences.getInstance(context)
-    }*/
-
     companion object {
         private const val TAG = "DebuggerFileSystemTools"
         private const val OPERIT_PACKAGE = "com.ai.assistance.operit"
@@ -559,9 +554,9 @@ open class DebuggerFileSystemTools(context: Context) : AccessibilityFileSystemTo
 
                 val contentData = fullResult.result as FileContentData
                 var content = contentData.content
-                val isTruncated = content.length > apiPreferences.getMaxFileSizeBytes()
+                val isTruncated = content.length > ToolExecutionLimits.MAX_FILE_READ_BYTES
                 if (isTruncated) {
-                    content = content.substring(0, apiPreferences.getMaxFileSizeBytes())
+                    content = content.substring(0, ToolExecutionLimits.MAX_FILE_READ_BYTES)
                 }
 
                 var contentWithLineNumbers = addLineNumbers(content)
@@ -595,9 +590,9 @@ open class DebuggerFileSystemTools(context: Context) : AccessibilityFileSystemTo
             // Check file size to see if truncation is needed
             val sizeResult = AndroidShellExecutor.executeShellCommand("stat -c %s '$path'")
             val size = sizeResult.stdout.trim().toLongOrNull() ?: 0
-            val truncated = size > apiPreferences.getMaxFileSizeBytes()
+            val truncated = size > ToolExecutionLimits.MAX_FILE_READ_BYTES
 
-            val readCommand = "head -c ${apiPreferences.getMaxFileSizeBytes()} '$path'"
+            val readCommand = "head -c ${ToolExecutionLimits.MAX_FILE_READ_BYTES} '$path'"
             val readResult = AndroidShellExecutor.executeShellCommand(readCommand)
 
             if (!readResult.success) {
@@ -703,7 +698,10 @@ open class DebuggerFileSystemTools(context: Context) : AccessibilityFileSystemTo
 
             // 3. 计算实际的行号范围（行号从1开始）
             val startLine = maxOf(1, startLineParam).coerceIn(1, maxOf(1, totalLines))
-            val endLine = (endLineParam ?: (startLine + 99)).coerceIn(startLine, maxOf(1, totalLines))
+            val endLine =
+                (endLineParam
+                        ?: (startLine + ToolExecutionLimits.DEFAULT_FILE_READ_PART_LINES - 1))
+                    .coerceIn(startLine, maxOf(1, totalLines))
 
             if (totalLines == 0 || startLine > endLine) {
                 return ToolResult(
@@ -736,7 +734,7 @@ open class DebuggerFileSystemTools(context: Context) : AccessibilityFileSystemTo
                 )
             }
 
-            val maxFileSizeBytes = apiPreferences.getMaxFileSizeBytes()
+            val maxFileSizeBytes = ToolExecutionLimits.MAX_FILE_READ_BYTES
             var content = partResult.stdout
             val isTruncated = content.length > maxFileSizeBytes
             if (isTruncated) {

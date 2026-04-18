@@ -270,7 +270,10 @@ class StandardBrowserSessionTools(internal val context: Context) : ToolExecutor 
     private fun browserClick(tool: AITool): ToolResult {
         val session = getSession(null) ?: return error(tool.name, "No active browser tab")
         val ref = param(tool, "ref")?.trim()?.takeIf { it.isNotBlank() }
-            ?: return error(tool.name, "ref is required")
+        val selector = param(tool, "selector")?.trim()?.takeIf { it.isNotBlank() }
+        if (ref == null && selector == null) {
+            return error(tool.name, "ref or selector is required")
+        }
 
         val buttonRaw = param(tool, "button")?.trim()
         val button =
@@ -293,7 +296,7 @@ class StandardBrowserSessionTools(internal val context: Context) : ToolExecutor 
         runOnMainSync<Unit> {
             ensureSessionAttachedOnMain(session.id)
         }
-        if (requireSnapshotNode(session, ref) == null) {
+        if (ref != null && requireSnapshotNode(session, ref) == null) {
             return pageError(
                 tool.name,
                 session,
@@ -301,21 +304,43 @@ class StandardBrowserSessionTools(internal val context: Context) : ToolExecutor 
             )
         }
         val markers = captureActionMarkers(session)
-        val code = buildClickCode(session, ref, button, doubleClick, modifiers)
+        val code =
+            when {
+                ref != null -> buildClickCode(session, ref, button, doubleClick, modifiers)
+                else -> buildClickCodeForSelector(selector!!, button, doubleClick, modifiers)
+            }
         val jsResult =
-            dispatchClickByRef(
-                webView = session.webView,
-                ref = ref,
-                button = button,
-                modifiers = modifiers,
-                doubleClick = doubleClick
-            )
+            when {
+                ref != null ->
+                    dispatchClickByRef(
+                        webView = session.webView,
+                        ref = ref,
+                        button = button,
+                        modifiers = modifiers,
+                        doubleClick = doubleClick
+                    )
+                else ->
+                    dispatchClickBySelector(
+                        webView = session.webView,
+                        selector = selector!!,
+                        button = button,
+                        modifiers = modifiers,
+                        doubleClick = doubleClick
+                    )
+            }
         if (jsResult?.optBoolean("ok", false) != true) {
             if (jsResult?.optString("error") == "ref_not_found") {
                 return pageError(
                     tool.name,
                     session,
                     "Ref $ref was not found in the current snapshot. Capture a new snapshot and retry."
+                )
+            }
+            if (jsResult?.optString("error") == "selector_not_found") {
+                return pageError(
+                    tool.name,
+                    session,
+                    "Selector ${selector ?: ""} did not match any elements."
                 )
             }
             return error(tool.name, "Click failed: ${jsResult?.optString("error") ?: "unknown"}")
@@ -344,9 +369,35 @@ class StandardBrowserSessionTools(internal val context: Context) : ToolExecutor 
             buildSettledBrowserResponse(
                 settlement = settlement,
                 code = code,
-                result = "Clicked ref=$ref with button=$button${if (doubleClick) " (double)" else ""}"
+                result =
+                    when {
+                        ref != null -> "Clicked ref=$ref with button=$button${if (doubleClick) " (double)" else ""}"
+                        else -> "Clicked selector=${selector ?: ""} with button=$button${if (doubleClick) " (double)" else ""}"
+                    }
             )
         )
+    }
+
+    private fun buildClickCodeForSelector(
+        selector: String,
+        button: String,
+        doubleClick: Boolean,
+        modifiers: Set<String>
+    ): String {
+        val method = if (doubleClick) "dblclick" else "click"
+        val options = mutableListOf<String>()
+        if (button != "left") {
+            options += "button: ${quoteJsCode(button)}"
+        }
+        if (modifiers.isNotEmpty()) {
+            options += "modifiers: ${renderJsArrayCode(modifiers.toList())}"
+        }
+        val locator = "page.locator(${quoteJsCode(selector)})"
+        return if (options.isEmpty()) {
+            "await $locator.$method();"
+        } else {
+            "await $locator.$method({ ${options.joinToString(", ")} });"
+        }
     }
 
     private fun dispatchClickByRef(
@@ -566,6 +617,129 @@ class StandardBrowserSessionTools(internal val context: Context) : ToolExecutor 
             })();
             """.trimIndent()
         return runJsonScript(webView, script, "drag_dispatch_error")
+    }
+
+    private fun dispatchClickBySelector(
+        webView: WebView,
+        selector: String,
+        button: String,
+        modifiers: Set<String>,
+        doubleClick: Boolean
+    ): JSONObject? {
+        val buttonValue =
+            when (button) {
+                "middle" -> 1
+                "right" -> 2
+                else -> 0
+            }
+        val buttonsValue =
+            when (button) {
+                "middle" -> 4
+                "right" -> 2
+                else -> 1
+            }
+
+        val altKey = modifiers.contains("Alt")
+        val controlKey = modifiers.contains("Control") || modifiers.contains("ControlOrMeta")
+        val metaKey = modifiers.contains("Meta") || modifiers.contains("ControlOrMeta")
+        val shiftKey = modifiers.contains("Shift")
+
+        val script =
+            """
+            (function() {
+                try {
+                    const selectorValue = ${quoteJs(selector)};
+                    const target = document.querySelector(selectorValue);
+                    if (!target) {
+                        return JSON.stringify({ ok: false, error: "selector_not_found", selector: selectorValue });
+                    }
+                    const targetWindow = target.ownerDocument && target.ownerDocument.defaultView ? target.ownerDocument.defaultView : window;
+                    const anchor = target.closest('a[href]');
+                    try { target.scrollIntoView({ block: "center", inline: "center" }); } catch (_) {}
+                    const rect = target.getBoundingClientRect();
+                    const x = rect.left + rect.width / 2;
+                    const y = rect.top + rect.height / 2;
+
+                    try { target.focus({ preventScroll: true }); } catch (_) {}
+
+                    const buttonValue = ${buttonValue};
+                    const buttonsValue = ${buttonsValue};
+                    const altKey = ${if (altKey) "true" else "false"};
+                    const ctrlKey = ${if (controlKey) "true" else "false"};
+                    const metaKey = ${if (metaKey) "true" else "false"};
+                    const shiftKey = ${if (shiftKey) "true" else "false"};
+
+                    function emit(type, detail) {
+                        try {
+                            const MouseEventCtor = targetWindow.MouseEvent || MouseEvent;
+                            target.dispatchEvent(new MouseEventCtor(type, {
+                                bubbles: true,
+                                cancelable: true,
+                                composed: true,
+                                view: targetWindow,
+                                detail: detail,
+                                clientX: x,
+                                clientY: y,
+                                screenX: x,
+                                screenY: y,
+                                button: buttonValue,
+                                buttons: buttonsValue,
+                                altKey,
+                                ctrlKey,
+                                metaKey,
+                                shiftKey
+                            }));
+                        } catch (_) {}
+                    }
+
+                    function clickOnce(detail) {
+                        emit("mousedown", detail);
+                        emit("mouseup", detail);
+                        emit("click", detail);
+                    }
+
+                    let activationMethod = "mouse_event";
+                    let activationTag = String(target.tagName || "").toLowerCase();
+                    const nativeAnchorClickEligible = !${if (doubleClick) "true" else "false"} &&
+                        buttonValue === 0 && !altKey && !ctrlKey && !metaKey && !shiftKey &&
+                        !!anchor && typeof anchor.click === "function";
+
+                    setTimeout(() => {
+                        try {
+                            if (nativeAnchorClickEligible) {
+                                activationMethod = "anchor_click";
+                                activationTag = String(anchor.tagName || "").toLowerCase();
+                                anchor.click();
+                                return;
+                            }
+                            clickOnce(1);
+                            if (${if (doubleClick) "true" else "false"}) {
+                                emit("mousedown", 2);
+                                emit("mouseup", 2);
+                                emit("click", 2);
+                                emit("dblclick", 2);
+                            }
+                            if (buttonValue === 0 && typeof target.click === "function") {
+                                activationMethod = "native_click";
+                                target.click();
+                            }
+                        } catch (_) {}
+                    }, 0);
+
+                    return JSON.stringify({
+                        ok: true,
+                        selector: selectorValue,
+                        button: ${quoteJs(button)},
+                        doubleClick: ${if (doubleClick) "true" else "false"},
+                        activationMethod,
+                        activationTag
+                    });
+                } catch (e) {
+                    return JSON.stringify({ ok: false, error: String(e) });
+                }
+            })();
+            """.trimIndent()
+        return runJsonScript(webView, script, "click_dispatch_error")
     }
 
     internal fun runJsonScript(webView: WebView, script: String, fallbackError: String): JSONObject? {

@@ -798,7 +798,12 @@ fun registerAllTools(handler: AIToolHandler, context: Context) {
             name = "browser_click",
             descriptionGenerator = { tool ->
                 val ref = tool.parameters.find { it.name == "ref" }?.value ?: ""
-                "Click browser element ref ${ref.ifBlank { "(missing ref)" }}"
+                val selector = tool.parameters.find { it.name == "selector" }?.value ?: ""
+                when {
+                    ref.isNotBlank() -> "Click browser element ref $ref from browser_snapshot"
+                    selector.isNotBlank() -> "Click browser element by selector $selector"
+                    else -> "Click browser element (missing ref/selector)"
+                }
             },
             executor = { tool -> ToolGetter.getBrowserSessionTools(context).invoke(tool) }
     )
@@ -901,7 +906,7 @@ fun registerAllTools(handler: AIToolHandler, context: Context) {
 
     handler.registerTool(
             name = "browser_snapshot",
-            descriptionGenerator = { "Capture a browser accessibility snapshot" },
+            descriptionGenerator = { "Capture a browser accessibility snapshot, including same-origin iframe content" },
             executor = { tool -> ToolGetter.getBrowserSessionTools(context).invoke(tool) }
     )
 

@@ -62,27 +62,25 @@ export namespace Net {
      * Navigate a browser session to a target URL.
      */
     function browserNavigate(
-        sessionId: string | undefined,
-        url: string,
-        headers?: Record<string, string> | string
+        urlOrOptions: string | {
+            url: string;
+            headers?: Record<string, string> | string;
+        }
     ): Promise<StringResultData>;
 
     /**
-     * Evaluate JavaScript in a browser session.
+     * Go back in browser history.
      */
-    function browserEval(
-        sessionId: string | undefined,
-        script: string,
-        timeoutMs?: number
-    ): Promise<StringResultData>;
+    function browserNavigateBack(options?: Record<string, unknown>): Promise<StringResultData>;
 
     /**
-     * Click an element by snapshot ref.
+     * Click an element by snapshot ref or selector.
      * Only accepts one options object.
      */
     function browserClick(options: {
         session_id?: string;
-        ref: string;
+        ref?: string;
+        selector?: string;
         element?: string;
         button?: 'left' | 'right' | 'middle';
         modifiers?: Array<'Alt' | 'Control' | 'ControlOrMeta' | 'Meta' | 'Shift'>;
@@ -90,42 +88,149 @@ export namespace Net {
     }): Promise<StringResultData>;
 
     /**
-     * Fill an input by CSS selector.
+     * Close the current browser tab.
      */
-    function browserFill(
-        sessionId: string | undefined,
-        selector: string,
-        value: string
-    ): Promise<StringResultData>;
+    function browserClose(options?: Record<string, unknown>): Promise<StringResultData>;
 
     /**
-     * Wait for page ready or selector appearance.
+     * Read console messages from the browser session.
      */
-    function browserWaitFor(
-        sessionId: string | undefined,
-        selector?: string,
-        timeoutMs?: number
-    ): Promise<StringResultData>;
+    function browserConsoleMessages(options?: {
+        level?: string;
+        filename?: string;
+    }): Promise<StringResultData>;
+
+    /**
+     * Drag between two elements by snapshot refs.
+     */
+    function browserDrag(options: {
+        startElement: string;
+        startRef: string;
+        endElement: string;
+        endRef: string;
+    }): Promise<StringResultData>;
+
+    /**
+     * Evaluate JavaScript in the browser session.
+     */
+    function browserEvaluate(options: {
+        function: string;
+        ref?: string;
+        element?: string;
+    }): Promise<StringResultData>;
+
+    /**
+     * Resolve an active file chooser in the browser session.
+     * If `paths` is omitted, the file chooser is cancelled.
+     */
+    function browserFileUpload(options?: {
+        paths?: string[];
+    }): Promise<StringResultData>;
+
+    /**
+     * Fill multiple form fields in the browser session.
+     */
+    function browserFillForm(options: {
+        fields: Array<{
+            name: string;
+            type: string;
+            value: string | number | boolean | object;
+            ref?: string;
+            selector?: string;
+        }>;
+    }): Promise<StringResultData>;
+
+    /**
+     * Handle an active dialog.
+     */
+    function browserHandleDialog(options: {
+        accept: boolean;
+        promptText?: string;
+    }): Promise<StringResultData>;
+
+    /**
+     * Hover over an element by snapshot ref.
+     */
+    function browserHover(options: {
+        ref: string;
+        element?: string;
+    }): Promise<StringResultData>;
+
+    /**
+     * Read network requests from the browser session.
+     */
+    function browserNetworkRequests(options?: {
+        includeStatic?: boolean;
+        filename?: string;
+    }): Promise<StringResultData>;
+
+    /**
+     * Press a keyboard key in the browser session.
+     */
+    function browserPressKey(keyOrOptions: string | {
+        key: string;
+    }): Promise<StringResultData>;
+
+    /**
+     * Resize the browser viewport.
+     */
+    function browserResize(options: {
+        width: number;
+        height: number;
+    }): Promise<StringResultData>;
+
+    /**
+     * Run Playwright-style code in the browser session.
+     */
+    function browserRunCode(options: {
+        code: string;
+    }): Promise<StringResultData>;
+
+    /**
+     * Select options in a dropdown by snapshot ref.
+     */
+    function browserSelectOption(options: {
+        ref: string;
+        values: string[];
+        element?: string;
+    }): Promise<StringResultData>;
 
     /**
      * Capture a text snapshot of current page.
      */
-    function browserSnapshot(
-        sessionId: string | undefined,
-        options?: {
-            include_links?: boolean;
-            include_images?: boolean;
-        }
-    ): Promise<StringResultData>;
+    function browserSnapshot(options?: {
+        filename?: string;
+        selector?: string;
+        depth?: number;
+    }): Promise<StringResultData>;
 
     /**
-     * Resolve an active file chooser in a browser session.
-     * If `paths` is omitted, the file chooser is cancelled.
+     * Manage browser tabs.
      */
-    function browserFileUpload(
-        sessionId: string | undefined,
-        paths?: string[]
-    ): Promise<StringResultData>;
+    function browserTabs(options: {
+        action: string;
+        index?: number;
+    }): Promise<StringResultData>;
+
+    /**
+     * Type text into an element by snapshot ref.
+     */
+    function browserType(options: {
+        ref: string;
+        text: string;
+        element?: string;
+        submit?: boolean;
+        slowly?: boolean;
+    }): Promise<StringResultData>;
+
+    /**
+     * Wait for text or time in the browser session.
+     */
+    function browserWaitFor(options: {
+        time?: number;
+        text?: string;
+        textGone?: string;
+    }): Promise<StringResultData>;
 
     /**
      * List installed browser session userscripts.

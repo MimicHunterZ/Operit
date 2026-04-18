@@ -13,6 +13,7 @@ import com.ai.assistance.operit.core.tools.FindFilesResultData
 import com.ai.assistance.operit.core.tools.GrepResultData
 import com.ai.assistance.operit.core.tools.StringResultData
 import com.ai.assistance.operit.core.tools.ToolProgressBus
+import com.ai.assistance.operit.core.tools.ToolExecutionLimits
 import com.ai.assistance.operit.data.model.AITool
 import com.ai.assistance.operit.data.model.ToolParameter
 import com.ai.assistance.operit.data.model.ToolResult
@@ -371,7 +372,7 @@ class LinuxFileSystemTools(context: Context) : StandardFileSystemTools(context) 
 
             // 检查文件大小
             val fileSize = fs.getFileSize(path)
-            val maxFileSizeBytes = apiPreferences.getMaxFileSizeBytes()
+            val maxFileSizeBytes = ToolExecutionLimits.MAX_FILE_READ_BYTES
 
             if (fileSize > maxFileSizeBytes) {
                 // 文件过大，读取限制大小
@@ -452,7 +453,10 @@ class LinuxFileSystemTools(context: Context) : StandardFileSystemTools(context) 
 
             // 计算实际的行号范围（行号从1开始）
             val startLine = maxOf(1, startLineParam).coerceIn(1, maxOf(1, totalLines))
-            val endLine = (endLineParam ?: (startLine + 99)).coerceIn(startLine, maxOf(1, totalLines))
+            val endLine =
+                (endLineParam
+                        ?: (startLine + ToolExecutionLimits.DEFAULT_FILE_READ_PART_LINES - 1))
+                    .coerceIn(startLine, maxOf(1, totalLines))
 
             val partContent = if (totalLines > 0) {
                 fs.readFileLines(path, startLine, endLine) ?: ""
@@ -460,7 +464,7 @@ class LinuxFileSystemTools(context: Context) : StandardFileSystemTools(context) 
                 ""
             }
 
-            val maxFileSizeBytes = apiPreferences.getMaxFileSizeBytes()
+            val maxFileSizeBytes = ToolExecutionLimits.MAX_FILE_READ_BYTES
             var truncatedPartContent = partContent
             val isTruncated = truncatedPartContent.length > maxFileSizeBytes
             if (isTruncated) {

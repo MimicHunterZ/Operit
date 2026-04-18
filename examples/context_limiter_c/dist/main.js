@@ -3,13 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.registerToolPkg = registerToolPkg;
 exports.onInputMenuToggle = onInputMenuToggle;
 exports.onFinalize = onFinalize;
-const DEFAULT_FLOOR_LIMIT = 5;
-const DEFAULT_LIMITER_ENABLED = true;
-const FLOOR_OPTIONS = [3, 5, 8, 10, 15, 20, 30, 50, 100];
-const ENV_KEYS = {
-    floorLimit: "CTX_LIMITER_C_FLOOR_LIMIT",
-    enabled: "CTX_LIMITER_C_ENABLED",
-};
+const constants_1 = require("./constants");
 function readEnv(key) {
     if (typeof getEnv !== "function") {
         return "";
@@ -18,17 +12,17 @@ function readEnv(key) {
     return value == null ? "" : String(value).trim();
 }
 function readFloorLimit() {
-    const raw = readEnv(ENV_KEYS.floorLimit);
+    const raw = readEnv(constants_1.ENV_KEYS.floorLimit);
     const parsed = Number.parseInt(raw, 10);
     if (!Number.isFinite(parsed) || parsed < 1) {
-        return DEFAULT_FLOOR_LIMIT;
+        return constants_1.DEFAULT_FLOOR_LIMIT;
     }
     return parsed;
 }
 function readLimiterEnabled() {
-    const raw = readEnv(ENV_KEYS.enabled).toLowerCase();
+    const raw = readEnv(constants_1.ENV_KEYS.enabled).toLowerCase();
     if (!raw) {
-        return DEFAULT_LIMITER_ENABLED;
+        return constants_1.DEFAULT_LIMITER_ENABLED;
     }
     return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
@@ -36,18 +30,18 @@ async function writeEnvValue(key, value) {
     await Tools.SoftwareSettings.writeEnvironmentVariable(key, value);
 }
 async function writeFloorLimit(nextLimit) {
-    await writeEnvValue(ENV_KEYS.floorLimit, String(nextLimit));
+    await writeEnvValue(constants_1.ENV_KEYS.floorLimit, String(nextLimit));
 }
 async function writeLimiterEnabled(nextEnabled) {
-    await writeEnvValue(ENV_KEYS.enabled, nextEnabled ? "true" : "false");
+    await writeEnvValue(constants_1.ENV_KEYS.enabled, nextEnabled ? "true" : "false");
 }
 function registerToolPkg() {
     ToolPkg.registerPromptFinalizeHook({
-        id: "ctx_limiter_c_finalize",
+        id: constants_1.HOOK_IDS.finalize,
         function: onFinalize,
     });
     ToolPkg.registerInputMenuTogglePlugin({
-        id: "ctx_limiter_c_menu",
+        id: constants_1.HOOK_IDS.menu,
         function: onInputMenuToggle,
     });
     return true;
@@ -57,11 +51,11 @@ async function onInputMenuToggle(event) {
     const action = payload.action;
     const floorLimit = readFloorLimit();
     const limiterEnabled = readLimiterEnabled();
-    if (action === "create") {
+    if (action === constants_1.INPUT_MENU_TOGGLE_ACTION.create) {
         return {
             toggles: [
                 {
-                    id: "ctx_limiter_toggle",
+                    id: constants_1.TOGGLE_IDS.limiter,
                     title: "楼层限制器",
                     description: limiterEnabled
                         ? `已开启 · 保留最近 ${floorLimit} 层`
@@ -69,24 +63,24 @@ async function onInputMenuToggle(event) {
                     isChecked: limiterEnabled,
                 },
                 {
-                    id: "ctx_limiter_adjust",
+                    id: constants_1.TOGGLE_IDS.adjust,
                     title: `调节楼层数 ▶ ${floorLimit}`,
-                    description: `点击切换: ${FLOOR_OPTIONS.join("/")}`,
+                    description: `点击切换: ${constants_1.FLOOR_OPTIONS.join("/")}`,
                     isChecked: true,
                 },
             ],
         };
     }
-    if (action === "toggle") {
+    if (action === constants_1.INPUT_MENU_TOGGLE_ACTION.toggle) {
         const toggleId = payload.toggleId;
-        if (toggleId === "ctx_limiter_toggle") {
+        if (toggleId === constants_1.TOGGLE_IDS.limiter) {
             await writeLimiterEnabled(!limiterEnabled);
             return { ok: true };
         }
-        if (toggleId === "ctx_limiter_adjust") {
-            const currentIndex = FLOOR_OPTIONS.indexOf(floorLimit);
-            const nextIndex = (currentIndex + 1) % FLOOR_OPTIONS.length;
-            await writeFloorLimit(FLOOR_OPTIONS[nextIndex]);
+        if (toggleId === constants_1.TOGGLE_IDS.adjust) {
+            const currentIndex = constants_1.FLOOR_OPTIONS.indexOf(floorLimit);
+            const nextIndex = (currentIndex + 1) % constants_1.FLOOR_OPTIONS.length;
+            await writeFloorLimit(constants_1.FLOOR_OPTIONS[nextIndex]);
             return { ok: true };
         }
     }
@@ -105,26 +99,24 @@ function onFinalize(input) {
         return null;
     }
     const systemMsgs = [];
-    const userAssistantMsgs = [];
+    const nonSystemMsgs = [];
     for (const message of history) {
-        if (message.kind === "SYSTEM") {
+        if (message.kind === constants_1.PROMPT_TURN_KIND.SYSTEM) {
             systemMsgs.push(message);
             continue;
         }
-        if (message.kind === "USER" || message.kind === "ASSISTANT") {
-            userAssistantMsgs.push(message);
-        }
+        nonSystemMsgs.push(message);
     }
-    const userCount = userAssistantMsgs.filter((message) => message.kind === "USER").length;
+    const userCount = nonSystemMsgs.filter((message) => message.kind === constants_1.PROMPT_TURN_KIND.USER).length;
     if (userCount <= floorLimit) {
-        const result = systemMsgs.concat(userAssistantMsgs);
+        const result = systemMsgs.concat(nonSystemMsgs);
         console.log(`[limiter_c] ${userCount} floors <= limit ${floorLimit}, no trim, msgs: ${history.length} -> ${result.length}`);
         return { preparedHistory: result };
     }
     let keepFromIndex = 0;
     let countedUsers = 0;
-    for (let index = userAssistantMsgs.length - 1; index >= 0; index -= 1) {
-        if (userAssistantMsgs[index].kind !== "USER") {
+    for (let index = nonSystemMsgs.length - 1; index >= 0; index -= 1) {
+        if (nonSystemMsgs[index].kind !== constants_1.PROMPT_TURN_KIND.USER) {
             continue;
         }
         countedUsers += 1;
@@ -133,8 +125,8 @@ function onFinalize(input) {
             break;
         }
     }
-    const keptMsgs = userAssistantMsgs.slice(keepFromIndex);
+    const keptMsgs = nonSystemMsgs.slice(keepFromIndex);
     const finalMsgs = systemMsgs.concat(keptMsgs);
-    console.log(`[limiter_c] floors: ${userCount}, limit: ${floorLimit}, msgs: ${history.length} -> ${finalMsgs.length} (${systemMsgs.length} sys + ${keptMsgs.length} chat)`);
+    console.log(`[limiter_c] floors: ${userCount}, limit: ${floorLimit}, msgs: ${history.length} -> ${finalMsgs.length} (${systemMsgs.length} sys + ${keptMsgs.length} non-system)`);
     return { preparedHistory: finalMsgs };
 }

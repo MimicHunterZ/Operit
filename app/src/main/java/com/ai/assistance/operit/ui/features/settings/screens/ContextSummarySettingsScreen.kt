@@ -1,7 +1,17 @@
 package com.ai.assistance.operit.ui.features.settings.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -9,9 +19,30 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Summarize
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Snackbar
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -28,300 +59,709 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ai.assistance.operit.R
+import com.ai.assistance.operit.data.model.FunctionType
+import com.ai.assistance.operit.data.model.ModelConfigData
 import com.ai.assistance.operit.data.preferences.ApiPreferences
+import com.ai.assistance.operit.data.preferences.FunctionConfigMapping
+import com.ai.assistance.operit.data.preferences.FunctionalConfigManager
+import com.ai.assistance.operit.data.preferences.ModelConfigManager
 import com.ai.assistance.operit.data.preferences.UserPreferencesManager
 import com.ai.assistance.operit.ui.components.CustomScaffold
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import java.text.DecimalFormat
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ContextSummarySettingsScreen(
-        onBackPressed: () -> Unit
-) {
-        val context = LocalContext.current
-        val apiPreferences = remember { ApiPreferences.getInstance(context) }
-        val userPreferences = remember { UserPreferencesManager.getInstance(context) }
-        val scope = rememberCoroutineScope()
-        val scrollState = rememberScrollState()
+fun ContextSummarySettingsScreen(onBackPressed: () -> Unit) {
+    val context = LocalContext.current
+    val apiPreferences = remember { ApiPreferences.getInstance(context) }
+    val userPreferences = remember { UserPreferencesManager.getInstance(context) }
+    val functionalConfigManager = remember { FunctionalConfigManager(context) }
+    val modelConfigManager = remember { ModelConfigManager(context) }
+    val scope = rememberCoroutineScope()
+    val scrollState = rememberScrollState()
 
-        val maxFileSizeLabel = stringResource(id = R.string.context_field_max_file_size)
-        val partSizeLabel = stringResource(id = R.string.context_field_part_size)
-        val maxTextResultLengthLabel = stringResource(id = R.string.context_field_max_text_result_length)
-        val maxImageHistoryTurnsLabel = stringResource(id = R.string.context_field_max_image_history_turns)
-        val maxMediaHistoryTurnsLabel = stringResource(id = R.string.context_field_max_media_history_turns)
+    var maxImageHistoryUserTurnsInput by remember { mutableStateOf("") }
+    var maxMediaHistoryUserTurnsInput by remember { mutableStateOf("") }
+    val savedMaxImageHistoryUserTurns by
+        apiPreferences.maxImageHistoryUserTurnsFlow.collectAsState(
+            initial = ApiPreferences.DEFAULT_MAX_IMAGE_HISTORY_USER_TURNS
+        )
+    val savedMaxMediaHistoryUserTurns by
+        apiPreferences.maxMediaHistoryUserTurnsFlow.collectAsState(
+            initial = ApiPreferences.DEFAULT_MAX_MEDIA_HISTORY_USER_TURNS
+        )
 
-        // State for UI components - using String to hold input
-        var maxFileSizeBytesInput by remember { mutableStateOf("") }
-        var partSizeInput by remember { mutableStateOf("") }
-        var maxTextResultLengthInput by remember { mutableStateOf("") }
-        var maxImageHistoryUserTurnsInput by remember { mutableStateOf("") }
-        var maxMediaHistoryUserTurnsInput by remember { mutableStateOf("") }
-
-        val hasBackgroundImage by userPreferences.useBackgroundImage.collectAsState(initial = false)
-
-        // Load initial values once and convert to String
-        LaunchedEffect(Unit) {
-            maxFileSizeBytesInput = (apiPreferences.maxFileSizeBytesFlow.first() / 1000).toString() // Display as KB
-            partSizeInput = (apiPreferences.partSizeFlow.first()).toString()
-            maxTextResultLengthInput = (apiPreferences.maxTextResultLengthFlow.first() / 1000).toString() // Display as KB
-            maxImageHistoryUserTurnsInput = apiPreferences.maxImageHistoryUserTurnsFlow.first().toString()
-            maxMediaHistoryUserTurnsInput = apiPreferences.maxMediaHistoryUserTurnsFlow.first().toString()
-        }
-
-        var showSaveSuccessMessage by remember { mutableStateOf(false) }
-        var showValidationError by remember { mutableStateOf(false) }
-        var validationErrorMessage by remember { mutableStateOf("") }
-
-        // 验证输入是否为有效数字
-        fun validateInputs(): Boolean {
-            fun validateFloat(value: String, name: String): Boolean {
-                val floatVal = value.toFloatOrNull()
-                if (floatVal == null || floatVal <= 0f) {
-                    validationErrorMessage = context.getString(R.string.context_validation_error_positive_number, name)
-                    return false
-                }
-                return true
-            }
-
-            fun validateInt(value: String, name: String): Boolean {
-                val intVal = value.toIntOrNull()
-                if (intVal == null || intVal <= 0) {
-                    validationErrorMessage = context.getString(R.string.context_validation_error_positive_integer, name)
-                    return false
-                }
-                return true
-            }
-
-            fun validateNonNegativeInt(value: String, name: String): Boolean {
-                val intVal = value.toIntOrNull()
-                if (intVal == null || intVal < 0) {
-                    validationErrorMessage = context.getString(R.string.context_validation_error_non_negative_integer, name)
-                    return false
-                }
-                return true
-            }
-
-            if (!validateInt(maxFileSizeBytesInput, maxFileSizeLabel)) return false
-            if (!validateInt(partSizeInput, partSizeLabel)) return false
-            if (!validateInt(maxTextResultLengthInput, maxTextResultLengthLabel)) return false
-            if (!validateNonNegativeInt(maxImageHistoryUserTurnsInput, maxImageHistoryTurnsLabel)) return false
-            if (!validateNonNegativeInt(maxMediaHistoryUserTurnsInput, maxMediaHistoryTurnsLabel)) return false
-
-            showValidationError = false
-            return true
-        }
-
-        // 保存所有设置的函数
-        fun saveAllSettings() {
-            if (!validateInputs()) {
-                showValidationError = true
-                return
-            }
-
-            scope.launch {
-                // All values are already validated, so toFloat/toInt is safe
-                apiPreferences.saveMaxFileSizeBytes(maxFileSizeBytesInput.toInt() * 1000) // Convert KB to Bytes
-                apiPreferences.savePartSize(partSizeInput.toInt())
-                apiPreferences.saveMaxTextResultLength(maxTextResultLengthInput.toInt() * 1000) // Convert KB to Bytes
-                apiPreferences.saveMaxImageHistoryUserTurns(maxImageHistoryUserTurnsInput.toInt())
-                apiPreferences.saveMaxMediaHistoryUserTurns(maxMediaHistoryUserTurnsInput.toInt())
-                showSaveSuccessMessage = true
-            }
-        }
-
-        val componentBackgroundColor = if (hasBackgroundImage) {
-                MaterialTheme.colorScheme.surface
+    val hasBackgroundImage by userPreferences.useBackgroundImage.collectAsState(initial = false)
+    val componentBackgroundColor =
+        if (hasBackgroundImage) {
+            MaterialTheme.colorScheme.surface
         } else {
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
         }
 
-        CustomScaffold() { paddingValues ->
-                Column(
-                        modifier = Modifier
-                                .fillMaxSize()
-                                .padding(paddingValues)
-                                .padding(horizontal = 16.dp, vertical = 8.dp)
-                                .verticalScroll(scrollState)
-                ) {
+    LaunchedEffect(Unit) {
+        modelConfigManager.initializeIfNeeded()
+        functionalConfigManager.initializeIfNeeded()
+        maxImageHistoryUserTurnsInput = apiPreferences.maxImageHistoryUserTurnsFlow.first().toString()
+        maxMediaHistoryUserTurnsInput = apiPreferences.maxMediaHistoryUserTurnsFlow.first().toString()
+    }
 
-                        Text(
-                                text = stringResource(id = R.string.context_summary_note),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
+    val functionMappings by
+        functionalConfigManager.functionConfigMappingWithIndexFlow.collectAsState(initial = emptyMap())
+    val currentChatConfigMapping = functionMappings[FunctionType.CHAT] ?: FunctionConfigMapping()
+    val currentChatConfigId = currentChatConfigMapping.configId
 
-                        // ======= 截断设置 =======
-                        SectionTitle(
-                                text = stringResource(id = R.string.settings_truncation_title),
-                                icon = Icons.Default.ContentCut
-                        )
-
-                        // 文件读取最大字节数滑块
-                        SettingsInputField(
-                            title = stringResource(id = R.string.settings_max_file_size),
-                            subtitle = stringResource(id = R.string.settings_max_file_size_subtitle),
-                            value = maxFileSizeBytesInput,
-                            onValueChange = { maxFileSizeBytesInput = it },
-                            unitText = "k",
-                            backgroundColor = componentBackgroundColor
-                        )
-
-                        // 分段读取行数滑块
-                        SettingsInputField(
-                            title = stringResource(id = R.string.settings_part_size),
-                            subtitle = stringResource(id = R.string.settings_part_size_subtitle),
-                            value = partSizeInput,
-                            onValueChange = { partSizeInput = it },
-                            unitText = stringResource(id = R.string.context_unit_lines),
-                            backgroundColor = componentBackgroundColor
-                        )
-
-                        // 文本结果最大长度滑块
-                        SettingsInputField(
-                            title = stringResource(id = R.string.settings_max_text_result),
-                            subtitle = stringResource(id = R.string.settings_max_text_result_subtitle),
-                            value = maxTextResultLengthInput,
-                            onValueChange = { maxTextResultLengthInput = it },
-                            unitText = "k",
-                            backgroundColor = componentBackgroundColor
-                        )
-
-                        SettingsInputField(
-                            title = stringResource(id = R.string.settings_max_image_history_user_turns),
-                            subtitle = stringResource(id = R.string.settings_max_image_history_user_turns_subtitle),
-                            value = maxImageHistoryUserTurnsInput,
-                            onValueChange = { maxImageHistoryUserTurnsInput = it },
-                            unitText = stringResource(id = R.string.context_unit_times),
-                            backgroundColor = componentBackgroundColor
-                        )
-
-                        SettingsInputField(
-                            title = stringResource(id = R.string.settings_max_media_history_user_turns),
-                            subtitle = stringResource(id = R.string.settings_max_media_history_user_turns_subtitle),
-                            value = maxMediaHistoryUserTurnsInput,
-                            onValueChange = { maxMediaHistoryUserTurnsInput = it },
-                            unitText = stringResource(id = R.string.context_unit_times),
-                            backgroundColor = componentBackgroundColor
-                        )
-
-                        // 重置按钮
-                        Button(
-                                onClick = {
-                                        scope.launch {
-                                                apiPreferences.resetTruncationSettings()
-                                                maxFileSizeBytesInput = (apiPreferences.maxFileSizeBytesFlow.first() / 1000).toString()
-                                                partSizeInput = apiPreferences.partSizeFlow.first().toString()
-                                                maxTextResultLengthInput = (apiPreferences.maxTextResultLengthFlow.first() / 1000).toString()
-                                                maxImageHistoryUserTurnsInput = apiPreferences.maxImageHistoryUserTurnsFlow.first().toString()
-                                                maxMediaHistoryUserTurnsInput = apiPreferences.maxMediaHistoryUserTurnsFlow.first().toString()
-                                                showSaveSuccessMessage = true
-                                        }
-                                },
-                                modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 8.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                                )
-                        ) {
-                                Icon(
-                                        imageVector = Icons.Default.RestartAlt,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                        text = stringResource(id = R.string.context_reset_all_settings),
-                                        style = MaterialTheme.typography.bodyLarge
-                                )
-                        }
-
-                        // ======= 保存按钮 =======
-                        Button(
-                                onClick = { saveAllSettings() },
-                                modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(top = 8.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary
-                                )
-                        ) {
-                                Icon(
-                                        imageVector = Icons.Default.Save,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                        text = stringResource(id = R.string.settings_save),
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Bold
-                                )
-                        }
-
-                        // 底部间距
-                        Spacer(modifier = Modifier.height(16.dp))
-                }
-
-                // 验证错误提示
-                if (showValidationError) {
-                        AlertDialog(
-                                onDismissRequest = { showValidationError = false },
-                                title = { Text(stringResource(R.string.context_validation_failed)) },
-                                text = { Text(validationErrorMessage) },
-                                confirmButton = {
-                                        TextButton(onClick = { showValidationError = false }) {
-                                                Text(stringResource(id = android.R.string.ok))
-                                        }
-                                }
-                        )
-                }
-
-                // 保存成功提示
-                if (showSaveSuccessMessage) {
-                        LaunchedEffect(Unit) {
-                                kotlinx.coroutines.delay(1500)
-                                showSaveSuccessMessage = false
-                        }
-                        Snackbar(
-                                modifier = Modifier.padding(16.dp),
-                                action = {
-                                        TextButton(onClick = { showSaveSuccessMessage = false }) {
-                                                Text(stringResource(id = android.R.string.ok))
-                                        }
-                                }
-                        ) {
-                                Text(stringResource(id = R.string.settings_saved))
-                        }
-                }
+    val currentConfig by produceState<ModelConfigData?>(initialValue = null, key1 = currentChatConfigId) {
+        if (currentChatConfigId.isBlank()) {
+            value = null
+            return@produceState
         }
+        modelConfigManager.getModelConfigFlow(currentChatConfigId).collect { config ->
+            value = config
+        }
+    }
+    var contextLengthInput by remember(currentConfig?.id) {
+        mutableStateOf(formatFloatValue(currentConfig?.contextLength))
+    }
+    var maxContextLengthInput by remember(currentConfig?.id) {
+        mutableStateOf(formatFloatValue(currentConfig?.maxContextLength))
+    }
+    var contextError by remember { mutableStateOf<String?>(null) }
+
+    var enableSummary by remember(currentConfig?.id) {
+        mutableStateOf(currentConfig?.enableSummary ?: false)
+    }
+    var summaryTokenThresholdInput by remember(currentConfig?.id) {
+        mutableStateOf(formatFloatValue(currentConfig?.summaryTokenThreshold))
+    }
+    var enableSummaryByMessageCount by remember(currentConfig?.id) {
+        mutableStateOf(currentConfig?.enableSummaryByMessageCount ?: false)
+    }
+    var summaryMessageCountThresholdInput by remember(currentConfig?.id) {
+        mutableStateOf(currentConfig?.summaryMessageCountThreshold?.toString().orEmpty())
+    }
+    var summaryError by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(currentConfig?.id, currentConfig?.contextLength) {
+        contextLengthInput = formatFloatValue(currentConfig?.contextLength)
+    }
+    LaunchedEffect(currentConfig?.id, currentConfig?.maxContextLength) {
+        maxContextLengthInput = formatFloatValue(currentConfig?.maxContextLength)
+    }
+    LaunchedEffect(currentConfig?.id, currentConfig?.enableSummary) {
+        enableSummary = currentConfig?.enableSummary ?: false
+    }
+    LaunchedEffect(currentConfig?.id, currentConfig?.summaryTokenThreshold) {
+        summaryTokenThresholdInput = formatFloatValue(currentConfig?.summaryTokenThreshold)
+    }
+    LaunchedEffect(currentConfig?.id, currentConfig?.enableSummaryByMessageCount) {
+        enableSummaryByMessageCount = currentConfig?.enableSummaryByMessageCount ?: false
+    }
+    LaunchedEffect(currentConfig?.id, currentConfig?.summaryMessageCountThreshold) {
+        summaryMessageCountThresholdInput =
+            currentConfig?.summaryMessageCountThreshold?.toString().orEmpty()
+    }
+
+    val errorValidContextLength = stringResource(id = R.string.model_config_error_valid_context_length)
+    val errorValidMaxContextLength =
+        stringResource(id = R.string.model_config_error_valid_max_context_length)
+    val errorSaveFailed = stringResource(id = R.string.model_config_error_save_failed)
+    val errorSummaryThresholdRange =
+        stringResource(id = R.string.model_config_error_summary_threshold_range)
+    val errorValidMessageCount = stringResource(id = R.string.model_config_error_valid_message_count)
+
+    var showSaveSuccessMessage by remember { mutableStateOf(false) }
+    var historyError by remember { mutableStateOf<String?>(null) }
+
+    val currentConfigDisplayName = remember(currentConfig, currentChatConfigId) {
+        buildBoundConfigDisplayName(currentConfig, currentChatConfigId)
+    }
+
+    ContextSummaryAutoSaveEffects(
+        currentConfig = currentConfig,
+        contextInputsProvider = { contextLengthInput to maxContextLengthInput },
+        summaryInputsProvider = {
+            listOf(
+                enableSummary,
+                summaryTokenThresholdInput,
+                enableSummaryByMessageCount,
+                summaryMessageCountThresholdInput
+            )
+        },
+        modelConfigManager = modelConfigManager,
+        errorValidContextLength = errorValidContextLength,
+        errorValidMaxContextLength = errorValidMaxContextLength,
+        errorSaveFailed = errorSaveFailed,
+        errorSummaryThresholdRange = errorSummaryThresholdRange,
+        errorValidMessageCount = errorValidMessageCount,
+        onContextErrorChange = { contextError = it },
+        onSummaryErrorChange = { summaryError = it }
+    )
+    HistoryRetentionAutoSaveEffects(
+        historyInputsProvider = {
+            maxImageHistoryUserTurnsInput to maxMediaHistoryUserTurnsInput
+        },
+        savedHistoryValuesProvider = {
+            savedMaxImageHistoryUserTurns to savedMaxMediaHistoryUserTurns
+        },
+        apiPreferences = apiPreferences,
+        errorSaveFailed = errorSaveFailed,
+        onHistoryErrorChange = { historyError = it }
+    )
+
+    CustomScaffold() { paddingValues ->
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            Column(
+                modifier =
+                    Modifier.fillMaxSize()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                        .verticalScroll(scrollState)
+            ) {
+                SettingsInfoBanner(
+                    text = stringResource(id = R.string.context_summary_note),
+                    backgroundColor = componentBackgroundColor
+                )
+                Spacer(modifier = Modifier.size(12.dp))
+
+                SectionTitle(
+                    text = stringResource(id = R.string.model_config),
+                    icon = Icons.Default.Link
+                )
+                BoundModelConfigCard(
+                    configDisplayName = currentConfigDisplayName,
+                    backgroundColor = componentBackgroundColor
+                )
+                Spacer(modifier = Modifier.size(12.dp))
+
+                RenderContextSummaryConfigSections(
+                    componentBackgroundColor = componentBackgroundColor,
+                    contextLengthInput = contextLengthInput,
+                    onContextLengthInputChange = {
+                        contextLengthInput = it
+                        contextError = null
+                    },
+                    maxContextLengthInput = maxContextLengthInput,
+                    onMaxContextLengthInputChange = {
+                        maxContextLengthInput = it
+                        contextError = null
+                    },
+                    contextError = contextError,
+                    enableSummary = enableSummary,
+                    onEnableSummaryChange = { enableSummary = it },
+                    summaryTokenThresholdInput = summaryTokenThresholdInput,
+                    onSummaryTokenThresholdInputChange = {
+                        summaryTokenThresholdInput = it
+                        summaryError = null
+                    },
+                    enableSummaryByMessageCount = enableSummaryByMessageCount,
+                    onEnableSummaryByMessageCountChange = { enableSummaryByMessageCount = it },
+                    summaryMessageCountThresholdInput = summaryMessageCountThresholdInput,
+                    onSummaryMessageCountThresholdInputChange = {
+                        summaryMessageCountThresholdInput = it
+                        summaryError = null
+                    },
+                    summaryError = summaryError
+                )
+
+                Spacer(modifier = Modifier.size(12.dp))
+                RenderHistoryRetentionSection(
+                    componentBackgroundColor = componentBackgroundColor,
+                    maxImageHistoryUserTurnsInput = maxImageHistoryUserTurnsInput,
+                    onMaxImageHistoryUserTurnsInputChange = { maxImageHistoryUserTurnsInput = it },
+                    maxMediaHistoryUserTurnsInput = maxMediaHistoryUserTurnsInput,
+                    onMaxMediaHistoryUserTurnsInputChange = { maxMediaHistoryUserTurnsInput = it },
+                    onReset = {
+                        scope.launch {
+                            historyError = null
+                            apiPreferences.resetHistoryRetentionSettings()
+                            maxImageHistoryUserTurnsInput =
+                                apiPreferences.maxImageHistoryUserTurnsFlow.first().toString()
+                            maxMediaHistoryUserTurnsInput =
+                                apiPreferences.maxMediaHistoryUserTurnsFlow.first().toString()
+                            showSaveSuccessMessage = true
+                        }
+                    },
+                    historyError = historyError
+                )
+
+                Spacer(modifier = Modifier.size(16.dp))
+            }
+
+            RenderContextSummaryDialogs(
+                showSaveSuccessMessage = showSaveSuccessMessage,
+                onDismissSaveSuccess = { showSaveSuccessMessage = false }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ContextSummaryAutoSaveEffects(
+    currentConfig: ModelConfigData?,
+    contextInputsProvider: () -> Pair<String, String>,
+    summaryInputsProvider: () -> List<Any>,
+    modelConfigManager: ModelConfigManager,
+    errorValidContextLength: String,
+    errorValidMaxContextLength: String,
+    errorSaveFailed: String,
+    errorSummaryThresholdRange: String,
+    errorValidMessageCount: String,
+    onContextErrorChange: (String?) -> Unit,
+    onSummaryErrorChange: (String?) -> Unit
+) {
+    val latestConfig by rememberUpdatedState(currentConfig)
+
+    LaunchedEffect(currentConfig?.id) {
+        val configId = currentConfig?.id ?: return@LaunchedEffect
+        snapshotFlow { contextInputsProvider() }
+            .drop(1)
+            .debounce(700)
+            .distinctUntilChanged()
+            .collectLatest { (contextText, maxText) ->
+                val contextValue = contextText.toFloatOrNull()
+                val maxValue = maxText.toFloatOrNull()
+                when {
+                    contextValue == null || contextValue <= 0f ->
+                        onContextErrorChange(errorValidContextLength)
+                    maxValue == null || maxValue <= 0f ->
+                        onContextErrorChange(errorValidMaxContextLength)
+                    else -> {
+                        val current = latestConfig ?: return@collectLatest
+                        if (current.id != configId) return@collectLatest
+                        if (current.contextLength == contextValue && current.maxContextLength == maxValue) {
+                            onContextErrorChange(null)
+                            return@collectLatest
+                        }
+                        try {
+                            modelConfigManager.updateContextSettings(
+                                configId = current.id,
+                                contextLength = contextValue,
+                                maxContextLength = maxValue,
+                                enableMaxContextMode = current.enableMaxContextMode
+                            )
+                            onContextErrorChange(null)
+                        } catch (e: Exception) {
+                            onContextErrorChange(e.message ?: errorSaveFailed)
+                        }
+                    }
+                }
+            }
+    }
+
+    LaunchedEffect(currentConfig?.id) {
+        val configId = currentConfig?.id ?: return@LaunchedEffect
+        snapshotFlow { summaryInputsProvider() }
+            .drop(1)
+            .debounce(700)
+            .distinctUntilChanged()
+            .collectLatest {
+                val current = latestConfig ?: return@collectLatest
+                if (current.id != configId) return@collectLatest
+
+                val enableSummary = it[0] as Boolean
+                val summaryTokenThresholdInput = it[1] as String
+                val enableSummaryByMessageCount = it[2] as Boolean
+                val summaryMessageCountThresholdInput = it[3] as String
+
+                if (!enableSummary) {
+                    if (current.enableSummary) {
+                        try {
+                            modelConfigManager.updateSummarySettings(
+                                configId = current.id,
+                                enableSummary = false,
+                                summaryTokenThreshold = current.summaryTokenThreshold,
+                                enableSummaryByMessageCount = current.enableSummaryByMessageCount,
+                                summaryMessageCountThreshold = current.summaryMessageCountThreshold
+                            )
+                            onSummaryErrorChange(null)
+                        } catch (e: Exception) {
+                            onSummaryErrorChange(e.message ?: errorSaveFailed)
+                        }
+                    }
+                    return@collectLatest
+                }
+
+                val threshold = summaryTokenThresholdInput.toFloatOrNull()
+                val messageCount = summaryMessageCountThresholdInput.toIntOrNull()
+                when {
+                    threshold == null || threshold <= 0f || threshold >= 1f ->
+                        onSummaryErrorChange(errorSummaryThresholdRange)
+                    enableSummaryByMessageCount && (messageCount == null || messageCount <= 0) ->
+                        onSummaryErrorChange(errorValidMessageCount)
+                    else -> {
+                        val nextMessageCount =
+                            if (enableSummaryByMessageCount) {
+                                messageCount ?: current.summaryMessageCountThreshold
+                            } else {
+                                current.summaryMessageCountThreshold
+                            }
+                        val isNoOp =
+                            current.enableSummary == enableSummary &&
+                                current.summaryTokenThreshold == threshold &&
+                                current.enableSummaryByMessageCount == enableSummaryByMessageCount &&
+                                current.summaryMessageCountThreshold == nextMessageCount
+                        if (isNoOp) {
+                            onSummaryErrorChange(null)
+                            return@collectLatest
+                        }
+                        try {
+                            modelConfigManager.updateSummarySettings(
+                                configId = current.id,
+                                enableSummary = enableSummary,
+                                summaryTokenThreshold = threshold,
+                                enableSummaryByMessageCount = enableSummaryByMessageCount,
+                                summaryMessageCountThreshold = nextMessageCount
+                            )
+                            onSummaryErrorChange(null)
+                        } catch (e: Exception) {
+                            onSummaryErrorChange(e.message ?: errorSaveFailed)
+                        }
+                    }
+                }
+            }
+    }
+}
+
+@Composable
+private fun HistoryRetentionAutoSaveEffects(
+    historyInputsProvider: () -> Pair<String, String>,
+    savedHistoryValuesProvider: () -> Pair<Int, Int>,
+    apiPreferences: ApiPreferences,
+    errorSaveFailed: String,
+    onHistoryErrorChange: (String?) -> Unit
+) {
+    val latestSavedHistoryValues by rememberUpdatedState(savedHistoryValuesProvider())
+
+    LaunchedEffect(apiPreferences) {
+        snapshotFlow { historyInputsProvider() }
+            .drop(1)
+            .debounce(700)
+            .distinctUntilChanged()
+            .collectLatest { (imageTurnsText, mediaTurnsText) ->
+                val imageTurns = imageTurnsText.toIntOrNull()
+                val mediaTurns = mediaTurnsText.toIntOrNull()
+                if (imageTurns == null || imageTurns < 0 || mediaTurns == null || mediaTurns < 0) {
+                    return@collectLatest
+                }
+
+                val (savedImageTurns, savedMediaTurns) = latestSavedHistoryValues
+                if (imageTurns == savedImageTurns && mediaTurns == savedMediaTurns) {
+                    onHistoryErrorChange(null)
+                    return@collectLatest
+                }
+
+                try {
+                    apiPreferences.saveMaxImageHistoryUserTurns(imageTurns)
+                    apiPreferences.saveMaxMediaHistoryUserTurns(mediaTurns)
+                    onHistoryErrorChange(null)
+                } catch (e: Exception) {
+                    onHistoryErrorChange(e.message ?: errorSaveFailed)
+                }
+            }
+    }
+}
+
+@Composable
+private fun RenderContextSummaryConfigSections(
+    componentBackgroundColor: Color,
+    contextLengthInput: String,
+    onContextLengthInputChange: (String) -> Unit,
+    maxContextLengthInput: String,
+    onMaxContextLengthInputChange: (String) -> Unit,
+    contextError: String?,
+    enableSummary: Boolean,
+    onEnableSummaryChange: (Boolean) -> Unit,
+    summaryTokenThresholdInput: String,
+    onSummaryTokenThresholdInputChange: (String) -> Unit,
+    enableSummaryByMessageCount: Boolean,
+    onEnableSummaryByMessageCountChange: (Boolean) -> Unit,
+    summaryMessageCountThresholdInput: String,
+    onSummaryMessageCountThresholdInputChange: (String) -> Unit,
+    summaryError: String?
+) {
+    SectionTitle(
+        text = stringResource(id = R.string.settings_context_title),
+        icon = Icons.Default.Analytics
+    )
+    SettingsInfoBanner(
+        text = stringResource(id = R.string.settings_context_card_content),
+        backgroundColor = componentBackgroundColor
+    )
+    SettingsInputField(
+        title = stringResource(id = R.string.settings_context_length),
+        subtitle = stringResource(id = R.string.settings_context_length_subtitle),
+        value = contextLengthInput,
+        onValueChange = onContextLengthInputChange,
+        unitText = "K",
+        backgroundColor = componentBackgroundColor,
+        allowDecimal = true,
+        keyboardOptions =
+            KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)
+    )
+    SettingsInputField(
+        title = stringResource(id = R.string.settings_max_context_length),
+        subtitle = stringResource(id = R.string.settings_max_context_length_subtitle),
+        value = maxContextLengthInput,
+        onValueChange = onMaxContextLengthInputChange,
+        unitText = "K",
+        backgroundColor = componentBackgroundColor,
+        allowDecimal = true,
+        keyboardOptions =
+            KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done)
+    )
+    contextError?.let {
+        Text(
+            text = it,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+    }
+
+    Spacer(modifier = Modifier.size(8.dp))
+    SectionTitle(
+        text = stringResource(id = R.string.settings_summary_title),
+        icon = Icons.Default.Summarize
+    )
+    SettingsSwitchRow(
+        title = stringResource(id = R.string.settings_enable_summary),
+        subtitle = stringResource(id = R.string.settings_enable_summary_desc),
+        checked = enableSummary,
+        onCheckedChange = onEnableSummaryChange,
+        backgroundColor = componentBackgroundColor
+    )
+    SettingsInputField(
+        title = stringResource(id = R.string.settings_summary_threshold),
+        subtitle = stringResource(id = R.string.settings_summary_threshold_subtitle),
+        value = summaryTokenThresholdInput,
+        onValueChange = onSummaryTokenThresholdInputChange,
+        backgroundColor = componentBackgroundColor,
+        enabled = enableSummary,
+        allowDecimal = true,
+        keyboardOptions =
+            KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)
+    )
+    SettingsSwitchRow(
+        title = stringResource(id = R.string.settings_enable_summary_by_message_count),
+        subtitle = stringResource(id = R.string.settings_enable_summary_by_message_count_desc),
+        checked = enableSummaryByMessageCount,
+        onCheckedChange = onEnableSummaryByMessageCountChange,
+        backgroundColor = componentBackgroundColor,
+        enabled = enableSummary
+    )
+    SettingsInputField(
+        title = stringResource(id = R.string.settings_summary_message_count_threshold),
+        subtitle = stringResource(id = R.string.settings_summary_message_count_threshold_subtitle),
+        value = summaryMessageCountThresholdInput,
+        onValueChange = onSummaryMessageCountThresholdInputChange,
+        unitText = stringResource(id = R.string.model_config_unit_items),
+        backgroundColor = componentBackgroundColor,
+        enabled = enableSummary && enableSummaryByMessageCount
+    )
+    summaryError?.let {
+        Text(
+            text = it,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 4.dp)
+        )
+    }
+}
+
+@Composable
+private fun RenderHistoryRetentionSection(
+    componentBackgroundColor: Color,
+    maxImageHistoryUserTurnsInput: String,
+    onMaxImageHistoryUserTurnsInputChange: (String) -> Unit,
+    maxMediaHistoryUserTurnsInput: String,
+    onMaxMediaHistoryUserTurnsInputChange: (String) -> Unit,
+    onReset: () -> Unit,
+    historyError: String?
+) {
+    SectionTitle(
+        text = stringResource(id = R.string.settings_history_retention_title),
+        icon = Icons.Default.History
+    )
+    SettingsInputField(
+        title = stringResource(id = R.string.settings_max_image_history_user_turns),
+        subtitle = stringResource(id = R.string.settings_max_image_history_user_turns_subtitle),
+        value = maxImageHistoryUserTurnsInput,
+        onValueChange = onMaxImageHistoryUserTurnsInputChange,
+        unitText = stringResource(id = R.string.context_unit_times),
+        backgroundColor = componentBackgroundColor
+    )
+
+    SettingsInputField(
+        title = stringResource(id = R.string.settings_max_media_history_user_turns),
+        subtitle = stringResource(id = R.string.settings_max_media_history_user_turns_subtitle),
+        value = maxMediaHistoryUserTurnsInput,
+        onValueChange = onMaxMediaHistoryUserTurnsInputChange,
+        unitText = stringResource(id = R.string.context_unit_times),
+        backgroundColor = componentBackgroundColor
+    )
+
+    Button(
+        onClick = onReset,
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        colors =
+            ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+            )
+    ) {
+        Icon(imageVector = Icons.Default.RestartAlt, contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(text = stringResource(id = R.string.context_reset_all_settings), style = MaterialTheme.typography.bodyLarge)
+    }
+
+    historyError?.let {
+        Text(
+            text = it,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
+        )
+    }
+}
+
+@Composable
+private fun BoxScope.RenderContextSummaryDialogs(
+    showSaveSuccessMessage: Boolean,
+    onDismissSaveSuccess: () -> Unit
+) {
+    if (showSaveSuccessMessage) {
+        LaunchedEffect(Unit) {
+            kotlinx.coroutines.delay(1500)
+            onDismissSaveSuccess()
+        }
+        Snackbar(
+            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+            action = {
+                TextButton(onClick = onDismissSaveSuccess) {
+                    Text(stringResource(id = android.R.string.ok))
+                }
+            }
+        ) {
+            Text(stringResource(id = R.string.settings_saved))
+        }
+    }
+}
+
+private fun formatFloatValue(value: Float?): String {
+    if (value == null) return ""
+    return if (value % 1f == 0f) value.toInt().toString() else value.toString()
+}
+
+private fun buildBoundConfigDisplayName(config: ModelConfigData?, fallbackConfigId: String): String {
+    val effectiveConfig = config ?: return fallbackConfigId.ifBlank { FunctionalConfigManager.DEFAULT_CONFIG_ID }
+    return if (effectiveConfig.name.isBlank()) {
+        effectiveConfig.id
+    } else {
+        effectiveConfig.name
+    }
+}
+
+@Composable
+private fun BoundModelConfigCard(configDisplayName: String, backgroundColor: Color) {
+    Column(
+        modifier =
+            Modifier.fillMaxWidth()
+                .padding(bottom = 4.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(backgroundColor)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = stringResource(id = R.string.context_summary_current_model_config, configDisplayName),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.primary
+        )
+        Spacer(modifier = Modifier.size(2.dp))
+        Text(
+            text = stringResource(id = R.string.context_summary_bound_config_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SettingsInfoBanner(text: String, backgroundColor: Color) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier =
+            Modifier.fillMaxWidth()
+                .padding(bottom = 4.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(backgroundColor)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+    )
 }
 
 @Composable
 private fun SectionTitle(text: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
-        Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(bottom = 8.dp)
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(bottom = 8.dp)
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Text(
+            text = text,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary
+        )
+    }
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    subtitle: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    backgroundColor: Color,
+    enabled: Boolean = true
+) {
+    val contentAlpha = if (enabled) 1f else 0.38f
+    Row(
+        modifier =
+            Modifier.fillMaxWidth()
+                .padding(bottom = 4.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(backgroundColor)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .alpha(contentAlpha),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(
+            modifier = Modifier.weight(1f).padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-                Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                        text = text,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                )
+            Text(text = title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
+        Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+    }
 }
 
 @Composable
@@ -332,88 +772,86 @@ private fun SettingsInputField(
     onValueChange: (String) -> Unit,
     unitText: String? = null,
     backgroundColor: Color,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    allowDecimal: Boolean = false,
+    keyboardOptions: KeyboardOptions =
+        KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done)
 ) {
     val focusManager = LocalFocusManager.current
     val contentAlpha = if (enabled) 1f else 0.38f
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(bottom = 4.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(backgroundColor)
-            .padding(8.dp)
-            .alpha(contentAlpha)
+    Row(
+        modifier =
+            Modifier.fillMaxWidth()
+                .padding(bottom = 4.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(backgroundColor)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .alpha(contentAlpha),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+        Column(
+            modifier = Modifier.weight(1f).padding(end = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.Medium
-                )
-                Text(
-                    text = subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontSize = 10.sp
-                )
-            }
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                BasicTextField(
-                    value = value,
-                    onValueChange = { newText ->
-                        if (enabled) {
-                            onValueChange(newText.filter { it.isDigit() || it == '.' })
-                        }
-                    },
-                    enabled = enabled,
-                    modifier = Modifier
-                        .width(50.dp)
-                        .background(
-                            MaterialTheme.colorScheme.surfaceVariant,
-                            RoundedCornerShape(4.dp)
-                        )
-                        .padding(horizontal = 4.dp, vertical = 4.dp),
-                    textStyle = TextStyle(
+            Text(text = title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BasicTextField(
+                value = value,
+                onValueChange = { newText ->
+                    if (enabled) {
+                        onValueChange(if (allowDecimal) filterDecimalInput(newText) else newText.filter { it.isDigit() })
+                    }
+                },
+                enabled = enabled,
+                modifier =
+                    Modifier.width(if (allowDecimal) 88.dp else 72.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                textStyle =
+                    TextStyle(
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
+                        fontSize = 13.sp,
                         textAlign = TextAlign.Center
                     ),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Number,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            if (enabled) {
-                                focusManager.clearFocus()
-                            }
-                        }
-                    ),
-                    singleLine = true
-                )
-
-                if (unitText != null) {
-                    Text(
-                        text = unitText,
-                        style = MaterialTheme.typography.bodySmall.copy(
+                keyboardOptions = keyboardOptions,
+                keyboardActions = KeyboardActions(onDone = { if (enabled) focusManager.clearFocus() }),
+                singleLine = true
+            )
+            if (unitText != null) {
+                Text(
+                    text = unitText,
+                    style =
+                        MaterialTheme.typography.bodySmall.copy(
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp
                         ),
-                        modifier = Modifier.padding(start = 4.dp)
-                    )
-                }
+                    modifier = Modifier.padding(start = 4.dp)
+                )
             }
         }
     }
 }
 
+private fun filterDecimalInput(input: String): String {
+    var dotSeen = false
+    val result = StringBuilder()
+    input.forEachIndexed { index, c ->
+        when {
+            c.isDigit() -> result.append(c)
+            c == '.' && !dotSeen -> {
+                dotSeen = true
+                if (result.isEmpty() && index == 0) result.append("0.") else result.append(c)
+            }
+        }
+    }
+    return result.toString()
+}

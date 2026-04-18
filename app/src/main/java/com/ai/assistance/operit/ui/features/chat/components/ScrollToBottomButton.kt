@@ -152,6 +152,7 @@ fun ScrollToBottomButton(
     scrollState: ComposeLazyListState,
     coroutineScope: CoroutineScope,
     autoScrollToBottom: Boolean,
+    reverseLayout: Boolean = false,
     onAutoScrollToBottomChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -171,16 +172,21 @@ fun ScrollToBottomButton(
             .distinctUntilChanged()
             .collect { (currentIndex, currentOffset, _) ->
                 if (scrollState.isScrollInProgress) {
-                    val scrolledUp =
-                        currentIndex < lastIndex ||
-                            (currentIndex == lastIndex && currentOffset < lastOffset)
-                    if (scrolledUp) {
+                    val movedAwayFromBottom =
+                        if (reverseLayout) {
+                            currentIndex > lastIndex ||
+                                (currentIndex == lastIndex && currentOffset > lastOffset)
+                        } else {
+                            currentIndex < lastIndex ||
+                                (currentIndex == lastIndex && currentOffset < lastOffset)
+                        }
+                    if (movedAwayFromBottom) {
                         if (autoScrollToBottom && isDragged) {
                             onAutoScrollToBottomChange(false)
                             showScrollButton = true
                         }
                     } else {
-                        val isAtBottom = scrollState.isAtBottom()
+                        val isAtBottom = scrollState.isAtBottom(reverseLayout = reverseLayout)
                         if (isAtBottom && !autoScrollToBottom) {
                             onAutoScrollToBottomChange(true)
                             showScrollButton = false
@@ -197,7 +203,11 @@ fun ScrollToBottomButton(
         modifier = modifier,
         onClick = {
             coroutineScope.launch {
-                scrollState.animateScrollToEnd()
+                if (reverseLayout) {
+                    scrollState.animateScrollToItem(0)
+                } else {
+                    scrollState.animateScrollToEnd()
+                }
             }
             onAutoScrollToBottomChange(true)
             showScrollButton = false
@@ -243,11 +253,16 @@ private fun ChatLazyListState.isAtBottom(): Boolean {
     return !canScrollForward && lastVisibleItemIndex >= layoutInfo.totalItemsCount - 1
 }
 
-private fun ComposeLazyListState.isAtBottom(): Boolean {
+private fun ComposeLazyListState.isAtBottom(reverseLayout: Boolean = false): Boolean {
     val layoutInfo = layoutInfo
     if (layoutInfo.totalItemsCount == 0) {
         return true
     }
-    val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: return false
-    return !canScrollForward && lastVisibleItemIndex >= layoutInfo.totalItemsCount - 1
+    return if (reverseLayout) {
+        val firstVisibleItemIndex = layoutInfo.visibleItemsInfo.firstOrNull()?.index ?: return false
+        !canScrollBackward && firstVisibleItemIndex <= 0
+    } else {
+        val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: return false
+        !canScrollForward && lastVisibleItemIndex >= layoutInfo.totalItemsCount - 1
+    }
 }

@@ -162,10 +162,6 @@ class ApiPreferences private constructor(private val context: Context) {
         // Custom System Prompt Template (Advanced Configuration)
         val CUSTOM_SYSTEM_PROMPT_TEMPLATE = stringPreferencesKey("custom_system_prompt_template")
 
-        // Keys for Truncation Settings (文件和结果截断配置)
-        val MAX_FILE_SIZE_BYTES = intPreferencesKey("max_file_size_bytes")
-        val PART_SIZE = intPreferencesKey("part_size")
-        val MAX_TEXT_RESULT_LENGTH = intPreferencesKey("max_text_result_length")
         val MAX_IMAGE_HISTORY_USER_TURNS = intPreferencesKey("max_image_history_user_turns")
         val MAX_MEDIA_HISTORY_USER_TURNS = intPreferencesKey("max_media_history_user_turns")
 
@@ -198,10 +194,6 @@ class ApiPreferences private constructor(private val context: Context) {
         // Default system prompt template (empty means use built-in template)
         const val DEFAULT_SYSTEM_PROMPT_TEMPLATE = ""
 
-        // Default values for Truncation Settings (文件和结果截断的默认值)
-        const val DEFAULT_MAX_FILE_SIZE_BYTES = 32000  // 文件读取操作的最大字节数限制
-        const val DEFAULT_PART_SIZE = 200  // 分段读取文件时，每个部分的行数
-        const val DEFAULT_MAX_TEXT_RESULT_LENGTH = 5000  // 通用文本结果的最大字符数限制
         const val DEFAULT_MAX_IMAGE_HISTORY_USER_TURNS = 2
         const val DEFAULT_MAX_MEDIA_HISTORY_USER_TURNS = 1
 
@@ -367,22 +359,6 @@ class ApiPreferences private constructor(private val context: Context) {
             context.apiDataStore.data.map { preferences ->
                 preferences[CUSTOM_SYSTEM_PROMPT_TEMPLATE] ?: DEFAULT_SYSTEM_PROMPT_TEMPLATE
             }
-
-    // Flows for Truncation Settings (文件和结果截断配置的Flow)
-    val maxFileSizeBytesFlow: Flow<Int> =
-        context.apiDataStore.data.map { preferences ->
-            preferences[MAX_FILE_SIZE_BYTES] ?: DEFAULT_MAX_FILE_SIZE_BYTES
-        }
-
-    val partSizeFlow: Flow<Int> =
-        context.apiDataStore.data.map { preferences ->
-            preferences[PART_SIZE] ?: DEFAULT_PART_SIZE
-        }
-
-    val maxTextResultLengthFlow: Flow<Int> =
-        context.apiDataStore.data.map { preferences ->
-            preferences[MAX_TEXT_RESULT_LENGTH] ?: DEFAULT_MAX_TEXT_RESULT_LENGTH
-        }
 
     val maxImageHistoryUserTurnsFlow: Flow<Int> =
         context.apiDataStore.data.map { preferences ->
@@ -821,29 +797,6 @@ class ApiPreferences private constructor(private val context: Context) {
         }
     }
 
-    // ===== Truncation Settings 截断设置相关方法 =====
-
-    // 保存文件读取最大字节数
-    suspend fun saveMaxFileSizeBytes(sizeBytes: Int) {
-        context.apiDataStore.edit { preferences ->
-            preferences[MAX_FILE_SIZE_BYTES] = sizeBytes
-        }
-    }
-
-    // 保存分段读取的行数
-    suspend fun savePartSize(size: Int) {
-        context.apiDataStore.edit { preferences ->
-            preferences[PART_SIZE] = size
-        }
-    }
-
-    // 保存文本结果最大长度
-    suspend fun saveMaxTextResultLength(length: Int) {
-        context.apiDataStore.edit { preferences ->
-            preferences[MAX_TEXT_RESULT_LENGTH] = length
-        }
-    }
-
     suspend fun saveMaxImageHistoryUserTurns(turns: Int) {
         context.apiDataStore.edit { preferences ->
             preferences[MAX_IMAGE_HISTORY_USER_TURNS] = turns
@@ -856,24 +809,6 @@ class ApiPreferences private constructor(private val context: Context) {
         }
     }
 
-    // 获取文件读取最大字节数
-    suspend fun getMaxFileSizeBytes(): Int {
-        val preferences = context.apiDataStore.data.first()
-        return preferences[MAX_FILE_SIZE_BYTES] ?: DEFAULT_MAX_FILE_SIZE_BYTES
-    }
-
-    // 获取分段读取的行数
-    suspend fun getPartSize(): Int {
-        val preferences = context.apiDataStore.data.first()
-        return preferences[PART_SIZE] ?: DEFAULT_PART_SIZE
-    }
-
-    // 获取文本结果最大长度
-    suspend fun getMaxTextResultLength(): Int {
-        val preferences = context.apiDataStore.data.first()
-        return preferences[MAX_TEXT_RESULT_LENGTH] ?: DEFAULT_MAX_TEXT_RESULT_LENGTH
-    }
-
     suspend fun getMaxImageHistoryUserTurns(): Int {
         val preferences = context.apiDataStore.data.first()
         return preferences[MAX_IMAGE_HISTORY_USER_TURNS] ?: DEFAULT_MAX_IMAGE_HISTORY_USER_TURNS
@@ -884,27 +819,10 @@ class ApiPreferences private constructor(private val context: Context) {
         return preferences[MAX_MEDIA_HISTORY_USER_TURNS] ?: DEFAULT_MAX_MEDIA_HISTORY_USER_TURNS
     }
 
-    // 重置截断设置为默认值
-    suspend fun resetTruncationSettings() {
+    suspend fun resetHistoryRetentionSettings() {
         context.apiDataStore.edit { preferences ->
-            preferences[MAX_FILE_SIZE_BYTES] = DEFAULT_MAX_FILE_SIZE_BYTES
-            preferences[PART_SIZE] = DEFAULT_PART_SIZE
-            preferences[MAX_TEXT_RESULT_LENGTH] = DEFAULT_MAX_TEXT_RESULT_LENGTH
             preferences[MAX_IMAGE_HISTORY_USER_TURNS] = DEFAULT_MAX_IMAGE_HISTORY_USER_TURNS
             preferences[MAX_MEDIA_HISTORY_USER_TURNS] = DEFAULT_MAX_MEDIA_HISTORY_USER_TURNS
-        }
-    }
-
-    // 批量保存所有截断设置
-    suspend fun saveTruncationSettings(
-        maxFileSizeBytes: Int,
-        partSize: Int,
-        maxTextResultLength: Int
-    ) {
-        context.apiDataStore.edit { preferences ->
-            preferences[MAX_FILE_SIZE_BYTES] = maxFileSizeBytes
-            preferences[PART_SIZE] = partSize
-            preferences[MAX_TEXT_RESULT_LENGTH] = maxTextResultLength
         }
     }
 }

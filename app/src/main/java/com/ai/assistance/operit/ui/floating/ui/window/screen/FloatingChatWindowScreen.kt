@@ -58,7 +58,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import com.ai.assistance.operit.ui.features.chat.components.AttachmentChip
 import com.ai.assistance.operit.ui.features.chat.components.ChatMessageHeightMemory
 import com.ai.assistance.operit.ui.features.chat.components.ScrollToBottomButton
-import com.ai.assistance.operit.ui.features.chat.components.animateScrollToEnd
 import com.ai.assistance.operit.ui.features.chat.components.rememberChatMessageHeightMemory
 import com.ai.assistance.operit.ui.features.chat.components.style.cursor.CursorStyleChatMessage
 import com.ai.assistance.operit.ui.floating.ui.window.components.*
@@ -622,10 +621,23 @@ private fun ColumnScope.ChatContentArea(
 @Composable
 private fun ChatMessagesView(
     floatContext: FloatContext,
-    viewModel: FloatingChatWindowModeViewModel
+    _viewModel: FloatingChatWindowModeViewModel
 ) {
     val scrollState = rememberLazyListState()
-    val messageHeightMemory = rememberChatMessageHeightMemory(floatContext.messages)
+    val messagesPerPage = 10
+    // 不要使用 messages 作为 key，否则每次消息更新都会重置深度
+    var currentDepth = remember { mutableStateOf(1) }
+    val messagesCount = floatContext.messages.size
+    val maxVisibleIndex = messagesCount - 1
+    val minVisibleIndex =
+        maxOf(0, maxVisibleIndex - currentDepth.value * messagesPerPage + 1)
+    val hasMoreMessages = minVisibleIndex > 0
+    val visibleMessages = floatContext.messages.subList(minVisibleIndex, messagesCount)
+    val displayMessages =
+        visibleMessages
+            .filter { it.sender != "think" }
+            .asReversed()
+    val messageHeightMemory = rememberChatMessageHeightMemory(displayMessages)
     val coroutineScope = rememberCoroutineScope()
     val userMessageColor = MaterialTheme.colorScheme.primaryContainer
     val aiMessageColor = MaterialTheme.colorScheme.surface
@@ -640,11 +652,6 @@ private fun ChatMessagesView(
     var autoScrollToBottom by remember { mutableStateOf(true) }
     val onAutoScrollToBottomChange = remember { { it: Boolean -> autoScrollToBottom = it } }
 
-    // 分页参数
-    val messagesPerPage = 10
-    // 不要使用 messages 作为 key，否则每次消息更新都会重置深度
-    var currentDepth = remember { mutableStateOf(1) }
-
     // 当消息被清空时（例如切换对话或清空历史），重置深度
     LaunchedEffect(floatContext.messages.isEmpty()) {
         if (floatContext.messages.isEmpty()) {
@@ -652,33 +659,16 @@ private fun ChatMessagesView(
         }
     }
 
-    LaunchedEffect(floatContext.messages.size) {
-        val lastAiMessage = floatContext.messages.lastOrNull { it.sender == "ai" }
-        val stream = lastAiMessage?.contentStream
-        if (stream != null) {
-            launch {
-                try {
-                    stream.collect { _ ->
-                        viewModel.incrementStreamUpdateTrigger()
-                    }
-                } catch (e: Exception) {
-                    AppLogger.e("FloatingChatWindow", "Stream collection error", e)
-                }
-            }
-        }
-    }
-
-    LaunchedEffect(floatContext.messages.size, viewModel.streamUpdateTrigger) {
+    LaunchedEffect(
+        messagesCount,
+        floatContext.messages.firstOrNull()?.timestamp,
+        floatContext.messages.lastOrNull()?.timestamp,
+    ) {
         if (floatContext.messages.isNotEmpty() && autoScrollToBottom) {
-            scrollState.animateScrollToEnd()
+            scrollState.animateScrollToItem(0)
         }
     }
 
-    val messagesCount = floatContext.messages.size
-    val maxVisibleIndex = messagesCount - 1
-    val minVisibleIndex =
-        maxOf(0, maxVisibleIndex - currentDepth.value * messagesPerPage + 1)
-    val hasMoreMessages = minVisibleIndex > 0
     val inputProcessingState = floatContext.inputProcessingState.value
     val isLoading =
         inputProcessingState !is InputProcessingState.Idle &&
@@ -692,14 +682,13 @@ private fun ChatMessagesView(
             )
     val loadMoreText = stringResource(id = R.string.load_more_history)
     val loadMoreTextStyle = MaterialTheme.typography.bodyMedium
-    val visibleMessages = floatContext.messages.subList(minVisibleIndex, messagesCount)
     val renderItems = buildList<Any> {
-        if (hasMoreMessages) {
-            add(FloatingLoadMoreItem)
-        }
-        addAll(visibleMessages)
         if (showLoadingIndicator) {
             add(FloatingLoadingItem)
+        }
+        addAll(displayMessages)
+        if (hasMoreMessages) {
+            add(FloatingLoadMoreItem)
         }
     }
 
@@ -708,6 +697,7 @@ private fun ChatMessagesView(
             modifier = Modifier
                 .fillMaxSize(),
             state = scrollState,
+            reverseLayout = true,
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp)
         ) {
             itemsIndexed(
@@ -737,9 +727,9 @@ private fun ChatMessagesView(
                     }
 
                     is ChatMessage -> {
-                        val actualIndex =
-                            minVisibleIndex +
-                                if (hasMoreMessages) renderIndex - 1 else renderIndex
+                        val displayIndex =
+                            if (showLoadingIndicator) renderIndex - 1 else renderIndex
+                        val actualIndex = messagesCount - 1 - displayIndex
 
                         FloatingMessageItem(
                             index = actualIndex,
@@ -780,6 +770,7 @@ private fun ChatMessagesView(
             scrollState = scrollState,
             coroutineScope = coroutineScope,
             autoScrollToBottom = autoScrollToBottom,
+            reverseLayout = true,
             onAutoScrollToBottomChange = onAutoScrollToBottomChange,
             modifier = Modifier
                 .align(Alignment.BottomCenter)

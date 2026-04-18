@@ -3243,19 +3243,11 @@
     <string name="settings_summary_threshold_subtitle">当上下文使用超过此比例时触发总结(0.1-0.95)</string>
     
     <!-- 截断设置 -->
-    <string name="settings_truncation_title">文件和响应截断设置</string>
-    <string name="settings_max_file_size">文件读取最大字节数</string>
-    <string name="settings_max_file_size_subtitle">单个文件读取操作的最大字节数限制</string>
-    <string name="settings_part_size">分段读取行数</string>
-    <string name="settings_part_size_subtitle">分段读取文件时，每个部分的行数</string>
-    <string name="settings_max_text_result">文本结果最大长度</string>
-    <string name="settings_max_text_result_subtitle">通用文本结果的最大字符数限制</string>
+    <string name="settings_history_retention_title">历史媒体保留设置</string>
     <string name="settings_max_image_history_user_turns">历史图片保留回合数</string>
     <string name="settings_max_image_history_user_turns_subtitle">仅保留最近 N 次用户对话中的图片，避免历史图片重复发送</string>
     <string name="settings_max_media_history_user_turns">历史音视频保留回合数</string>
     <string name="settings_max_media_history_user_turns_subtitle">仅保留最近 N 次用户对话中的音频/视频，避免历史音视频重复发送</string>
-    <string name="settings_reset_truncation">重置截断设置</string>
-    <string name="settings_reset_truncation_desc">重置所有截断设置为默认值</string>
     
     <!-- 布局调整设置 -->
     <string name="layout_adjustment_settings_title">布局调整设置</string>
@@ -4350,7 +4342,7 @@
     <string name="screen_title_context_summary_settings">上下文和总结设置</string>
     <string name="settings_context_title">上下文设置</string>
     <string name="settings_summary_title">总结设置</string>
-    <string name="settings_context_summary_subtitle">管理上下文长度、总结和截断设置</string>
+    <string name="settings_context_summary_subtitle">管理上下文、总结与历史媒体保留设置</string>
     <string name="external_http_chat_enable">启用外部 HTTP 服务</string>
     <string name="external_http_chat_enable_desc">开启后会启动外部 HTTP 聊天接口，实际监听 0.0.0.0，供能访问到该设备的客户端调用</string>
     <string name="external_http_chat_port">监听端口</string>
@@ -6426,13 +6418,12 @@
     <string name="skill_error_import_failed">导入失败: %1$s</string>
 
     <!-- Context Summary Settings -->
-    <string name="context_summary_note">上下文窗口与对话总结现在在模型配置中管理。此处仅调节文件读取与结果截断相关的系统参数。</string>
+    <string name="context_summary_note">文件读取限制与文本结果截断已改为固定系统常量。此页可直接调整当前绑定模型配置的上下文与总结参数，以及历史图片和音视频保留回合数。</string>
+    <string name="context_summary_current_model_config">当前绑定模型配置：%1$s</string>
+    <string name="context_summary_bound_config_description">此页面的上下文与总结设置会直接写回当前对话绑定的模型配置。</string>
     <string name="context_validation_error_positive_number">%1$s 必须是大于 0 的有效数字</string>
     <string name="context_validation_error_positive_integer">%1$s 必须是大于 0 的有效整数</string>
     <string name="context_validation_error_non_negative_integer">%1$s 必须是大于等于 0 的有效整数</string>
-    <string name="context_field_max_file_size">最大文件大小</string>
-    <string name="context_field_part_size">分片大小</string>
-    <string name="context_field_max_text_result_length">最大文本结果长度</string>
     <string name="context_field_max_image_history_turns">历史图片保留回合数</string>
     <string name="context_field_max_media_history_turns">历史音视频保留回合数</string>
     <string name="context_unit_lines">行</string>

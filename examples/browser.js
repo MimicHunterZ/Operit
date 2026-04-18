@@ -14,9 +14,10 @@
     "tools": [
         {
             "name": "click",
-            "description": { "zh": "点击页面元素。", "en": "Click an element on the page." },
+            "description": { "zh": "按快照 ref 点击页面元素，包括同源 iframe 内的元素。", "en": "Click an element by snapshot ref, including refs inside same-origin iframes." },
             "parameters": [
-                { "name": "ref", "description": { "zh": "快照中的目标元素引用。", "en": "Target element ref from the snapshot." }, "type": "string", "required": true },
+                { "name": "ref", "description": { "zh": "快照中的目标元素引用；和 selector 至少提供一个。", "en": "Target element ref from the snapshot; provide ref or selector." }, "type": "string", "required": false },
+                { "name": "selector", "description": { "zh": "可选，ref 不可用时的元素选择器。", "en": "Optional selector fallback when ref is not available." }, "type": "string", "required": false },
                 { "name": "element", "description": { "zh": "可选，人类可读元素描述。", "en": "Optional human-readable element description." }, "type": "string", "required": false },
                 { "name": "doubleClick", "description": { "zh": "可选，是否双击。", "en": "Optional double click." }, "type": "boolean", "required": false },
                 { "name": "button", "description": { "zh": "可选，left/right/middle。", "en": "Optional mouse button: left/right/middle." }, "type": "string", "required": false },
@@ -138,9 +139,11 @@
         },
         {
             "name": "snapshot",
-            "description": { "zh": "获取当前页面结构化快照。", "en": "Get a structured page snapshot." },
+            "description": { "zh": "获取当前页面结构化快照，包括同源 iframe 内容。", "en": "Get a structured page snapshot, including same-origin iframe content." },
             "parameters": [
-                { "name": "filename", "description": { "zh": "可选，保存快照的文件名。", "en": "Optional snapshot output file name." }, "type": "string", "required": false }
+                { "name": "filename", "description": { "zh": "可选，保存快照的文件名。", "en": "Optional snapshot output file name." }, "type": "string", "required": false },
+                { "name": "selector", "description": { "zh": "可选，作为快照根节点的元素选择器。", "en": "Optional root element selector for a partial snapshot." }, "type": "string", "required": false },
+                { "name": "depth", "description": { "zh": "可选，限制快照树深度。", "en": "Optional snapshot tree depth limit." }, "type": "number", "required": false }
             ]
         },
         {
@@ -218,79 +221,28 @@ async function maybePersistLargeBrowserResponse(result, prefix, extension = "md"
     const normalizedPath = filename.replace(/\\/g, "/");
     return "Large browser response saved to:\n- [Browser Output](" + normalizedPath + ")";
 }
-function toToolParams(params) {
-    return params;
-}
-async function callBrowser(nativeName, params = {}) {
-    return toolCall(nativeName, toToolParams(params));
-}
 async function click(params) {
-    const payload = {
-        ref: params.ref
-    };
-    const element = normalizeOptionalString(params.element);
-    const button = params.button;
-    if (element) {
-        payload.element = element;
-    }
-    if (button !== undefined) {
-        if (!["left", "right", "middle"].includes(button)) {
-            throw new Error("button must be left, right, or middle");
-        }
-        payload.button = button;
-    }
-    if (params.modifiers !== undefined) {
-        payload.modifiers = params.modifiers;
-    }
-    if (params.doubleClick !== undefined) {
-        payload.doubleClick = params.doubleClick;
-    }
-    const result = await callBrowser("browser_click", payload);
+    const result = await Tools.Net.browserClick(params);
     return maybePersistLargeBrowserResponse(result, "click");
 }
 async function close() {
-    const result = await callBrowser("browser_close");
+    const result = await Tools.Net.browserClose();
     return maybePersistLargeBrowserResponse(result, "close");
 }
 async function console_messages(params = {}) {
-    const payload = {
-        level: normalizeOptionalString(params.level) || "info"
-    };
-    const filename = normalizeOptionalString(params.filename);
-    if (filename) {
-        payload.filename = filename;
-    }
-    const result = await callBrowser("browser_console_messages", payload);
+    const result = await Tools.Net.browserConsoleMessages(params);
     return maybePersistLargeBrowserResponse(result, "console_messages");
 }
 async function drag(params) {
-    const result = await callBrowser("browser_drag", params);
+    const result = await Tools.Net.browserDrag(params);
     return maybePersistLargeBrowserResponse(result, "drag");
 }
 async function evaluate(params) {
-    const payload = {
-        function: params.function
-    };
-    const ref = normalizeOptionalString(params.ref);
-    const element = normalizeOptionalString(params.element);
-    if (element && !ref) {
-        throw new Error("ref is required when element is provided");
-    }
-    if (ref) {
-        payload.ref = ref;
-    }
-    if (element) {
-        payload.element = element;
-    }
-    const result = await callBrowser("browser_evaluate", payload);
+    const result = await Tools.Net.browserEvaluate(params);
     return maybePersistLargeBrowserResponse(result, "evaluate");
 }
 async function upload(params = {}) {
-    const payload = {};
-    if (params.paths !== undefined) {
-        payload.paths = params.paths;
-    }
-    const result = await callBrowser("browser_file_upload", payload);
+    const result = await Tools.Net.browserFileUpload(params);
     return maybePersistLargeBrowserResponse(result, "upload");
 }
 function normalizeFormFields(fields) {
@@ -324,135 +276,61 @@ function normalizeFormFields(fields) {
     });
 }
 async function fill_form(params) {
-    const payload = {
+    const result = await Tools.Net.browserFillForm({
         fields: normalizeFormFields(params.fields)
-    };
-    const result = await callBrowser("browser_fill_form", payload);
+    });
     return maybePersistLargeBrowserResponse(result, "fill_form");
 }
 async function handle_dialog(params) {
-    const payload = {
-        accept: params.accept
-    };
-    const promptText = normalizeOptionalString(params.promptText);
-    if (promptText) {
-        payload.promptText = promptText;
-    }
-    const result = await callBrowser("browser_handle_dialog", payload);
+    const result = await Tools.Net.browserHandleDialog(params);
     return maybePersistLargeBrowserResponse(result, "handle_dialog");
 }
 async function hover(params) {
-    const payload = {
-        ref: params.ref
-    };
-    const element = normalizeOptionalString(params.element);
-    if (element) {
-        payload.element = element;
-    }
-    const result = await callBrowser("browser_hover", payload);
+    const result = await Tools.Net.browserHover(params);
     return maybePersistLargeBrowserResponse(result, "hover");
 }
 async function goto(params) {
-    const result = await callBrowser("browser_navigate", params);
+    const result = await Tools.Net.browserNavigate(params);
     return maybePersistLargeBrowserResponse(result, "goto");
 }
 async function back() {
-    const result = await callBrowser("browser_navigate_back");
+    const result = await Tools.Net.browserNavigateBack();
     return maybePersistLargeBrowserResponse(result, "back");
 }
 async function network_requests(params = {}) {
-    const payload = {};
-    if (params.includeStatic !== undefined) {
-        payload.includeStatic = params.includeStatic;
-    }
-    const filename = normalizeOptionalString(params.filename);
-    if (filename) {
-        payload.filename = filename;
-    }
-    const result = await callBrowser("browser_network_requests", payload);
+    const result = await Tools.Net.browserNetworkRequests(params);
     return maybePersistLargeBrowserResponse(result, "network_requests");
 }
 async function press_key(params) {
-    const result = await callBrowser("browser_press_key", params);
+    const result = await Tools.Net.browserPressKey(params);
     return maybePersistLargeBrowserResponse(result, "press_key");
 }
 async function resize(params) {
-    const result = await callBrowser("browser_resize", params);
+    const result = await Tools.Net.browserResize(params);
     return maybePersistLargeBrowserResponse(result, "resize");
 }
 async function run_code(params) {
-    const result = await callBrowser("browser_run_code", params);
+    const result = await Tools.Net.browserRunCode(params);
     return maybePersistLargeBrowserResponse(result, "run_code");
 }
 async function select_option(params) {
-    const payload = {
-        ref: params.ref,
-        values: params.values
-    };
-    const element = normalizeOptionalString(params.element);
-    if (element) {
-        payload.element = element;
-    }
-    const result = await callBrowser("browser_select_option", payload);
+    const result = await Tools.Net.browserSelectOption(params);
     return maybePersistLargeBrowserResponse(result, "select_option");
 }
 async function snapshot(params = {}) {
-    const payload = {};
-    const filename = normalizeOptionalString(params.filename);
-    if (filename) {
-        payload.filename = filename;
-    }
-    const result = await callBrowser("browser_snapshot", payload);
+    const result = await Tools.Net.browserSnapshot(params);
     return maybePersistLargeBrowserResponse(result, "snapshot");
 }
 async function type(params) {
-    const payload = {
-        ref: params.ref,
-        text: params.text
-    };
-    const element = normalizeOptionalString(params.element);
-    if (element) {
-        payload.element = element;
-    }
-    if (params.submit !== undefined) {
-        payload.submit = params.submit;
-    }
-    if (params.slowly !== undefined) {
-        payload.slowly = params.slowly;
-    }
-    const result = await callBrowser("browser_type", payload);
+    const result = await Tools.Net.browserType(params);
     return maybePersistLargeBrowserResponse(result, "type");
 }
 async function wait_for(params = {}) {
-    const payload = {};
-    const time = params.time;
-    const text = normalizeOptionalString(params.text);
-    const textGone = normalizeOptionalString(params.textGone);
-    if (time === undefined && !text && !textGone) {
-        throw new Error("one of time, text, or textGone is required");
-    }
-    if (time !== undefined) {
-        payload.time = time;
-    }
-    if (text) {
-        payload.text = text;
-    }
-    if (textGone) {
-        payload.textGone = textGone;
-    }
-    const result = await callBrowser("browser_wait_for", payload);
+    const result = await Tools.Net.browserWaitFor(params);
     return maybePersistLargeBrowserResponse(result, "wait_for");
 }
 async function tabs(params) {
-    const action = params.action;
-    if (!["list", "create", "select", "close"].includes(action)) {
-        throw new Error("action must be list, create, select, or close");
-    }
-    const payload = { action };
-    if (params.index !== undefined) {
-        payload.index = params.index;
-    }
-    const result = await callBrowser("browser_tabs", payload);
+    const result = await Tools.Net.browserTabs(params);
     return maybePersistLargeBrowserResponse(result, "tabs");
 }
 async function browserMain() {

@@ -1870,7 +1870,7 @@
     <string name="screen_title_context_summary_settings">Context and Summary Settings</string>
     <string name="settings_context_title">Context Settings</string>
     <string name="settings_summary_title">Summary Settings</string>
-    <string name="settings_context_summary_subtitle">Manage context length, summary and truncation settings</string>
+    <string name="settings_context_summary_subtitle">Manage context, summary, and history media retention settings</string>
     
     <!-- Details -->
     <string name="details">Details</string>
@@ -3371,20 +3371,12 @@
     <string name="settings_summary_threshold">Summary Token Threshold</string>
     <string name="settings_summary_threshold_subtitle">Threshold for triggering chat summary (0.1-0.95)</string>
     
-    <!-- Truncation Settings -->
-    <string name="settings_truncation_title">File and Response Truncation Settings</string>
-    <string name="settings_max_file_size">Max File Read Bytes</string>
-    <string name="settings_max_file_size_subtitle">Maximum byte limit for single file read operations</string>
-    <string name="settings_part_size">Partial Read Line Count</string>
-    <string name="settings_part_size_subtitle">Number of lines per section when reading files partially</string>
-    <string name="settings_max_text_result">Max Text Result Length</string>
-    <string name="settings_max_text_result_subtitle">Maximum character limit for generic text results</string>
+    <!-- History Media Retention Settings -->
+    <string name="settings_history_retention_title">History Media Retention</string>
     <string name="settings_max_image_history_user_turns">Keep Image History Turns</string>
     <string name="settings_max_image_history_user_turns_subtitle">Only keep images from the last N user turns to avoid resending old images</string>
     <string name="settings_max_media_history_user_turns">Keep Media History Turns</string>
     <string name="settings_max_media_history_user_turns_subtitle">Only keep audio/video from the last N user turns to avoid resending old media</string>
-    <string name="settings_reset_truncation">Reset Truncation Settings</string>
-    <string name="settings_reset_truncation_desc">Reset all truncation settings to default values</string>
     
     <!-- Layout Adjustment Settings -->
     <string name="layout_adjustment_settings_title">Layout Adjustment Settings</string>
@@ -6392,13 +6384,12 @@
     <string name="skill_error_import_failed">Import failed: %1$s</string>
 
     <!-- Context Summary Settings -->
-    <string name="context_summary_note">Context window and conversation summary are now managed in model configuration. This page only adjusts system parameters related to file reading and result truncation.</string>
+    <string name="context_summary_note">File read limits and text result truncation are now fixed system constants. This page directly adjusts the context and summary settings of the bound model config, along with image and audio/video history retention turns.</string>
+    <string name="context_summary_current_model_config">Current bound model config: %1$s</string>
+    <string name="context_summary_bound_config_description">The context and summary settings on this page are written directly back to the model config bound to the current chat.</string>
     <string name="context_validation_error_positive_number">%1$s must be a valid number greater than 0</string>
     <string name="context_validation_error_positive_integer">%1$s must be a valid integer greater than 0</string>
     <string name="context_validation_error_non_negative_integer">%1$s must be a valid integer greater than or equal to 0</string>
-    <string name="context_field_max_file_size">Max File Size</string>
-    <string name="context_field_part_size">Part Size</string>
-    <string name="context_field_max_text_result_length">Max Text Result Length</string>
     <string name="context_field_max_image_history_turns">Image History Turns</string>
     <string name="context_field_max_media_history_turns">Media History Turns</string>
     <string name="context_unit_lines">lines</string>

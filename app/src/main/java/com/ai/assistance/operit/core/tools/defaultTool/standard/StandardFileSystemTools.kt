@@ -18,6 +18,7 @@ import com.ai.assistance.operit.core.tools.FindFilesResultData
 import com.ai.assistance.operit.core.tools.ToolProgressBus
 import com.ai.assistance.operit.core.tools.GrepResultData
 import com.ai.assistance.operit.core.tools.StringResultData
+import com.ai.assistance.operit.core.tools.ToolExecutionLimits
 import com.ai.assistance.operit.data.model.AITool
 import com.ai.assistance.operit.data.model.FunctionType
 import com.ai.assistance.operit.data.model.ModelParameter
@@ -1958,7 +1959,7 @@ open class StandardFileSystemTools(protected val context: Context) {
 
         try {
             // 从配置中获取最大文件大小
-            val maxFileSizeBytes = apiPreferences.getMaxFileSizeBytes()
+            val maxFileSizeBytes = ToolExecutionLimits.MAX_FILE_READ_BYTES
 
             val file = File(path)
             if (!file.exists() || !file.isFile) {
@@ -2077,7 +2078,7 @@ open class StandardFileSystemTools(protected val context: Context) {
         return withContext(Dispatchers.IO) {
             try {
                 val file = File(path)
-                val maxFileSizeBytes = apiPreferences.getMaxFileSizeBytes()
+                val maxFileSizeBytes = ToolExecutionLimits.MAX_FILE_READ_BYTES
 
                 if (!file.exists() || !file.isFile) {
                     return@withContext ToolResult(
@@ -2113,7 +2114,10 @@ open class StandardFileSystemTools(protected val context: Context) {
 
                 // 2. 计算实际的行号范围（行号从1开始，转换为0-based索引）
                 val startLine = maxOf(1, startLineParam).coerceIn(1, maxOf(1, totalLines))
-                val endLine = (endLineParam ?: (startLine + 99)).coerceIn(startLine, maxOf(1, totalLines))
+                val endLine =
+                    (endLineParam
+                            ?: (startLine + ToolExecutionLimits.DEFAULT_FILE_READ_PART_LINES - 1))
+                        .coerceIn(startLine, maxOf(1, totalLines))
                 
                 // 转换为0-based索引
                 val startIndex = startLine - 1

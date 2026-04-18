@@ -1,12 +1,15 @@
-const DEFAULT_FLOOR_LIMIT = 5;
-const DEFAULT_LIMITER_ENABLED = true;
-const FLOOR_OPTIONS = [3, 5, 8, 10, 15, 20, 30, 50, 100];
-const ENV_KEYS = {
-  floorLimit: "CTX_LIMITER_C_FLOOR_LIMIT",
-  enabled: "CTX_LIMITER_C_ENABLED",
-} as const;
+import {
+  DEFAULT_FLOOR_LIMIT,
+  DEFAULT_LIMITER_ENABLED,
+  ENV_KEYS,
+  FLOOR_OPTIONS,
+  HOOK_IDS,
+  INPUT_MENU_TOGGLE_ACTION,
+  PROMPT_TURN_KIND,
+  TOGGLE_IDS,
+} from "./constants";
 
-function readEnv(key: string): string {
+function readEnv(key: (typeof ENV_KEYS)[keyof typeof ENV_KEYS]): string {
   if (typeof getEnv !== "function") {
     return "";
   }
@@ -31,7 +34,10 @@ function readLimiterEnabled(): boolean {
   return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
 }
 
-async function writeEnvValue(key: string, value: string): Promise<void> {
+async function writeEnvValue(
+  key: (typeof ENV_KEYS)[keyof typeof ENV_KEYS],
+  value: string
+): Promise<void> {
   await Tools.SoftwareSettings.writeEnvironmentVariable(key, value);
 }
 
@@ -45,12 +51,12 @@ async function writeLimiterEnabled(nextEnabled: boolean): Promise<void> {
 
 export function registerToolPkg() {
   ToolPkg.registerPromptFinalizeHook({
-    id: "ctx_limiter_c_finalize",
+    id: HOOK_IDS.finalize,
     function: onFinalize,
   });
 
   ToolPkg.registerInputMenuTogglePlugin({
-    id: "ctx_limiter_c_menu",
+    id: HOOK_IDS.menu,
     function: onInputMenuToggle,
   });
 
@@ -70,11 +76,11 @@ export async function onInputMenuToggle(
   const floorLimit = readFloorLimit();
   const limiterEnabled = readLimiterEnabled();
 
-  if (action === "create") {
+  if (action === INPUT_MENU_TOGGLE_ACTION.create) {
     return {
       toggles: [
         {
-          id: "ctx_limiter_toggle",
+          id: TOGGLE_IDS.limiter,
           title: "楼层限制器",
           description: limiterEnabled
             ? `已开启 · 保留最近 ${floorLimit} 层`
@@ -82,7 +88,7 @@ export async function onInputMenuToggle(
           isChecked: limiterEnabled,
         },
         {
-          id: "ctx_limiter_adjust",
+          id: TOGGLE_IDS.adjust,
           title: `调节楼层数 ▶ ${floorLimit}`,
           description: `点击切换: ${FLOOR_OPTIONS.join("/")}`,
           isChecked: true,
@@ -91,18 +97,20 @@ export async function onInputMenuToggle(
     } as ToolPkg.InputMenuToggleObjectResult;
   }
 
-  if (action === "toggle") {
+  if (action === INPUT_MENU_TOGGLE_ACTION.toggle) {
     const toggleId = payload.toggleId;
 
-    if (toggleId === "ctx_limiter_toggle") {
+    if (toggleId === TOGGLE_IDS.limiter) {
       await writeLimiterEnabled(!limiterEnabled);
       return { ok: true } as ToolPkg.InputMenuToggleObjectResult;
     }
 
-    if (toggleId === "ctx_limiter_adjust") {
-      const currentIndex = FLOOR_OPTIONS.indexOf(floorLimit);
+    if (toggleId === TOGGLE_IDS.adjust) {
+      const currentIndex = FLOOR_OPTIONS.indexOf(
+        floorLimit as (typeof FLOOR_OPTIONS)[number]
+      );
       const nextIndex = (currentIndex + 1) % FLOOR_OPTIONS.length;
-      await writeFloorLimit(FLOOR_OPTIONS[nextIndex]);
+      await writeFloorLimit(FLOOR_OPTIONS[nextIndex]!);
       return { ok: true } as ToolPkg.InputMenuToggleObjectResult;
     }
   }
@@ -127,21 +135,21 @@ export function onFinalize(input: ToolPkg.PromptFinalizeHookEvent) {
   }
 
   const systemMsgs: ToolPkg.PromptTurn[] = [];
-  const userAssistantMsgs: ToolPkg.PromptTurn[] = [];
+  const nonSystemMsgs: ToolPkg.PromptTurn[] = [];
 
   for (const message of history) {
-    if (message.kind === "SYSTEM") {
+    if (message.kind === PROMPT_TURN_KIND.SYSTEM) {
       systemMsgs.push(message);
       continue;
     }
-    if (message.kind === "USER" || message.kind === "ASSISTANT") {
-      userAssistantMsgs.push(message);
-    }
+    nonSystemMsgs.push(message);
   }
 
-  const userCount = userAssistantMsgs.filter((message) => message.kind === "USER").length;
+  const userCount = nonSystemMsgs.filter(
+    (message) => message.kind === PROMPT_TURN_KIND.USER
+  ).length;
   if (userCount <= floorLimit) {
-    const result = systemMsgs.concat(userAssistantMsgs);
+    const result = systemMsgs.concat(nonSystemMsgs);
     console.log(
       `[limiter_c] ${userCount} floors <= limit ${floorLimit}, no trim, msgs: ${history.length} -> ${result.length}`
     );
@@ -150,8 +158,8 @@ export function onFinalize(input: ToolPkg.PromptFinalizeHookEvent) {
 
   let keepFromIndex = 0;
   let countedUsers = 0;
-  for (let index = userAssistantMsgs.length - 1; index >= 0; index -= 1) {
-    if (userAssistantMsgs[index].kind !== "USER") {
+  for (let index = nonSystemMsgs.length - 1; index >= 0; index -= 1) {
+    if (nonSystemMsgs[index].kind !== PROMPT_TURN_KIND.USER) {
       continue;
     }
     countedUsers += 1;
@@ -161,11 +169,11 @@ export function onFinalize(input: ToolPkg.PromptFinalizeHookEvent) {
     }
   }
 
-  const keptMsgs = userAssistantMsgs.slice(keepFromIndex);
+  const keptMsgs = nonSystemMsgs.slice(keepFromIndex);
   const finalMsgs = systemMsgs.concat(keptMsgs);
 
   console.log(
-    `[limiter_c] floors: ${userCount}, limit: ${floorLimit}, msgs: ${history.length} -> ${finalMsgs.length} (${systemMsgs.length} sys + ${keptMsgs.length} chat)`
+    `[limiter_c] floors: ${userCount}, limit: ${floorLimit}, msgs: ${history.length} -> ${finalMsgs.length} (${systemMsgs.length} sys + ${keptMsgs.length} non-system)`
   );
 
   return { preparedHistory: finalMsgs };

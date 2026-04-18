@@ -3,12 +3,12 @@ package com.ai.assistance.operit.core.tools.mcp
 import android.content.Context
 import com.ai.assistance.operit.util.AppLogger
 import com.ai.assistance.operit.core.tools.StringResultData
+import com.ai.assistance.operit.core.tools.ToolExecutionLimits
 import com.ai.assistance.operit.core.tools.ToolExecutor
 import com.ai.assistance.operit.data.mcp.plugins.MCPBridgeClient
 import com.ai.assistance.operit.data.model.AITool
 import com.ai.assistance.operit.data.model.ToolResult
 import com.ai.assistance.operit.data.model.ToolValidationResult
-import com.ai.assistance.operit.data.preferences.ApiPreferences
 import com.ai.assistance.operit.util.ImagePoolManager
 import java.util.concurrent.ConcurrentHashMap
 import org.json.JSONObject
@@ -24,15 +24,9 @@ class MCPToolExecutor(private val context: Context, private val mcpManager: MCPM
         private const val TAG = "MCPToolExecutor"
     }
 
-    // ApiPreferences 实例，用于动态获取配置
-    private val apiPreferences: ApiPreferences by lazy {
-        ApiPreferences.getInstance(context)
-    }
-
     /** 截断过长的结果字符串 */
     private suspend fun truncateResult(result: String): String {
-        // 从配置中获取最大结果长度
-        val maxResultLength = apiPreferences.getMaxTextResultLength()
+        val maxResultLength = ToolExecutionLimits.MAX_TEXT_RESULT_LENGTH
         
         if (result.length <= maxResultLength) {
             return result

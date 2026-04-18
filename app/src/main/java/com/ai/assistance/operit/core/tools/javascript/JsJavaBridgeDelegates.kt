@@ -152,17 +152,38 @@ internal object JsJavaBridgeDelegates {
             require(normalizedMethodName.isNotEmpty()) { "method name is required" }
 
             val rawArgs = parseArgsJson(argsJson, objectRegistry)
-            val methodMatch =
+            val staticMethodMatch =
+                try {
+                    selectMethod(
+                        clazz = clazz,
+                        methodName = normalizedMethodName,
+                        rawArgs = rawArgs,
+                        staticOnly = true,
+                        objectRegistry = objectRegistry,
+                        jsCallbackInvoker = jsCallbackInvoker,
+                        bridgeClassLoader = bridgeClassLoader
+                    )
+                } catch (_: NoSuchMethodException) {
+                    null
+                }
+            if (staticMethodMatch != null) {
+                return@runBridgeCall staticMethodMatch.method.invoke(null, *staticMethodMatch.args)
+            }
+
+            val fallbackInstance =
+                findStaticFallbackInstance(clazz)
+                    ?: throw NoSuchMethodException("static method '$normalizedMethodName' not found on ${clazz.name}")
+            val fallbackMethodMatch =
                 selectMethod(
-                    clazz = clazz,
+                    clazz = fallbackInstance.javaClass,
                     methodName = normalizedMethodName,
                     rawArgs = rawArgs,
-                    staticOnly = true,
+                    staticOnly = false,
                     objectRegistry = objectRegistry,
                     jsCallbackInvoker = jsCallbackInvoker,
                     bridgeClassLoader = bridgeClassLoader
                 )
-            methodMatch.method.invoke(null, *methodMatch.args)
+            fallbackMethodMatch.method.invoke(fallbackInstance, *fallbackMethodMatch.args)
         }
     }
 
@@ -254,15 +275,29 @@ internal object JsJavaBridgeDelegates {
 
             val field = findField(clazz, normalizedFieldName, staticOnly = true)
             if (field != null) {
-                field.get(null)
-            } else {
-                val getter =
-                    findGetter(clazz, normalizedFieldName, staticOnly = true)
-                        ?: throw NoSuchFieldException(
-                            "static field/property '$normalizedFieldName' not found on ${clazz.name}"
-                        )
-                getter.invoke(null)
+                return@runBridgeCall field.get(null)
             }
+
+            val getter = findGetter(clazz, normalizedFieldName, staticOnly = true)
+            if (getter != null) {
+                return@runBridgeCall getter.invoke(null)
+            }
+
+            val fallbackInstance = findStaticFallbackInstance(clazz)
+            if (fallbackInstance != null) {
+                val fallbackField = findField(fallbackInstance.javaClass, normalizedFieldName, staticOnly = false)
+                if (fallbackField != null) {
+                    return@runBridgeCall fallbackField.get(fallbackInstance)
+                }
+
+                val fallbackGetter =
+                    findGetter(fallbackInstance.javaClass, normalizedFieldName, staticOnly = false)
+                if (fallbackGetter != null) {
+                    return@runBridgeCall fallbackGetter.invoke(fallbackInstance)
+                }
+            }
+
+            throw NoSuchFieldException("static field/property '$normalizedFieldName' not found on ${clazz.name}")
         }
     }
 
@@ -294,24 +329,61 @@ internal object JsJavaBridgeDelegates {
                             "cannot assign value of type ${describeValueType(rawValue)} to ${field.type.name}"
                         )
                 field.set(null, converted.value)
-                converted.value
-            } else {
-                val setter =
+                return@runBridgeCall converted.value
+            }
+
+            val setter =
+                findSetter(
+                    clazz = clazz,
+                    fieldName = normalizedFieldName,
+                    rawValue = rawValue,
+                    staticOnly = true,
+                    objectRegistry = objectRegistry,
+                    jsCallbackInvoker = jsCallbackInvoker,
+                    bridgeClassLoader = bridgeClassLoader
+                )
+            if (setter != null) {
+                setter.first.invoke(null, setter.second)
+                return@runBridgeCall setter.second
+            }
+
+            val fallbackInstance = findStaticFallbackInstance(clazz)
+            if (fallbackInstance != null) {
+                val fallbackField =
+                    findField(fallbackInstance.javaClass, normalizedFieldName, staticOnly = false)
+                if (fallbackField != null && !Modifier.isFinal(fallbackField.modifiers)) {
+                    val converted =
+                        convertArg(
+                            rawValue = rawValue,
+                            targetType = fallbackField.type,
+                            objectRegistry = objectRegistry,
+                            jsCallbackInvoker = jsCallbackInvoker,
+                            bridgeClassLoader = bridgeClassLoader
+                        )
+                            ?: throw IllegalArgumentException(
+                                "cannot assign value of type ${describeValueType(rawValue)} to ${fallbackField.type.name}"
+                            )
+                    fallbackField.set(fallbackInstance, converted.value)
+                    return@runBridgeCall converted.value
+                }
+
+                val fallbackSetter =
                     findSetter(
-                        clazz = clazz,
+                        clazz = fallbackInstance.javaClass,
                         fieldName = normalizedFieldName,
                         rawValue = rawValue,
-                        staticOnly = true,
+                        staticOnly = false,
                         objectRegistry = objectRegistry,
                         jsCallbackInvoker = jsCallbackInvoker,
                         bridgeClassLoader = bridgeClassLoader
                     )
-                        ?: throw NoSuchFieldException(
-                            "writable static field/property '$normalizedFieldName' not found on ${clazz.name}"
-                        )
-                setter.first.invoke(null, setter.second)
-                setter.second
+                if (fallbackSetter != null) {
+                    fallbackSetter.first.invoke(fallbackInstance, fallbackSetter.second)
+                    return@runBridgeCall fallbackSetter.second
+                }
             }
+
+            throw NoSuchFieldException("writable static field/property '$normalizedFieldName' not found on ${clazz.name}")
         }
     }
 
@@ -572,33 +644,6 @@ internal object JsJavaBridgeDelegates {
                     Continuation::class.java.isAssignableFrom(method.parameterTypes.last())
             }
 
-        if (candidates.isEmpty() && staticOnly) {
-            val companionInstance =
-                runCatching {
-                    findField(targetClass, "Companion", staticOnly = true)?.get(null)
-                        ?: findGetter(targetClass, "Companion", staticOnly = true)?.invoke(null)
-                }.getOrNull()
-            if (companionInstance != null) {
-                callSuspendInternal(
-                    targetClass = companionInstance.javaClass,
-                    instance = companionInstance,
-                    methodName = methodName,
-                    argsJson = argsJson,
-                    staticOnly = false,
-                    objectRegistry = objectRegistry,
-                    callback = callback,
-                    jsCallbackInvoker = jsCallbackInvoker,
-                    bridgeClassLoader = bridgeClassLoader
-                )
-                return
-            }
-        }
-        if (candidates.isEmpty()) {
-            val callType = if (staticOnly) "static" else "instance"
-            callback(failure("$callType suspend method '$normalizedMethodName' not found on ${targetClass.name}"))
-            return
-        }
-
         var best: MethodMatch? = null
         for (method in candidates) {
             val parameterTypes = method.parameterTypes
@@ -617,6 +662,29 @@ internal object JsJavaBridgeDelegates {
             if (best == null || match.score < best.score) {
                 best = match
             }
+        }
+
+        if ((candidates.isEmpty() || best == null) && staticOnly) {
+            val fallbackInstance = findStaticFallbackInstance(targetClass)
+            if (fallbackInstance != null) {
+                callSuspendInternal(
+                    targetClass = fallbackInstance.javaClass,
+                    instance = fallbackInstance,
+                    methodName = methodName,
+                    argsJson = argsJson,
+                    staticOnly = false,
+                    objectRegistry = objectRegistry,
+                    callback = callback,
+                    jsCallbackInvoker = jsCallbackInvoker,
+                    bridgeClassLoader = bridgeClassLoader
+                )
+                return
+            }
+        }
+        if (candidates.isEmpty()) {
+            val callType = if (staticOnly) "static" else "instance"
+            callback(failure("$callType suspend method '$normalizedMethodName' not found on ${targetClass.name}"))
+            return
         }
 
         val selected = best
@@ -1599,6 +1667,18 @@ internal object JsJavaBridgeDelegates {
         return clazz.fields.firstOrNull { field ->
             field.name == fieldName && Modifier.isStatic(field.modifiers) == staticOnly
         }
+    }
+
+    private fun findStaticFallbackInstance(clazz: Class<*>): Any? {
+        return findNamedStaticInstance(clazz, "Companion")
+            ?: findNamedStaticInstance(clazz, "INSTANCE")
+    }
+
+    private fun findNamedStaticInstance(clazz: Class<*>, fieldName: String): Any? {
+        return runCatching {
+            findField(clazz, fieldName, staticOnly = true)?.get(null)
+                ?: findGetter(clazz, fieldName, staticOnly = true)?.invoke(null)
+        }.getOrNull()
     }
 
     private fun findGetter(clazz: Class<*>, fieldName: String, staticOnly: Boolean): Method? {

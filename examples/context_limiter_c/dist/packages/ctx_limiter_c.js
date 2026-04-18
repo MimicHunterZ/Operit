@@ -62,9 +62,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.set_floor_limit = set_floor_limit;
 exports.get_floor_limit = get_floor_limit;
-const ENV_KEYS = {
-    floorLimit: "CTX_LIMITER_C_FLOOR_LIMIT",
-};
+const constants_1 = require("../constants");
 function normalizeLimit(value) {
     const parsed = Number.parseInt(String(value), 10);
     return parsed;
@@ -75,7 +73,7 @@ function set_floor_limit(params) {
         complete({ success: false, error: "n 必须是大于 0 的整数" });
         return;
     }
-    Tools.SoftwareSettings.writeEnvironmentVariable(ENV_KEYS.floorLimit, String(limit))
+    Tools.SoftwareSettings.writeEnvironmentVariable(constants_1.ENV_KEYS.floorLimit, String(limit))
         .then(() => {
         complete({
             success: true,
@@ -91,9 +89,9 @@ function set_floor_limit(params) {
     });
 }
 function get_floor_limit() {
-    let current = 5;
+    let current = constants_1.DEFAULT_FLOOR_LIMIT;
     if (typeof getEnv === "function") {
-        const raw = getEnv(ENV_KEYS.floorLimit);
+        const raw = getEnv(constants_1.ENV_KEYS.floorLimit);
         const parsed = Number.parseInt(String(raw ?? ""), 10);
         if (Number.isFinite(parsed) && parsed > 0) {
             current = parsed;

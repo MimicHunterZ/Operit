@@ -144,10 +144,11 @@ object SystemToolPromptsInternal {
                         ),
                         ToolPrompt(
                             name = "browser_click",
-                            description = "Click an element on the current page by snapshot ref.",
+                            description = "Click an element on the current page by browser_snapshot ref, including refs inside same-origin iframes.",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(name = "ref", type = "string", description = "target element ref from browser_snapshot output", required = true),
+                                    ToolParameterSchema(name = "ref", type = "string", description = "target element ref from browser_snapshot output; provide ref or selector", required = false),
+                                    ToolParameterSchema(name = "selector", type = "string", description = "optional CSS selector fallback when ref is not available", required = false),
                                     ToolParameterSchema(name = "element", type = "string", description = "optional, human-readable element description", required = false),
                                     ToolParameterSchema(name = "doubleClick", type = "boolean", description = "optional, perform a double click instead of a single click", required = false, default = "false"),
                                     ToolParameterSchema(name = "button", type = "string", description = "optional mouse button: left/right/middle", required = false, default = "left"),
@@ -282,7 +283,7 @@ object SystemToolPromptsInternal {
                         ),
                         ToolPrompt(
                             name = "browser_snapshot",
-                            description = "Capture a structured accessibility-style snapshot of the current page.",
+                            description = "Capture a structured accessibility-style snapshot of the current page, including same-origin iframe content.",
                             parametersStructured =
                                 listOf(
                                     ToolParameterSchema(name = "filename", type = "string", description = "optional output snapshot file name", required = false),
@@ -2799,10 +2800,11 @@ object SystemToolPromptsInternal {
                         ),
                         ToolPrompt(
                             name = "browser_click",
-                            description = "按快照 ref 点击当前页面元素。",
+                            description = "按 browser_snapshot 的 ref 点击当前页面元素，包括同源 iframe 内的 ref。",
                             parametersStructured =
                                 listOf(
-                                    ToolParameterSchema(name = "ref", type = "string", description = "来自 browser_snapshot 输出的目标元素 ref", required = true),
+                                    ToolParameterSchema(name = "ref", type = "string", description = "来自 browser_snapshot 输出的目标元素 ref；ref 和 selector 至少提供一个", required = false),
+                                    ToolParameterSchema(name = "selector", type = "string", description = "可选，ref 不可用时的 CSS 选择器兜底", required = false),
                                     ToolParameterSchema(name = "element", type = "string", description = "可选，人类可读元素描述", required = false),
                                     ToolParameterSchema(name = "doubleClick", type = "boolean", description = "可选，是否双击", required = false, default = "false"),
                                     ToolParameterSchema(name = "button", type = "string", description = "可选鼠标按键：left/right/middle", required = false, default = "left"),
@@ -2937,7 +2939,7 @@ object SystemToolPromptsInternal {
                         ),
                         ToolPrompt(
                             name = "browser_snapshot",
-                            description = "抓取当前页面的结构化无障碍风格快照。",
+                            description = "抓取当前页面的结构化无障碍风格快照，包括同源 iframe 内容。",
                             parametersStructured =
                                 listOf(
                                     ToolParameterSchema(name = "filename", type = "string", description = "可选，输出快照文件名", required = false),

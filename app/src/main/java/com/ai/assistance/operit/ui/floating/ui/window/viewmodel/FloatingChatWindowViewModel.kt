@@ -39,9 +39,6 @@ class FloatingChatWindowModeViewModel(
     var minimizeHover by mutableStateOf(false)
     var closeHover by mutableStateOf(false)
 
-    // 流式更新触发器
-    var streamUpdateTrigger by mutableStateOf(0)
-
     /**
      * 同步窗口状态
      * 当用户不在拖动时，从 floatContext 同步状态
@@ -129,13 +126,6 @@ class FloatingChatWindowModeViewModel(
             else -> 0.3f
         }
         handleScaleChange(newScale)
-    }
-
-    /**
-     * 增加流式更新触发器计数
-     */
-    fun incrementStreamUpdateTrigger() {
-        streamUpdateTrigger++
     }
 
     /**

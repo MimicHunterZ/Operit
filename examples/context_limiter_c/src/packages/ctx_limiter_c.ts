@@ -59,9 +59,7 @@
 }
 */
 
-const ENV_KEYS = {
-  floorLimit: "CTX_LIMITER_C_FLOOR_LIMIT",
-} as const;
+import { DEFAULT_FLOOR_LIMIT, ENV_KEYS } from "../constants";
 
 interface FloorLimitParams {
   n?: string | number;
@@ -96,7 +94,7 @@ export function set_floor_limit(params: FloorLimitParams) {
 }
 
 export function get_floor_limit() {
-  let current = 5;
+  let current = DEFAULT_FLOOR_LIMIT;
   if (typeof getEnv === "function") {
     const raw = getEnv(ENV_KEYS.floorLimit);
     const parsed = Number.parseInt(String(raw ?? ""), 10);

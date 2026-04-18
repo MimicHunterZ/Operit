@@ -201,11 +201,20 @@ fun getJsToolsDefinition(): String {
                     if (params.ref !== undefined && params.ref !== null) {
                         params.ref = String(params.ref).trim();
                     }
-                    if (!params.ref) {
-                        throw new Error("browserClick requires ref");
+                    if (params.selector !== undefined && params.selector !== null) {
+                        params.selector = String(params.selector).trim();
+                        if (!params.selector) {
+                            delete params.selector;
+                        }
+                    }
+                    if (!params.ref && !params.selector) {
+                        throw new Error("browserClick requires ref or selector");
                     }
                     if (params.element !== undefined && params.element !== null) {
-                        params.element = String(params.element);
+                        params.element = String(params.element).trim();
+                        if (!params.element) {
+                            delete params.element;
+                        }
                     }
                     if (params.button !== undefined && params.button !== null) {
                         const button = String(params.button).trim();
@@ -414,10 +423,16 @@ fun getJsToolsDefinition(): String {
                     }
                     const params = { ...(options || {}) };
                     if (params.filename !== undefined && params.filename !== null) {
-                        params.filename = String(params.filename);
+                        params.filename = String(params.filename).trim();
+                        if (!params.filename) {
+                            delete params.filename;
+                        }
                     }
                     if (params.selector !== undefined && params.selector !== null) {
-                        params.selector = String(params.selector);
+                        params.selector = String(params.selector).trim();
+                        if (!params.selector) {
+                            delete params.selector;
+                        }
                     }
                     if (params.depth !== undefined && params.depth !== null) {
                         const depth = Number(params.depth);
